@@ -1,0 +1,47 @@
+@import 'tailwindcss';
+@import 'uniwind';
+@import 'heroui-native/styles';
+
+@source './node_modules/heroui-native/lib';
+
+@layer theme {
+  :root {
+    @variant light {
+      --background:       oklch(0.99 0 0);
+      --foreground:       oklch(0 0 0);
+      --surface:          oklch(1 0 0);
+      --surface-foreground: oklch(0 0 0);
+      --accent:           oklch(0 0 0);
+      --accent-foreground: oklch(1 0 0);
+      --border:           oklch(0.88 0 0);
+      --muted:            oklch(0.45 0 0);
+      --default:          oklch(0.95 0 0);
+      --default-foreground: oklch(0 0 0);
+
+      --font-normal:   'Poppins_400Regular';
+      --font-medium:   'Poppins_500Medium';
+      --font-semibold: 'Poppins_600SemiBold';
+      --font-bold:     'Poppins_700Bold';
+      --radius: 1rem;
+    }
+
+    @variant dark {
+      --background:       oklch(0.065 0 0);
+      --foreground:       oklch(1 0 0);
+      --surface:          oklch(0.12 0 0);
+      --surface-foreground: oklch(1 0 0);
+      --accent:           oklch(1 0 0);
+      --accent-foreground: oklch(0 0 0);
+      --border:           oklch(0.22 0 0);
+      --muted:            oklch(0.55 0 0);
+      --default:          oklch(0.16 0 0);
+      --default-foreground: oklch(1 0 0);
+
+      --font-normal:   'Poppins_400Regular';
+      --font-medium:   'Poppins_500Medium';
+      --font-semibold: 'Poppins_600SemiBold';
+      --font-bold:     'Poppins_700Bold';
+      --radius: 1rem;
+    }
+  }
+}

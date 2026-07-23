@@ -1,8 +1,10 @@
+import '../global.css';
 import React, { useEffect } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { HeroUINativeProvider } from 'heroui-native';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import {
   Poppins_400Regular,
@@ -24,21 +26,32 @@ function RootLayoutNav() {
       screenOptions={{
         headerShown: false,
         animation: 'slide_from_right',
-        animationDuration: 320,
+        animationDuration: 280,
         gestureEnabled: true,
         gestureDirection: 'horizontal',
         fullScreenGestureEnabled: true,
       }}
     >
-      <Stack.Screen name="index" options={{ headerShown: false, gestureEnabled: false }} />
-      <Stack.Screen name="get-started" options={{ headerShown: false }} />
-      <Stack.Screen name="create-account" options={{ headerShown: false }} />
-      <Stack.Screen name="create-password" options={{ headerShown: false }} />
-      <Stack.Screen name="profile-setup" options={{ headerShown: false }} />
-      <Stack.Screen name="complete-registration" options={{ headerShown: false }} />
-      <Stack.Screen name="verification" options={{ headerShown: false }} />
-      <Stack.Screen name="home" options={{ headerShown: false, gestureEnabled: false }} />
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      {/* Onboarding & Auth — new HeroUI Native flow */}
+      <Stack.Screen name="index" options={{ gestureEnabled: false }} />
+      <Stack.Screen name="welcome" options={{ gestureEnabled: false, animation: 'fade' }} />
+      <Stack.Screen name="onboarding" options={{ gestureEnabled: false }} />
+      <Stack.Screen name="auth" options={{}} />
+      <Stack.Screen name="forgot-password" options={{}} />
+      <Stack.Screen name="verify-email" options={{}} />
+      <Stack.Screen name="success" options={{ gestureEnabled: false, animation: 'fade' }} />
+
+      {/* Legacy screens (kept for compatibility) */}
+      <Stack.Screen name="get-started" />
+      <Stack.Screen name="create-account" />
+      <Stack.Screen name="create-password" />
+      <Stack.Screen name="profile-setup" />
+      <Stack.Screen name="complete-registration" />
+      <Stack.Screen name="verification" />
+
+      {/* Authenticated area */}
+      <Stack.Screen name="home" options={{ gestureEnabled: false }} />
+      <Stack.Screen name="(tabs)" options={{ gestureEnabled: false }} />
     </Stack>
   );
 }
@@ -64,9 +77,11 @@ export default function RootLayout() {
       <ErrorBoundary>
         <QueryClientProvider client={queryClient}>
           <GestureHandlerRootView style={{ flex: 1 }}>
-            <KeyboardProvider>
-              <RootLayoutNav />
-            </KeyboardProvider>
+            <HeroUINativeProvider>
+              <KeyboardProvider>
+                <RootLayoutNav />
+              </KeyboardProvider>
+            </HeroUINativeProvider>
           </GestureHandlerRootView>
         </QueryClientProvider>
       </ErrorBoundary>
