@@ -1,6 +1,5 @@
 import React, { useCallback, useRef, useState } from 'react';
 import {
-  Animated,
   Platform,
   ScrollView,
   StyleSheet,
@@ -13,17 +12,36 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MsInput from '@/components/MsInput';
+import StepIndicator from '@/components/StepIndicator';
+import ScreenTransition from '@/components/ScreenTransition';
 
 type UsernameStatus = 'idle' | 'checking' | 'available' | 'taken';
 
-// Simulated availability check (replace with real API call later)
+const TAKEN_NAMES = ['admin', 'user', 'meetsweet', 'test', 'root'];
+
 function checkUsernameAvailability(username: string): Promise<boolean> {
   return new Promise((resolve) => {
-    const taken = ['admin', 'user', 'meetsweet', 'test', 'root'].includes(
-      username.toLowerCase()
-    );
-    setTimeout(() => resolve(!taken), 900);
+    setTimeout(() => resolve(!TAKEN_NAMES.includes(username.toLowerCase())), 900);
   });
+}
+
+function calcAge(dob: string): number {
+  // expects MM/DD/YYYY
+  const [m, d, y] = dob.split('/').map(Number);
+  if (!m || !d || !y || y < 1900) return -1;
+  const today = new Date();
+  let age = today.getFullYear() - y;
+  const monthDiff = today.getMonth() + 1 - m;
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < d)) age--;
+  return age;
+}
+
+function formatDob(raw: string): string {
+  const digits = raw.replace(/\D/g, '').slice(0, 8);
+  let out = digits;
+  if (digits.length > 2) out = digits.slice(0, 2) + '/' + digits.slice(2);
+  if (digits.length > 4) out = out.slice(0, 5) + '/' + digits.slice(4);
+  return out;
 }
 
 export default function CreateAccountScreen() {
@@ -33,49 +51,63 @@ export default function CreateAccountScreen() {
   const [usernameStatus, setUsernameStatus] = useState<UsernameStatus>('idle');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const [dob, setDob] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const usernameTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleUsernameChange = useCallback((text: string) => {
-    setUsername(text);
+    const clean = text.replace(/\s/g, '');
+    setUsername(clean);
     setUsernameStatus('idle');
     setErrors((e) => ({ ...e, username: '' }));
     if (usernameTimer.current) clearTimeout(usernameTimer.current);
-    if (text.length >= 3) {
+    if (clean.length >= 3) {
       setUsernameStatus('checking');
       usernameTimer.current = setTimeout(async () => {
-        const available = await checkUsernameAvailability(text);
+        const available = await checkUsernameAvailability(clean);
         setUsernameStatus(available ? 'available' : 'taken');
       }, 700);
     }
   }, []);
 
+  const handleDobChange = (text: string) => {
+    setDob(formatDob(text));
+    setErrors((e) => ({ ...e, dob: '' }));
+  };
+
   const validate = () => {
     const errs: Record<string, string> = {};
     if (username.length < 3) errs.username = 'At least 3 characters required';
     else if (usernameStatus === 'taken') errs.username = 'Username is already taken';
+    else if (usernameStatus === 'checking') errs.username = 'Please wait while we check availability';
     if (!email.includes('@') || !email.includes('.'))
       errs.email = 'Enter a valid email address';
     if (phone.replace(/\D/g, '').length < 10)
       errs.phone = 'Enter a valid phone number';
-    if (password.length < 8) errs.password = 'At least 8 characters required';
-    if (password !== confirmPassword) errs.confirmPassword = 'Passwords do not match';
+    if (dob.length < 10) {
+      errs.dob = 'Enter your date of birth (MM/DD/YYYY)';
+    } else {
+      const age = calcAge(dob);
+      if (age < 0) errs.dob = 'Enter a valid date';
+      else if (age < 18) errs.dob = 'You must be at least 18 years old';
+    }
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
 
   const handleContinue = () => {
     if (validate()) {
-      router.push({ pathname: '/profile-setup', params: { phone } });
+      router.push({
+        pathname: '/create-password',
+        params: { username, email, phone, dob },
+      });
     }
   };
 
   const usernameRight =
     usernameStatus === 'checking' ? (
-      <Text style={styles.checkingText}>Checking...</Text>
+      <Text style={styles.checkingText}>Checking…</Text>
     ) : usernameStatus === 'available' ? (
       <Ionicons name="checkmark-circle" size={20} color="#22C55E" />
     ) : usernameStatus === 'taken' ? (
@@ -83,13 +115,12 @@ export default function CreateAccountScreen() {
     ) : null;
 
   return (
+    <ScreenTransition>
     <LinearGradient colors={['#16081E', '#0D0B1A']} style={styles.gradient}>
       <View
         style={[
           styles.container,
-          {
-            paddingTop: insets.top + (Platform.OS === 'web' ? 67 : 16),
-          },
+          { paddingTop: insets.top + (Platform.OS === 'web' ? 67 : 16) },
         ]}
       >
         {/* Header */}
@@ -101,28 +132,20 @@ export default function CreateAccountScreen() {
           >
             <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
           </TouchableOpacity>
-          {/* Step indicator */}
-          <View style={styles.stepRow}>
-            <View style={[styles.stepPill, styles.stepActive]} />
-            <View style={styles.stepConnector} />
-            <View style={styles.stepPill} />
-          </View>
+          <StepIndicator total={5} current={0} />
         </View>
 
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={[
             styles.scrollContent,
-            {
-              paddingBottom:
-                insets.bottom + (Platform.OS === 'web' ? 34 : 32),
-            },
+            { paddingBottom: insets.bottom + (Platform.OS === 'web' ? 34 : 32) },
           ]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          <Text style={styles.title}>Create Account</Text>
-          <Text style={styles.subtitle}>Fill in your details to get started.</Text>
+          <Text style={styles.title}>Your Details</Text>
+          <Text style={styles.subtitle}>Tell us a bit about yourself.</Text>
 
           <View style={styles.form}>
             <MsInput
@@ -136,7 +159,7 @@ export default function CreateAccountScreen() {
               rightElement={usernameRight}
             />
             <MsInput
-              label="Email"
+              label="Email Address"
               placeholder="your@email.com"
               value={email}
               onChangeText={(t) => {
@@ -160,27 +183,22 @@ export default function CreateAccountScreen() {
               error={errors.phone}
             />
             <MsInput
-              label="Password"
-              placeholder="Min. 8 characters"
-              value={password}
-              onChangeText={(t) => {
-                setPassword(t);
-                setErrors((e) => ({ ...e, password: '' }));
-              }}
-              secureTextEntry
-              error={errors.password}
+              label="Date of Birth"
+              placeholder="MM/DD/YYYY"
+              value={dob}
+              onChangeText={handleDobChange}
+              keyboardType="number-pad"
+              error={errors.dob}
+              rightElement={
+                <Ionicons name="calendar-outline" size={18} color="#4A3F72" />
+              }
             />
-            <MsInput
-              label="Confirm Password"
-              placeholder="Repeat your password"
-              value={confirmPassword}
-              onChangeText={(t) => {
-                setConfirmPassword(t);
-                setErrors((e) => ({ ...e, confirmPassword: '' }));
-              }}
-              secureTextEntry
-              error={errors.confirmPassword}
-            />
+            {!errors.dob && dob.length >= 10 && calcAge(dob) >= 18 && (
+              <View style={styles.ageBadge}>
+                <Ionicons name="checkmark-circle" size={14} color="#22C55E" />
+                <Text style={styles.ageBadgeText}>Age verified ✓</Text>
+              </View>
+            )}
           </View>
 
           <TouchableOpacity
@@ -201,6 +219,7 @@ export default function CreateAccountScreen() {
         </ScrollView>
       </View>
     </LinearGradient>
+    </ScreenTransition>
   );
 }
 
@@ -222,15 +241,6 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     backgroundColor: '#251F40',
   },
-  stepRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  stepPill: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#2E2850',
-  },
-  stepActive: { width: 28, borderRadius: 5, backgroundColor: '#FF4473' },
-  stepConnector: { width: 28, height: 2, backgroundColor: '#2E2850' },
   scroll: { flex: 1 },
   scrollContent: { paddingHorizontal: 28, paddingTop: 16 },
   title: {
@@ -250,6 +260,18 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: 'Poppins_400Regular',
     color: '#9385B8',
+  },
+  ageBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: -8,
+    marginLeft: 4,
+  },
+  ageBadgeText: {
+    fontSize: 12,
+    fontFamily: 'Poppins_500Medium',
+    color: '#22C55E',
   },
   primaryWrap: { borderRadius: 16, overflow: 'hidden' },
   primaryBtn: {

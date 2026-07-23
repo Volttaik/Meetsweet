@@ -33,8 +33,12 @@ function RootLayoutNav() {
       <Stack.Screen name="index" options={{ headerShown: false, gestureEnabled: false }} />
       <Stack.Screen name="get-started" options={{ headerShown: false }} />
       <Stack.Screen name="create-account" options={{ headerShown: false }} />
+      <Stack.Screen name="create-password" options={{ headerShown: false }} />
       <Stack.Screen name="profile-setup" options={{ headerShown: false }} />
+      <Stack.Screen name="complete-registration" options={{ headerShown: false }} />
       <Stack.Screen name="verification" options={{ headerShown: false }} />
+      <Stack.Screen name="home" options={{ headerShown: false, gestureEnabled: false }} />
+      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
     </Stack>
   );
 }

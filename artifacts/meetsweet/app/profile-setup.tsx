@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import {
-  Animated,
   Image,
   Platform,
   StyleSheet,
@@ -13,10 +12,18 @@ import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import StepIndicator from '@/components/StepIndicator';
+import ScreenTransition from '@/components/ScreenTransition';
 
 export default function ProfileSetupScreen() {
   const insets = useSafeAreaInsets();
-  const { phone } = useLocalSearchParams<{ phone: string }>();
+  const params = useLocalSearchParams<{
+    username: string;
+    email: string;
+    phone: string;
+    dob: string;
+    password: string;
+  }>();
   const [avatarUri, setAvatarUri] = useState<string | null>(null);
 
   const pickImage = async (source: 'camera' | 'gallery') => {
@@ -44,11 +51,15 @@ export default function ProfileSetupScreen() {
     }
   };
 
-  const handleComplete = () => {
-    router.push({ pathname: '/verification', params: { phone } });
+  const handleContinue = (skip = false) => {
+    router.push({
+      pathname: '/complete-registration',
+      params: { ...params, avatarUri: skip ? '' : (avatarUri ?? '') },
+    });
   };
 
   return (
+    <ScreenTransition>
     <LinearGradient colors={['#16081E', '#0D0B1A']} style={styles.gradient}>
       <View
         style={[
@@ -68,18 +79,14 @@ export default function ProfileSetupScreen() {
           >
             <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
           </TouchableOpacity>
-          <View style={styles.stepRow}>
-            <View style={[styles.stepPill, styles.stepDone]} />
-            <View style={[styles.stepConnector, styles.stepConnectorDone]} />
-            <View style={[styles.stepPill, styles.stepActive]} />
-          </View>
+          <StepIndicator total={5} current={2} />
         </View>
 
         {/* Content */}
         <View style={styles.content}>
-          <Text style={styles.title}>Add Your Photo</Text>
+          <Text style={styles.title}>Profile Photo</Text>
           <Text style={styles.subtitle}>
-            A profile photo helps others recognize you.
+            A photo helps others recognise you.
           </Text>
 
           {/* Avatar picker */}
@@ -106,15 +113,18 @@ export default function ProfileSetupScreen() {
             </LinearGradient>
           </TouchableOpacity>
 
-          {/* Photo source options */}
+          {/* Options */}
           <View style={styles.optionsCard}>
             <TouchableOpacity
               style={styles.optionBtn}
               onPress={() => pickImage('camera')}
               activeOpacity={0.8}
             >
-              <Ionicons name="camera-outline" size={22} color="#FF4473" />
+              <View style={styles.optionIcon}>
+                <Ionicons name="camera-outline" size={20} color="#FF4473" />
+              </View>
               <Text style={styles.optionText}>Take Photo</Text>
+              <Ionicons name="chevron-forward" size={16} color="#4A3F72" />
             </TouchableOpacity>
             <View style={styles.optionDivider} />
             <TouchableOpacity
@@ -122,8 +132,11 @@ export default function ProfileSetupScreen() {
               onPress={() => pickImage('gallery')}
               activeOpacity={0.8}
             >
-              <Ionicons name="images-outline" size={22} color="#FF4473" />
+              <View style={styles.optionIcon}>
+                <Ionicons name="images-outline" size={20} color="#FF4473" />
+              </View>
               <Text style={styles.optionText}>Choose from Library</Text>
+              <Ionicons name="chevron-forward" size={16} color="#4A3F72" />
             </TouchableOpacity>
           </View>
         </View>
@@ -131,7 +144,7 @@ export default function ProfileSetupScreen() {
         {/* Bottom CTA */}
         <View style={styles.bottom}>
           <TouchableOpacity
-            onPress={handleComplete}
+            onPress={() => handleContinue(false)}
             activeOpacity={0.88}
             style={styles.primaryWrap}
           >
@@ -141,11 +154,12 @@ export default function ProfileSetupScreen() {
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
             >
-              <Text style={styles.primaryBtnText}>Complete Account Creation</Text>
+              <Text style={styles.primaryBtnText}>Continue</Text>
+              <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
             </LinearGradient>
           </TouchableOpacity>
           <TouchableOpacity
-            onPress={handleComplete}
+            onPress={() => handleContinue(true)}
             style={styles.skipBtn}
             activeOpacity={0.7}
           >
@@ -154,6 +168,7 @@ export default function ProfileSetupScreen() {
         </View>
       </View>
     </LinearGradient>
+    </ScreenTransition>
   );
 }
 
@@ -174,18 +189,11 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     backgroundColor: '#251F40',
   },
-  stepRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  stepPill: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#2E2850' },
-  stepDone: { backgroundColor: '#FF4473' },
-  stepActive: { width: 28, borderRadius: 5, backgroundColor: '#FF4473' },
-  stepConnector: { width: 28, height: 2, backgroundColor: '#2E2850' },
-  stepConnectorDone: { backgroundColor: '#FF4473' },
-
   content: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 12,
+    gap: 16,
   },
   title: {
     fontSize: 30,
@@ -198,20 +206,20 @@ const styles = StyleSheet.create({
     fontFamily: 'Poppins_400Regular',
     color: '#9385B8',
     textAlign: 'center',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   avatarWrapper: {
-    width: 168,
-    height: 168,
-    borderRadius: 84,
-    marginBottom: 28,
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    marginBottom: 24,
     position: 'relative',
   },
-  avatar: { width: 168, height: 168, borderRadius: 84 },
+  avatar: { width: 160, height: 160, borderRadius: 80 },
   avatarPlaceholder: {
-    width: 168,
-    height: 168,
-    borderRadius: 84,
+    width: 160,
+    height: 160,
+    borderRadius: 80,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
@@ -219,18 +227,17 @@ const styles = StyleSheet.create({
   },
   cameraOverlay: {
     position: 'absolute',
-    bottom: 6,
-    right: 6,
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    bottom: 4,
+    right: 4,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2.5,
     borderColor: '#0D0B1A',
   },
   optionsCard: {
-    flexDirection: 'row',
     backgroundColor: '#1A1628',
     borderRadius: 16,
     borderWidth: 1,
@@ -239,20 +246,27 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   optionBtn: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+  },
+  optionIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#FF44731A',
+    alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 18,
   },
   optionText: {
+    flex: 1,
     fontSize: 14,
     fontFamily: 'Poppins_500Medium',
     color: '#FFFFFF',
   },
-  optionDivider: { width: 1, backgroundColor: '#2E2850' },
-
+  optionDivider: { height: 1, backgroundColor: '#2E2850', marginHorizontal: 20 },
   bottom: { gap: 12 },
   primaryWrap: { borderRadius: 16, overflow: 'hidden' },
   primaryBtn: {
@@ -260,10 +274,12 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
   },
   primaryBtnText: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: 17,
     fontFamily: 'Poppins_600SemiBold',
   },
   skipBtn: { alignItems: 'center', paddingVertical: 4 },

@@ -1,6 +1,5 @@
 import React from 'react';
 import {
-  Animated,
   Platform,
   StyleSheet,
   Text,
@@ -11,12 +10,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useScreenSlide } from '@/hooks/useScreenSlide';
+import ScreenTransition from '@/components/ScreenTransition';
 
 export default function GetStartedScreen() {
   const insets = useSafeAreaInsets();
 
   return (
+    <ScreenTransition>
     <LinearGradient
       colors={['#16081E', '#0D0B1A']}
       style={styles.gradient}
@@ -97,6 +97,7 @@ export default function GetStartedScreen() {
         </View>
       </View>
     </LinearGradient>
+    </ScreenTransition>
   );
 }
 
