@@ -1,5 +1,6 @@
 import React from 'react';
 import {
+  Animated,
   Platform,
   StyleSheet,
   Text,
@@ -10,6 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useScreenSlide } from '@/hooks/useScreenSlide';
 
 export default function GetStartedScreen() {
   const insets = useSafeAreaInsets();

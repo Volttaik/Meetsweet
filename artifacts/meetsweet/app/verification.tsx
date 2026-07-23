@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  Animated,
   Platform,
   StyleSheet,
   Text,

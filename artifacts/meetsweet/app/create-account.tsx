@@ -1,5 +1,6 @@
 import React, { useCallback, useRef, useState } from 'react';
 import {
+  Animated,
   Platform,
   ScrollView,
   StyleSheet,
