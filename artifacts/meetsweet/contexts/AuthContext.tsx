@@ -76,8 +76,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Configure base URL for the generated API client
   useEffect(() => {
-    const base = getApiBase();
-    setBaseUrl(base);
+    const domain = process.env.EXPO_PUBLIC_DOMAIN;
+    setBaseUrl(domain ? `https://${domain}` : null);
     setAuthTokenGetter(async () => {
       return await AsyncStorage.getItem(KEYS.ACCESS_TOKEN);
     });

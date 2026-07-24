@@ -136,7 +136,7 @@ export function MsPreviewCard({
           <View style={previewStyles.lineWide} />
         </View>
         <View style={previewStyles.typeMark}>
-          {preview.isPremium ? <Lock size={13} color={T.TEXT} /> : <Play size={13} color={T.TEXT} fill={T.TEXT} />}
+          {preview.isPremium ? <Lock size={13} color={T.TEXT} /> : <Play size={13} color={T.TEXT} weight="fill" />}
           <Text style={previewStyles.typeText}>{preview.kind}</Text>
         </View>
         <View style={previewStyles.previewBadge}>

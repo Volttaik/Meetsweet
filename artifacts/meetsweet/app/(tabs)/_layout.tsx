@@ -8,7 +8,7 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
-import { House, MagnifyingGlass, ChatCircle, User } from 'phosphor-react-native';
+import { House, MagnifyingGlass, ChatCircle, User, type Icon } from 'phosphor-react-native';
 import { T } from '@/constants/theme';
 
 const TAB_HEIGHT = 60;
@@ -16,7 +16,7 @@ const INACTIVE_COLOR = '#777777';
 
 type VisualTab = {
   label: string;
-  Icon: React.ComponentType<{ size: number; color: string; weight?: string }>;
+  Icon: Icon;
   routeName?: string; // undefined = center action
 };
 

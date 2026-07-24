@@ -30,12 +30,22 @@ export interface Post {
   author: PostAuthor;
   likedByMe: boolean;
   bookmarkedByMe: boolean;
+  isLocked?: boolean;
+  updatedAt?: string;
+  previewMediaUrl?: string | null;
+  previewMediaType?: 'image' | 'video' | null;
+  previewDurationSecs?: number | null;
 }
 
 export interface Comment {
   id: string;
   body: string;
   createdAt: string;
+  updatedAt?: string;
+  likeCount: number;
+  replyCount: number;
+  parentId: string | null;
+  likedByMe: boolean;
   author: {
     id: string;
     name: string;
@@ -84,6 +94,9 @@ export interface CreatePostData {
   priceCredits?: number;
   categories?: string[];
   tags?: string[];
+  previewMediaUrl?: string;
+  previewMediaType?: string;
+  previewDurationSecs?: number;
 }
 
 export async function createPost(data: CreatePostData): Promise<{ post: Post }> {
@@ -123,8 +136,9 @@ export async function unlikePost(id: string): Promise<{ liked: boolean; likeCoun
   });
 }
 
-export async function getComments(postId: string): Promise<{ comments: Comment[] }> {
-  return apiFetch(`/posts/${postId}/comments`);
+export async function getComments(postId: string, parentId?: string): Promise<{ comments: Comment[] }> {
+  const query = parentId ? `?parentId=${encodeURIComponent(parentId)}` : '';
+  return apiFetch(`/posts/${postId}/comments${query}`);
 }
 
 export async function addComment(postId: string, body: string): Promise<{ comment: Comment }> {
@@ -134,6 +148,36 @@ export async function addComment(postId: string, body: string): Promise<{ commen
     method: 'POST',
     headers: authHeader(token),
     body: JSON.stringify({ body }),
+  });
+}
+
+export async function addReply(postId: string, parentId: string, body: string): Promise<{ comment: Comment }> {
+  const token = await getToken();
+  if (!token) throw new Error('Not authenticated');
+  return apiFetch(`/posts/${postId}/comments`, {
+    method: 'POST',
+    headers: authHeader(token),
+    body: JSON.stringify({ body, parentId }),
+  });
+}
+
+export async function editComment(postId: string, commentId: string, body: string): Promise<{ comment: Comment }> {
+  const token = await getToken();
+  if (!token) throw new Error('Not authenticated');
+  return apiFetch(`/posts/${postId}/comments/${commentId}`, {
+    method: 'PUT',
+    headers: authHeader(token),
+    body: JSON.stringify({ body }),
+  });
+}
+
+export async function editPost(id: string, data: { caption?: string; visibility?: string }): Promise<void> {
+  const token = await getToken();
+  if (!token) throw new Error('Not authenticated');
+  await apiFetch(`/posts/${id}`, {
+    method: 'PUT',
+    headers: authHeader(token),
+    body: JSON.stringify(data),
   });
 }
 
@@ -185,6 +229,16 @@ export async function unbookmarkPost(id: string): Promise<{ bookmarked: boolean 
   return apiFetch(`/posts/${id}/bookmark`, {
     method: 'DELETE',
     headers: authHeader(token),
+  });
+}
+
+export async function reportPost(id: string, reason = 'inappropriate'): Promise<{ reported: boolean }> {
+  const token = await getToken();
+  if (!token) throw new Error('Not authenticated');
+  return apiFetch(`/posts/${id}/report`, {
+    method: 'POST',
+    headers: authHeader(token),
+    body: JSON.stringify({ reason }),
   });
 }
 

@@ -4,18 +4,16 @@ import {
   Alert,
   Image,
   Platform,
-  Share,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
-import * as Clipboard from 'expo-clipboard';
-import { Heart, ChatCircle, Bookmark, DotsThree, SealCheck, ShareNetwork, Play } from 'phosphor-react-native';
+import { Heart, ChatCircle, Bookmark, DotsThree, SealCheck, Play } from 'phosphor-react-native';
 import { T } from '@/constants/theme';
 import { MsAvatar } from '@/components/MsAvatar';
 import type { Post } from '@/services/posts';
-import { likePost, unlikePost, bookmarkPost, unbookmarkPost, deletePost } from '@/services/posts';
+import { likePost, unlikePost, bookmarkPost, unbookmarkPost, deletePost, reportPost } from '@/services/posts';
 
 function formatCount(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -98,18 +96,9 @@ export function MsPostCard({
     }
   };
 
-  const handleShare = async () => {
-    try {
-      await Share.share({
-        message: post.caption || 'Check out this post on MeetSweet',
-        title: `${post.author.name} on MeetSweet`,
-      });
-    } catch {}
-  };
-
   const handleMore = () => {
     const ownOptions = ['Edit Post', 'Delete Post', 'Cancel'];
-    const guestOptions = ['Share Post', 'Copy Link', 'Report', 'Hide', 'Cancel'];
+    const guestOptions = ['Report', 'Cancel'];
     const options = isOwn ? ownOptions : guestOptions;
 
     if (Platform.OS === 'ios') {
@@ -127,7 +116,7 @@ export function MsPostCard({
           .filter((o) => o !== 'Cancel')
           .map((label) => ({
             text: label,
-            style: (label === 'Delete Post' || label === 'Report' || label === 'Hide') ? ('destructive' as const) : ('default' as const),
+             style: (label === 'Delete Post' || label === 'Report') ? ('destructive' as const) : ('default' as const),
             onPress: () => handleMoreAction(label),
           })),
         { text: 'Cancel', style: 'cancel' },
@@ -154,11 +143,12 @@ export function MsPostCard({
           },
         ]);
         break;
-      case 'Share Post':
-        handleShare();
-        break;
-      case 'Copy Link':
-        Clipboard.setStringAsync(`https://meetsweet.app/post/${post.id}`).catch(() => {});
+      case 'Report':
+        Alert.alert('Report post', 'Why are you reporting this post?', [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Inappropriate', onPress: () => reportPost(post.id, 'inappropriate').catch(() => Alert.alert('Error', 'Could not report post.')) },
+          { text: 'Something else', onPress: () => reportPost(post.id, 'other').catch(() => Alert.alert('Error', 'Could not report post.')) },
+        ]);
         break;
       default:
         break;
@@ -227,7 +217,7 @@ export function MsPostCard({
         <TouchableOpacity onPress={onPress} style={styles.videoPlaceholder} activeOpacity={0.85}>
           <View style={styles.videoOverlay}>
             <View style={styles.playBtn}>
-               <Play size={20} color={T.TEXT} fill={T.TEXT} />
+               <Play size={20} color={T.TEXT} weight="fill" />
             </View>
             {post.durationSecs != null && (
               <Text style={styles.duration}>
@@ -247,7 +237,7 @@ export function MsPostCard({
             size={18}
             color={liked ? '#EF4444' : T.TEXT_2}
            
-            fill={liked ? '#EF4444' : 'transparent'}
+            weight={liked ? 'fill' : 'regular'}
           />
           {likeCount > 0 && (
             <Text style={[styles.actionCount, liked && styles.actionCountLiked]}>
@@ -264,11 +254,6 @@ export function MsPostCard({
           )}
         </TouchableOpacity>
 
-        {/* Share */}
-        <TouchableOpacity style={styles.actionBtn} onPress={handleShare} activeOpacity={0.7}>
-          <ShareNetwork size={18} color={T.TEXT_2} />
-        </TouchableOpacity>
-
         <View style={{ flex: 1 }} />
 
         {/* Bookmark */}
@@ -277,7 +262,7 @@ export function MsPostCard({
             size={18}
             color={bookmarked ? T.TEXT : T.TEXT_2}
            
-            fill={bookmarked ? T.TEXT : 'transparent'}
+            weight={bookmarked ? 'fill' : 'regular'}
           />
         </TouchableOpacity>
       </View>

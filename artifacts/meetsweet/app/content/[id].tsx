@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowLeft, Heart, Lock, Play, ShareNetwork } from 'phosphor-react-native';
+import { ArrowLeft, Heart, Lock, Play } from 'phosphor-react-native';
 import { useGetExploreCatalog } from '@workspace/api-client-react';
 import { Button, Spinner } from 'heroui-native';
 import { MsAvatar } from '@/components/MsAvatar';
@@ -23,9 +23,9 @@ export default function ContentViewerScreen() {
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
-      <View style={styles.header}><Pressable style={styles.iconButton} onPress={() => router.back()}><ArrowLeft size={20} color={T.TEXT} /></Pressable><Text style={styles.headerTitle}>Preview</Text><Pressable style={styles.iconButton}><ShareNetwork size={18} color={T.TEXT_2} /></Pressable></View>
+      <View style={styles.header}><Pressable style={styles.iconButton} onPress={() => router.back()}><ArrowLeft size={20} color={T.TEXT} /></Pressable><Text style={styles.headerTitle}>Preview</Text><View style={styles.iconButton} /></View>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
-        <View style={[styles.art, { backgroundColor: tones[preview.gradient] ?? T.SURFACE_2 }]}><View style={styles.artGlow} /><View style={styles.artCopy}><Text style={styles.artKind}>{preview.kind.toUpperCase()} · {preview.duration}</Text><Text style={styles.artTitle}>{preview.title}</Text></View>{preview.isPremium && <View style={styles.lock}><Lock size={18} color={T.TEXT} /><Text style={styles.lockText}>PREMIUM PREVIEW</Text></View>} {!preview.isPremium && <View style={styles.play}><Play size={21} color={T.BG} fill={T.BG} /></View>}</View>
+        <View style={[styles.art, { backgroundColor: tones[preview.gradient] ?? T.SURFACE_2 }]}><View style={styles.artGlow} /><View style={styles.artCopy}><Text style={styles.artKind}>{preview.kind.toUpperCase()} · {preview.duration}</Text><Text style={styles.artTitle}>{preview.title}</Text></View>{preview.isPremium && <View style={styles.lock}><Lock size={18} color={T.TEXT} /><Text style={styles.lockText}>PREMIUM PREVIEW</Text></View>} {!preview.isPremium && <View style={styles.play}><Play size={21} color={T.BG} weight="fill" /></View>}</View>
         <View style={styles.creatorRow}><Pressable style={styles.creatorPress} onPress={() => router.push(`/creator/${creator.id}`)}><MsAvatar size={44} initials={creator.initials} showOnline={creator.isOnline} /><View style={styles.creatorCopy}><Text style={styles.creatorName}>{creator.name}</Text><Text style={styles.creatorHandle}>{creator.handle} · {creator.followers} followers</Text></View></Pressable><Pressable style={styles.likeButton}><Heart size={19} color={T.TEXT} /></Pressable></View>
         <Text style={styles.description}>A closer look at what makes this creator's work worth following. Subscribe for the full drop and a growing archive of premium content.</Text>
         <View style={styles.unlockCard}><View><Text style={styles.unlockEyebrow}>{preview.isPremium ? 'UNLOCK THIS DROP' : 'DISCOVER THE FULL FEED'}</Text><Text style={styles.unlockTitle}>{preview.lockedLabel}</Text></View><Button variant="primary" size="sm" onPress={() => router.push(`/creator/${creator.id}`)}><Button.Label>{preview.isPremium ? 'Subscribe' : 'View profile'}</Button.Label></Button></View>

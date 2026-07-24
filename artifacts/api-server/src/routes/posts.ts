@@ -10,13 +10,17 @@ function formatPost(
   author: Record<string, unknown>,
   likedByMe = false,
   bookmarkedByMe = false,
+  canViewFullMedia = true,
 ) {
+  const locked = post.visibility === "subscribers" && !canViewFullMedia;
   return {
     id: post.id,
     caption: post.caption,
     visibility: post.visibility,
-    mediaUrl: post.media_url ?? null,
-    mediaType: post.media_type ?? null,
+    mediaUrl: locked ? (post.preview_media_url ?? post.thumbnail_url ?? null) : (post.media_url ?? null),
+    mediaType: locked
+      ? (post.preview_media_type ?? ((post.preview_media_url ?? post.thumbnail_url) ? "image" : null))
+      : (post.media_type ?? null),
     thumbnailUrl: post.thumbnail_url ?? null,
     durationSecs: post.duration_secs ?? null,
     fileSize: post.file_size ?? null,
@@ -39,7 +43,20 @@ function formatPost(
     },
     likedByMe,
     bookmarkedByMe,
+    isLocked: locked,
   };
+}
+
+async function canViewPostMedia(post: Record<string, unknown>, userId?: string): Promise<boolean> {
+  if (post.visibility === "draft") return post.user_id === userId;
+  if (post.visibility !== "subscribers" || !userId || post.user_id === userId) return true;
+  const subscription = await queryOne(
+    `SELECT id FROM subscriptions
+     WHERE subscriber_id = $1 AND creator_id = $2 AND status = 'active'
+       AND (expires_at IS NULL OR expires_at > NOW())`,
+    [userId, post.user_id],
+  );
+  return !!subscription;
 }
 
 // ─── GET /api/posts — public feed ─────────────────────────────────────────────
@@ -60,8 +77,8 @@ router.get("/posts", optionalAuth, async (req: AuthRequest, res) => {
       whereClause = `p.id IN (SELECT post_id FROM bookmarks WHERE user_id = $${paramIdx++})`;
       params.push(req.user.sub);
     } else if (userId) {
-      whereClause = `p.user_id = $${paramIdx++}`;
-      params.push(userId);
+      whereClause = `p.user_id = $${paramIdx++} AND (p.visibility != 'draft' OR p.user_id = $${paramIdx++})`;
+      params.push(userId, req.user?.sub ?? "");
     } else {
       whereClause = "p.visibility = 'public'";
     }
@@ -96,14 +113,15 @@ router.get("/posts", optionalAuth, async (req: AuthRequest, res) => {
       saved.forEach((b) => bookmarkedSet.add(b.post_id));
     }
 
-    const formatted = posts.map((p) =>
+    const formatted = await Promise.all(posts.map(async (p) =>
       formatPost(
         p,
         { id: p.user_id, name: p.name, username: p.username, avatar_url: p.avatar_url, is_verified: p.is_verified, is_creator: p.is_creator },
         likedSet.has(p.id as string),
         bookmarkedSet.has(p.id as string),
+        await canViewPostMedia(p, req.user?.sub),
       ),
-    );
+    ));
 
     res.json({
       posts: formatted,
@@ -131,21 +149,34 @@ router.get("/posts/:id", optionalAuth, async (req: AuthRequest, res) => {
       res.status(404).json({ error: "Post not found" });
       return;
     }
+    if (post.visibility === "draft" && post.user_id !== req.user?.sub) {
+      res.status(404).json({ error: "Post not found" });
+      return;
+    }
 
     let likedByMe = false;
+    let bookmarkedByMe = false;
     if (req.user) {
       const liked = await queryOne(
         `SELECT id FROM likes WHERE user_id = $1 AND post_id = $2`,
         [req.user.sub, post.id],
       );
       likedByMe = !!liked;
+      const bookmarked = await queryOne(
+        `SELECT id FROM bookmarks WHERE user_id = $1 AND post_id = $2`,
+        [req.user.sub, post.id],
+      );
+      bookmarkedByMe = !!bookmarked;
     }
+    const canViewFullMedia = await canViewPostMedia(post, req.user?.sub);
 
     res.json({
       post: formatPost(
         post,
         { id: post.user_id, name: post.name, username: post.username, avatar_url: post.avatar_url, is_verified: post.is_verified, is_creator: post.is_creator },
         likedByMe,
+        bookmarkedByMe,
+        canViewFullMedia,
       ),
     });
   } catch (err) {
@@ -172,6 +203,9 @@ router.post("/posts", requireAuth, async (req: AuthRequest, res) => {
       priceCredits,
       categories,
       tags,
+       previewMediaUrl,
+       previewMediaType,
+       previewDurationSecs,
     } = req.body as {
       caption?: string;
       visibility?: string;
@@ -186,6 +220,9 @@ router.post("/posts", requireAuth, async (req: AuthRequest, res) => {
       priceCredits?: number;
       categories?: string[];
       tags?: string[];
+       previewMediaUrl?: string;
+       previewMediaType?: string;
+       previewDurationSecs?: number;
     };
 
     if (!["public", "subscribers", "draft"].includes(visibility)) {
@@ -196,8 +233,8 @@ router.post("/posts", requireAuth, async (req: AuthRequest, res) => {
     const postId = uuidv4();
 
     const [post] = await query<Record<string, unknown>>(
-      `INSERT INTO posts (id, user_id, caption, visibility, media_url, media_type, thumbnail_url, duration_secs, file_size, width, height, is_premium, price_credits)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+      `INSERT INTO posts (id, user_id, caption, visibility, media_url, media_type, thumbnail_url, duration_secs, file_size, width, height, is_premium, price_credits, preview_media_url, preview_media_type, preview_duration_secs)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
        RETURNING *`,
       [
         postId,
@@ -213,6 +250,9 @@ router.post("/posts", requireAuth, async (req: AuthRequest, res) => {
         height ?? null,
         isPremium,
         priceCredits ?? null,
+         previewMediaUrl ?? null,
+         previewMediaType ?? null,
+         previewDurationSecs ?? null,
       ],
     );
 
@@ -672,6 +712,29 @@ router.delete("/posts/:id/bookmark", requireAuth, async (req: AuthRequest, res) 
   } catch (err) {
     console.error("Unbookmark error:", err);
     res.status(500).json({ error: "Failed to remove bookmark" });
+  }
+});
+
+// ─── POST /api/posts/:id/report ────────────────────────────────────────────────
+
+router.post("/posts/:id/report", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const post = await queryOne(`SELECT id FROM posts WHERE id = $1`, [req.params.id]);
+    if (!post) {
+      res.status(404).json({ error: "Post not found" });
+      return;
+    }
+    const { reason = "inappropriate" } = req.body as { reason?: string };
+    await queryRaw(
+      `INSERT INTO post_reports (id, post_id, reporter_id, reason)
+       VALUES (gen_random_uuid(), $1, $2, $3)
+       ON CONFLICT (post_id, reporter_id) DO UPDATE SET reason = EXCLUDED.reason`,
+      [req.params.id, req.user!.sub, String(reason).slice(0, 200)],
+    );
+    res.status(201).json({ reported: true });
+  } catch (err) {
+    console.error("Report post error:", err);
+    res.status(500).json({ error: "Failed to report post" });
   }
 });
 

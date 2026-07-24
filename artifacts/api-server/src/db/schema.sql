@@ -96,6 +96,11 @@ CREATE INDEX IF NOT EXISTS idx_posts_user_id     ON posts(user_id);
 CREATE INDEX IF NOT EXISTS idx_posts_visibility   ON posts(visibility);
 CREATE INDEX IF NOT EXISTS idx_posts_created_at   ON posts(created_at DESC);
 
+-- Optional previews let subscriber-only posts expose a cover or short teaser
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS preview_media_url TEXT;
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS preview_media_type TEXT;
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS preview_duration_secs INTEGER;
+
 CREATE TABLE IF NOT EXISTS post_categories (
   post_id     UUID NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
   category_id UUID NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
@@ -123,6 +128,34 @@ CREATE TABLE IF NOT EXISTS bookmarks (
   post_id    UUID        NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (user_id, post_id)
+);
+
+-- ─── Subscriptions (payment layer foundation) ────────────────────────────────
+CREATE TABLE IF NOT EXISTS subscriptions (
+  id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  subscriber_id   UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  creator_id      UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  status          TEXT        NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'cancelled', 'expired')),
+  monthly_credits INTEGER     NOT NULL DEFAULT 0,
+  started_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at      TIMESTAMPTZ,
+  cancelled_at    TIMESTAMPTZ,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (subscriber_id, creator_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_subscriptions_subscriber ON subscriptions(subscriber_id);
+CREATE INDEX IF NOT EXISTS idx_subscriptions_creator ON subscriptions(creator_id);
+
+-- ─── Reports ──────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS post_reports (
+  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  post_id     UUID        NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+  reporter_id UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  reason      TEXT        NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (post_id, reporter_id)
 );
 
 -- ─── Comments ─────────────────────────────────────────────────────────────────

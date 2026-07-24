@@ -1,13 +1,13 @@
 import React from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowLeft, TrendUp, Users, CurrencyDollar, ChartBar } from 'phosphor-react-native';
+import { ArrowLeft, TrendUp, Users, CurrencyDollar, ChartBar, type Icon } from 'phosphor-react-native';
 import { router } from 'expo-router';
 import { T } from '@/constants/theme';
 import { MsSkeletonCard } from '@/components/MsSkeletonCard';
 
 type StatCard = {
-  Icon: React.ComponentType<{ size: number; color: string; strokeWidth: number }>;
+  Icon: Icon;
   label: string;
   value: string;
   change: string;

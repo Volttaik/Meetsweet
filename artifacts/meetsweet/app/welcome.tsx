@@ -60,7 +60,7 @@ export default function WelcomeScreen() {
       -SCREEN_W,
       { duration: 260, easing: Easing.in(Easing.cubic) },
       () => {
-        runOnJS(router.push)('/onboarding');
+        runOnJS(router.push)('/auth');
       },
     );
     slideOpacity.value = withTiming(0, { duration: 200, easing: Easing.in(Easing.cubic) });
@@ -130,17 +130,6 @@ export default function WelcomeScreen() {
           </FadeUp>
 
           <FadeUp delay={300}>
-            <Button
-              variant="outline"
-              size="lg"
-              onPress={() => router.push('/auth')}
-              style={styles.outlineBtn}
-            >
-              <Button.Label style={styles.outlineBtnLabel}>Log In</Button.Label>
-            </Button>
-          </FadeUp>
-
-          <FadeUp delay={380}>
             <Text style={styles.terms}>
               By continuing you agree to our{' '}
               <Text style={styles.termsLink}>Terms</Text>
@@ -227,16 +216,6 @@ const styles = StyleSheet.create({
     fontFamily: 'Poppins_600SemiBold',
     fontSize: 16,
     color: '#000000',
-  },
-  outlineBtn: {
-    borderRadius: 12,
-    height: 52,
-    borderColor: 'rgba(255,255,255,0.2)',
-  },
-  outlineBtnLabel: {
-    fontFamily: 'Poppins_600SemiBold',
-    fontSize: 16,
-    color: '#FFFFFF',
   },
   terms: {
     fontSize: 13,

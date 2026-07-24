@@ -24,6 +24,7 @@ import {
   FileText,
   Eye,
   SignOut,
+  type Icon,
 } from 'phosphor-react-native';
 import { router } from 'expo-router';
 import { T } from '@/constants/theme';
@@ -32,7 +33,7 @@ import { useAuth } from '@/contexts/AuthContext';
 
 // ─── Settings row ─────────────────────────────────────────────────────────────
 
-type RowIcon = React.ComponentType<{ size: number; color: string; weight?: string }>;
+type RowIcon = Icon;
 
 function SettingsRow({
   Icon,
