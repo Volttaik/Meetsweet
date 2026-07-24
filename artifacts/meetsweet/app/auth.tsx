@@ -19,15 +19,15 @@ import {
 } from 'heroui-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowLeft, At, Eye, EyeSlash, Lock } from 'phosphor-react-native';
+import { At, Eye, EyeSlash, Lock } from 'phosphor-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { ApiError } from '@/services/api';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const INPUT_BG = '#111111';
-const INPUT_BORDER = 'rgba(255,255,255,0.1)';
-const INPUT_BORDER_FOCUSED = 'rgba(255,255,255,0.35)';
+const INPUT_BORDER = 'transparent';
+const INPUT_BORDER_FOCUSED = 'rgba(255,255,255,0.25)';
 const INPUT_BORDER_ERROR = '#EF4444';
 const FORM_MAX_WIDTH = 340;
 
@@ -115,15 +115,6 @@ export default function AuthScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* Back */}
-        <TouchableOpacity
-          onPress={() => router.back()}
-          style={styles.backBtn}
-          hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
-        >
-          <ArrowLeft size={22} color="#FFFFFF" />
-        </TouchableOpacity>
-
         {/* Header */}
         <View style={styles.header}>
           <Image
@@ -282,16 +273,6 @@ const styles = StyleSheet.create({
     gap: 24,
     flexGrow: 1,
     alignItems: 'center',
-  },
-
-  backBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 13,
-    backgroundColor: 'rgba(255,255,255,0.07)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    alignSelf: 'flex-start',
   },
 
   header: { alignItems: 'center', gap: 10 },

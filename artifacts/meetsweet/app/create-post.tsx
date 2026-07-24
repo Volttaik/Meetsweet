@@ -181,8 +181,8 @@ export default function CreatePostScreen() {
       setStep('success');
       await new Promise((r) => setTimeout(r, 1200));
 
-      // Navigate to profile
-      router.replace('/(tabs)/profile');
+      // Navigate to home feed so the new post is visible
+      router.replace('/(tabs)');
     } catch (err) {
       setError((err as Error).message ?? 'Publish failed. Please try again.');
       setStep('compose');

@@ -150,10 +150,13 @@ router.post("/auth/register", async (req, res) => {
          VALUES ($1, $2, $3, 'verify', NOW() + INTERVAL '15 minutes')`,
         [userId, normalizedEmail, code],
       );
-      await Promise.all([
+      // Email sending is best-effort — registration succeeds even if email fails.
+      Promise.all([
         emailService.sendWelcomeEmail(normalizedEmail, finalUsername),
         emailService.sendVerificationEmail(normalizedEmail, finalUsername, code),
-      ]);
+      ]).catch((err) => {
+        console.warn("Email send failed (non-fatal):", err instanceof Error ? err.message : err);
+      });
     }
 
     res.status(201).json({

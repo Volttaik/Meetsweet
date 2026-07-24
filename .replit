@@ -1,4 +1,4 @@
-modules = ["nodejs-20", "web", "bash"]
+modules = ["nodejs-20", "web", "bash", "postgresql-16"]
 
 [deployment]
 router = "application"
@@ -26,8 +26,3 @@ channel = "stable-25_05"
 
 [userenv.shared]
 NODE_ENV = "production"
-
-[userenv.development]
-JWT_SECRET = "re_jG2tjXgF_92oGUCeWDNMFA6pnNNLDPfm5"
-RESEND_API_KEY = "re_jG2tjXgF_92oGUCeWDNMFA6pnNNLDPfm5"
-RESEND_FROM_EMAIL = "noreply@quizmi.space"

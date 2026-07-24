@@ -46,8 +46,8 @@ import * as ImagePicker from 'expo-image-picker';
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const INPUT_BG = '#111111';
-const INPUT_BORDER = 'rgba(255,255,255,0.1)';
-const INPUT_BORDER_FOCUSED = 'rgba(255,255,255,0.35)';
+const INPUT_BORDER = 'transparent';
+const INPUT_BORDER_FOCUSED = 'rgba(255,255,255,0.25)';
 const INPUT_BORDER_ERROR = '#EF4444';
 
 type StepNum = 1 | 2 | 3;
