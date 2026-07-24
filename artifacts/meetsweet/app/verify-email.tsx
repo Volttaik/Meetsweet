@@ -187,7 +187,7 @@ export default function VerifyEmailScreen() {
             ]}
           >
             {loading ? (
-              <Spinner size="sm" />
+              <Spinner size="sm" color="#FFFFFF" />
             ) : (
               <Button.Label style={[
                 styles.verifyBtnLabel,

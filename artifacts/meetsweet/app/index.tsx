@@ -61,7 +61,7 @@ export default function SplashScreen() {
         </Animated.View>
 
         <Animated.View style={[styles.spinnerWrap, spinnerStyle]}>
-          <Spinner size="sm" color="default" />
+          <Spinner size="sm" color="#FFFFFF" />
         </Animated.View>
       </View>
 

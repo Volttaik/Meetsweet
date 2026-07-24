@@ -128,7 +128,7 @@ function StepEmail({ onNext }: { onNext: (email: string) => void }) {
         style={styles.primaryBtn}
       >
         {loading
-          ? <Spinner size="sm" />
+          ? <Spinner size="sm" color="#FFFFFF" />
           : <Button.Label style={styles.btnLabel}>Send Reset Code</Button.Label>}
       </Button>
     </View>
@@ -361,7 +361,7 @@ function StepNewPassword({ onNext }: { onNext: () => void }) {
         style={styles.primaryBtn}
       >
         {loading
-          ? <Spinner size="sm" />
+          ? <Spinner size="sm" color="#FFFFFF" />
           : <Button.Label style={styles.btnLabel}>Reset Password</Button.Label>}
       </Button>
     </View>

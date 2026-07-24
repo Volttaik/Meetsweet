@@ -96,7 +96,7 @@ export default function RootLayout() {
       <ErrorBoundary>
         <QueryClientProvider client={queryClient}>
           <GestureHandlerRootView style={{ flex: 1 }}>
-            <HeroUINativeProvider>
+            <HeroUINativeProvider config={{ devInfo: { stylingPrinciples: false } }}>
               <KeyboardProvider>
                 <RootLayoutNav />
               </KeyboardProvider>

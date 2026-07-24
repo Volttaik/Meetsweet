@@ -16,15 +16,15 @@ const TAB_HEIGHT = 60;
 type VisualTab = {
   label: string;
   Icon: React.ComponentType<{ size: number; color: string; strokeWidth: number }>;
-  routeIndex?: number; // undefined = center action, no route
+  routeName?: string; // undefined = center action, no route
 };
 
 const VISUAL_TABS: VisualTab[] = [
-  { label: 'Home',     Icon: Home,          routeIndex: 0 },
-  { label: 'Explore',  Icon: Search,         routeIndex: 1 },
-  { label: 'Create',   Icon: Plus            },          // center — no routeIndex
-  { label: 'Messages', Icon: MessageCircle,  routeIndex: 2 },
-  { label: 'Profile',  Icon: User,           routeIndex: 3 },
+  { label: 'Home',     Icon: Home,          routeName: 'index' },
+  { label: 'Explore',  Icon: Search,        routeName: 'explore' },
+  { label: 'Create',   Icon: Plus            },          // center — no route
+  { label: 'Messages', Icon: MessageCircle,  routeName: 'messages' },
+  { label: 'Profile',  Icon: User,           routeName: 'profile' },
 ];
 
 // ─── Single tab button ────────────────────────────────────────────────────────
@@ -51,7 +51,7 @@ function TabBtn({
   };
 
   // Center Create button
-  if (tab.routeIndex === undefined) {
+  if (tab.routeName === undefined) {
     return (
       <Pressable onPress={handlePress} style={styles.centerWrap}>
         <Animated.View style={[styles.centerBtn, scaleStyle]}>
@@ -86,13 +86,12 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
 
   const handlePress = useCallback(
     (tab: VisualTab) => {
-      if (tab.routeIndex === undefined) {
-        // TODO: check creator status → route to creator-dashboard if already a creator
+      if (tab.routeName === undefined) {
         router.push('/become-creator');
         return;
       }
-      const route = state.routes[tab.routeIndex];
-      if (route && state.index !== tab.routeIndex) {
+      const route = state.routes.find((candidate: { name: string }) => candidate.name === tab.routeName);
+      if (route && state.routes[state.index]?.name !== tab.routeName) {
         navigation.navigate(route.name);
       }
     },
@@ -110,7 +109,7 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
         <TabBtn
           key={i}
           tab={tab}
-          isActive={tab.routeIndex !== undefined && state.index === tab.routeIndex}
+          isActive={tab.routeName !== undefined && state.routes[state.index]?.name === tab.routeName}
           onPress={() => handlePress(tab)}
         />
       ))}

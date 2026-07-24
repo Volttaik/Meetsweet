@@ -6,6 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface HealthStatus {
-  status: string;
+export interface TrendingCollection {
+  id: string;
+  title: string;
+  subtitle: string;
+  itemCount: number;
+  gradient: string;
 }

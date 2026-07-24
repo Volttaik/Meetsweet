@@ -561,7 +561,7 @@ function Step3({
         style={[styles.primaryBtn, loading && styles.primaryBtnLoading]}
       >
         {loading ? (
-          <Spinner size="sm" />
+          <Spinner size="sm" color="#FFFFFF" />
         ) : (
           <Button.Label style={styles.btnLabel}>Complete</Button.Label>
         )}

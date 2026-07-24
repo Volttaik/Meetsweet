@@ -1,13 +1,6 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { StyleSheet, View, ViewStyle } from 'react-native';
-import Animated, {
-  Easing,
-  useAnimatedStyle,
-  useSharedValue,
-  withRepeat,
-  withSequence,
-  withTiming,
-} from 'react-native-reanimated';
+import { Skeleton } from 'heroui-native';
 import { T } from '@/constants/theme';
 
 interface MsSkeletonCardProps {
@@ -16,30 +9,18 @@ interface MsSkeletonCardProps {
   radius?: number;
 }
 
-/** Animated shimmer rectangle — wraps content or stands alone */
+/** HeroUI Native animated skeleton rectangle — wraps content or stands alone. */
 export function MsSkeletonCard({
   style,
   height = 120,
   radius = T.RADIUS.md,
 }: MsSkeletonCardProps) {
-  const opacity = useSharedValue(0.35);
-
-  useEffect(() => {
-    opacity.value = withRepeat(
-      withSequence(
-        withTiming(0.75, { duration: 900, easing: Easing.inOut(Easing.sine) }),
-        withTiming(0.35, { duration: 900, easing: Easing.inOut(Easing.sine) }),
-      ),
-      -1,
-      false,
-    );
-  }, []);
-
-  const animStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
-
   return (
-    <Animated.View
-      style={[{ backgroundColor: T.SURFACE, height, borderRadius: radius }, animStyle, style]}
+    <Skeleton
+      isLoading
+      variant="pulse"
+      animation={{ pulse: { minOpacity: 0.35, maxOpacity: 0.75, duration: 1800 } }}
+      style={[{ backgroundColor: T.SURFACE, height, borderRadius: radius }, style]}
     />
   );
 }
@@ -56,26 +37,13 @@ export function MsSkeletonRow({
   radius?: number;
   style?: ViewStyle;
 }) {
-  const opacity = useSharedValue(0.3);
-
-  useEffect(() => {
-    opacity.value = withRepeat(
-      withSequence(
-        withTiming(0.65, { duration: 1000, easing: Easing.inOut(Easing.sine) }),
-        withTiming(0.3, { duration: 1000, easing: Easing.inOut(Easing.sine) }),
-      ),
-      -1,
-      false,
-    );
-  }, []);
-
-  const animStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
-
   return (
-    <Animated.View
+    <Skeleton
+      isLoading
+      variant="pulse"
+      animation={{ pulse: { minOpacity: 0.3, maxOpacity: 0.65, duration: 2000 } }}
       style={[
         { backgroundColor: T.SURFACE_2, height, borderRadius: radius, width: width as number },
-        animStyle,
         style,
       ]}
     />

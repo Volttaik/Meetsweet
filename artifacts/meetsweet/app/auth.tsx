@@ -264,7 +264,7 @@ export default function AuthScreen() {
               style={[styles.submitBtn, loading && styles.submitBtnLoading]}
             >
               {loading ? (
-                <Spinner size="sm" />
+                <Spinner size="sm" color="#FFFFFF" />
               ) : (
                 <Button.Label style={styles.submitBtnLabel}>Log In</Button.Label>
               )}

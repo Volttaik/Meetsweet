@@ -256,7 +256,7 @@ export default function VerificationScreen() {
             ]}
           >
             {loading ? (
-              <Spinner size="sm" />
+              <Spinner size="sm" color="#FFFFFF" />
             ) : (
               <Button.Label style={[
                 styles.verifyBtnLabel,
