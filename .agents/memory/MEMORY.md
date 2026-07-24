@@ -1,0 +1,1 @@
+- [Cron architecture](cron-architecture.md) — single daily cron at /api/cron/daily; individual cron routes removed; service modules in server/services/maintenance/.
