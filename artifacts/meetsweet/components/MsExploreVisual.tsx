@@ -1,6 +1,6 @@
 import React from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
-import { Check, Lock, MoreHorizontal, Play, Sparkles, Users } from 'lucide-react-native';
+import { Check, Lock, DotsThree, Play, Sparkle, Users } from 'phosphor-react-native';
 import { Avatar } from 'heroui-native';
 import type { ContentPreview, Creator, TrendingCollection } from '@workspace/api-client-react';
 import { MsAvatar } from '@/components/MsAvatar';
@@ -38,7 +38,7 @@ export function MsCreatorIdentity({
       <View style={identityStyles.copy}>
         <View style={identityStyles.nameRow}>
           <Text style={identityStyles.name} numberOfLines={1}>{creator.name}</Text>
-          {creator.isVerified && <Check size={13} color={T.TEXT} strokeWidth={2.6} />}
+          {creator.isVerified && <Check size={13} color={T.TEXT} />}
         </View>
         <Text style={identityStyles.handle} numberOfLines={1}>{creator.handle}</Text>
       </View>
@@ -65,7 +65,7 @@ export function MsFeaturedCreatorCard({
       delayLongPress={420}
     >
       <View style={featuredStyles.mark}>
-        <Sparkles size={14} color={T.TEXT} strokeWidth={1.6} />
+        <Sparkle size={14} color={T.TEXT} />
         <Text style={featuredStyles.markText}>FEATURED</Text>
       </View>
       <View style={featuredStyles.avatarWrap}>
@@ -77,14 +77,14 @@ export function MsFeaturedCreatorCard({
       <View style={featuredStyles.featuredCopy}>
         <View style={featuredStyles.nameRow}>
           <Text style={featuredStyles.name} numberOfLines={1}>{creator.name}</Text>
-          {creator.isVerified && <Check size={14} color={T.TEXT} strokeWidth={2.4} />}
+          {creator.isVerified && <Check size={14} color={T.TEXT} />}
         </View>
         <Text style={featuredStyles.handle}>{creator.handle} · {creator.category}</Text>
         <Text style={featuredStyles.bio} numberOfLines={2}>{creator.bio}</Text>
       </View>
       <View style={featuredStyles.footer}>
         <View style={featuredStyles.metric}>
-          <Users size={13} color={T.TEXT_2} strokeWidth={1.5} />
+          <Users size={13} color={T.TEXT_2} />
           <Text style={featuredStyles.metricText}>{creator.followers}</Text>
         </View>
         <Text style={featuredStyles.credits}>{creator.monthlyCredits} credits / mo</Text>
@@ -136,7 +136,7 @@ export function MsPreviewCard({
           <View style={previewStyles.lineWide} />
         </View>
         <View style={previewStyles.typeMark}>
-          {preview.isPremium ? <Lock size={13} color={T.TEXT} strokeWidth={1.8} /> : <Play size={13} color={T.TEXT} fill={T.TEXT} strokeWidth={1.8} />}
+          {preview.isPremium ? <Lock size={13} color={T.TEXT} /> : <Play size={13} color={T.TEXT} fill={T.TEXT} />}
           <Text style={previewStyles.typeText}>{preview.kind}</Text>
         </View>
         <View style={previewStyles.previewBadge}>
@@ -164,7 +164,7 @@ export function MsCollectionCard({
 }) {
   return (
     <Pressable style={[collectionStyles.card, { backgroundColor: tone(collection.gradient) }]} onPress={onPress}>
-      <View style={collectionStyles.icon}><Sparkles size={16} color={T.TEXT} strokeWidth={1.6} /></View>
+      <View style={collectionStyles.icon}><Sparkle size={16} color={T.TEXT} /></View>
       <View style={collectionStyles.copy}>
         <Text style={collectionStyles.title}>{collection.title}</Text>
         <Text style={collectionStyles.subtitle}>{collection.subtitle}</Text>

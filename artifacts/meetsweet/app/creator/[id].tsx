@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowLeft, Check, ChevronRight, Lock, Play, Sparkles, Users } from 'lucide-react-native';
+import { ArrowLeft, Check, CaretRight, Lock, Play, Sparkle, Users } from 'phosphor-react-native';
 import { BottomSheet, Button, Spinner } from 'heroui-native';
 import { useGetExploreCatalog } from '@workspace/api-client-react';
 import { MsAvatar } from '@/components/MsAvatar';
@@ -36,12 +36,12 @@ export default function CreatorProfileScreen() {
       <View style={styles.header}>
         <Pressable style={styles.backButton} onPress={() => router.back()} accessibilityLabel="Back"><ArrowLeft size={20} color={T.TEXT} /></Pressable>
         <Text style={styles.headerTitle}>Creator profile</Text>
-        <Pressable style={styles.moreButton}><Sparkles size={17} color={T.TEXT_2} /></Pressable>
+        <Pressable style={styles.moreButton}><Sparkle size={17} color={T.TEXT_2} /></Pressable>
       </View>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
         <View style={styles.profileHero}>
           <View style={styles.avatarWrap}><MsAvatar size={84} initials={creator.initials} showOnline={creator.isOnline} /></View>
-          <View style={styles.nameRow}><Text style={styles.name}>{creator.name}</Text>{creator.isVerified && <Check size={16} color={T.TEXT} strokeWidth={2.5} />}</View>
+          <View style={styles.nameRow}><Text style={styles.name}>{creator.name}</Text>{creator.isVerified && <Check size={16} color={T.TEXT} />}</View>
           <Text style={styles.handle}>{creator.handle} · {creator.category}</Text>
           <Text style={styles.bio}>{creator.bio}</Text>
           <View style={styles.metrics}>
@@ -62,7 +62,7 @@ export default function CreatorProfileScreen() {
         <View style={styles.aboutCard}>
           <Users size={18} color={T.TEXT_2} />
           <View style={styles.aboutCopy}><Text style={styles.aboutTitle}>A closer connection</Text><Text style={styles.aboutText}>Subscribe for the full feed, private drops, and monthly creator notes.</Text></View>
-          <ChevronRight size={17} color={T.TEXT_3} />
+          <CaretRight size={17} color={T.TEXT_3} />
         </View>
       </ScrollView>
       <BottomSheet isOpen={sheetOpen} onOpenChange={setSheetOpen}>

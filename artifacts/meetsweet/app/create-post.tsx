@@ -16,6 +16,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import { Button, Chip, Spinner } from 'heroui-native';
 import { Ionicons } from '@expo/vector-icons';
+import { ArrowLeft, Check } from 'phosphor-react-native';
 import { T } from '@/constants/theme';
 import { uploadMedia } from '@/services/media';
 import { createPost } from '@/services/posts';
@@ -197,7 +198,7 @@ export default function CreatePostScreen() {
           {step === 'success' ? (
             <>
               <View style={styles.successIcon}>
-                <Check size={32} color={T.BG} strokeWidth={2.5} />
+                <Check size={32} color={T.BG} />
               </View>
               <Text style={styles.publishTitle}>Published!</Text>
               <Text style={styles.publishSubtitle}>Your post is now live.</Text>
@@ -245,7 +246,7 @@ export default function CreatePostScreen() {
           onPress={() => router.back()}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
-          <ArrowLeft size={20} color={T.TEXT} strokeWidth={2} />
+          <ArrowLeft size={20} color={T.TEXT} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>New Post</Text>
         <TouchableOpacity

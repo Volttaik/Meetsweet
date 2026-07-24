@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { Spinner } from 'heroui-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Pencil, Plus, Search, X } from 'lucide-react-native';
+import { PencilSimple, Plus, MagnifyingGlass, X } from 'phosphor-react-native';
 import { router } from 'expo-router';
 import { T } from '@/constants/theme';
 import { MsAvatar } from '@/components/MsAvatar';
@@ -136,11 +136,11 @@ function NewMessageModal({
         <View style={styles.modalHeader}>
           <Text style={styles.modalTitle}>New Message</Text>
           <TouchableOpacity onPress={onClose} style={styles.modalClose} activeOpacity={0.7}>
-            <X size={20} color={T.TEXT} strokeWidth={2} />
+            <X size={20} color={T.TEXT} />
           </TouchableOpacity>
         </View>
         <View style={styles.modalSearch}>
-          <Search size={15} color={T.TEXT_2} strokeWidth={1.8} />
+          <MagnifyingGlass size={15} color={T.TEXT_2} />
           <TextInput
             placeholder="Search by name or username…"
             placeholderTextColor={T.TEXT_3}
@@ -230,13 +230,13 @@ export default function MessagesScreen() {
           activeOpacity={0.7}
           onPress={() => setShowNewMsg(true)}
         >
-          <Pencil size={18} color={T.TEXT} strokeWidth={1.8} />
+          <PencilSimple size={18} color={T.TEXT} />
         </TouchableOpacity>
       </View>
 
       {/* Search */}
       <View style={styles.searchWrap}>
-        <Search size={15} color={T.TEXT_2} strokeWidth={1.8} />
+        <MagnifyingGlass size={15} color={T.TEXT_2} />
         <TextInput
           placeholder="Search conversations…"
           placeholderTextColor={T.TEXT_3}
@@ -246,7 +246,7 @@ export default function MessagesScreen() {
         />
         {searchText.length > 0 && (
           <TouchableOpacity onPress={() => setSearchText('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <X size={14} color={T.TEXT_3} strokeWidth={2} />
+            <X size={14} color={T.TEXT_3} />
           </TouchableOpacity>
         )}
       </View>
@@ -312,7 +312,7 @@ export default function MessagesScreen() {
         activeOpacity={0.85}
         onPress={() => setShowNewMsg(true)}
       >
-        <Plus size={22} color="#000000" strokeWidth={2.5} />
+        <Plus size={22} color="#000000" />
       </TouchableOpacity>
 
       <NewMessageModal visible={showNewMsg} onClose={() => setShowNewMsg(false)} />

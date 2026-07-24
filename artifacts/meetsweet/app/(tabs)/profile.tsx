@@ -10,7 +10,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Camera, FileText, Film, Image as ImageIcon, Settings, Share2 } from 'lucide-react-native';
+import { Camera, FileText, FilmStrip, Image as ImageIcon, Gear, ShareNetwork } from 'phosphor-react-native';
 import { router } from 'expo-router';
 import { T } from '@/constants/theme';
 import { MsAvatar } from '@/components/MsAvatar';
@@ -133,7 +133,7 @@ export default function ProfileScreen() {
                 // Show media preview (image thumbnail)
                 <View style={{ flex: 1, backgroundColor: T.SURFACE_2, alignItems: 'center', justifyContent: 'center' }}>
                   <Text style={{ color: T.TEXT_3, fontSize: 11, fontFamily: T.FONT.medium }}>
-                    {p.mediaType === 'video' ? <Film size={18} color={T.TEXT_3} /> : <ImageIcon size={18} color={T.TEXT_3} />}
+                    {p.mediaType === 'video' ? <FilmStrip size={18} color={T.TEXT_3} /> : <ImageIcon size={18} color={T.TEXT_3} />}
                   </Text>
                 </View>
               )}
@@ -166,7 +166,7 @@ export default function ProfileScreen() {
               style={{ width: gridItemSize, height: gridItemSize, backgroundColor: T.SURFACE_2, alignItems: 'center', justifyContent: 'center' }}
             >
               <Text style={{ color: T.TEXT_3, fontSize: 11 }}>
-                {p.mediaType === 'video' ? <Film size={18} color={T.TEXT_3} /> : <ImageIcon size={18} color={T.TEXT_3} />}
+                {p.mediaType === 'video' ? <FilmStrip size={18} color={T.TEXT_3} /> : <ImageIcon size={18} color={T.TEXT_3} />}
               </Text>
             </View>
           ))}
@@ -199,7 +199,7 @@ export default function ProfileScreen() {
             style={{ width: gridItemSize, height: gridItemSize, backgroundColor: T.SURFACE_2, alignItems: 'center', justifyContent: 'center' }}
           >
             <Text style={{ color: T.TEXT_3, fontSize: 11 }}>
-                {p.mediaType === 'video' ? <Film size={18} color={T.TEXT_3} /> : p.mediaUrl ? <Camera size={18} color={T.TEXT_3} /> : <FileText size={18} color={T.TEXT_3} />}
+                {p.mediaType === 'video' ? <FilmStrip size={18} color={T.TEXT_3} /> : p.mediaUrl ? <Camera size={18} color={T.TEXT_3} /> : <FileText size={18} color={T.TEXT_3} />}
             </Text>
           </View>
         ))}
@@ -222,10 +222,10 @@ export default function ProfileScreen() {
           <Text style={styles.topUsername}>@{user?.username ?? 'username'}</Text>
           <View style={styles.topActions}>
             <TouchableOpacity style={styles.iconBtn} activeOpacity={0.7}>
-              <Share2 size={18} color={T.TEXT} strokeWidth={1.8} />
+              <ShareNetwork size={18} color={T.TEXT} />
             </TouchableOpacity>
             <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/settings')} activeOpacity={0.7}>
-              <Settings size={18} color={T.TEXT} strokeWidth={1.8} />
+              <Gear size={18} color={T.TEXT} />
             </TouchableOpacity>
           </View>
         </View>

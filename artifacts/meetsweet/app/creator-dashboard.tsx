@@ -1,7 +1,7 @@
 import React from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowLeft, TrendingUp, Users, DollarSign, BarChart2 } from 'lucide-react-native';
+import { ArrowLeft, TrendUp, Users, CurrencyDollar, ChartBar } from 'phosphor-react-native';
 import { router } from 'expo-router';
 import { T } from '@/constants/theme';
 import { MsSkeletonCard } from '@/components/MsSkeletonCard';
@@ -15,17 +15,17 @@ type StatCard = {
 };
 
 const STATS: StatCard[] = [
-  { Icon: DollarSign, label: 'This Month',   value: '$0.00',  change: '—',     positive: true  },
+  { Icon: CurrencyDollar, label: 'This Month',   value: '$0.00',  change: '—',     positive: true  },
   { Icon: Users,      label: 'Subscribers',  value: '0',      change: '—',     positive: true  },
-  { Icon: TrendingUp, label: 'Profile Views',value: '0',      change: '—',     positive: true  },
-  { Icon: BarChart2,  label: 'Engagement',   value: '0%',     change: '—',     positive: true  },
+  { Icon: TrendUp, label: 'Profile Views',value: '0',      change: '—',     positive: true  },
+  { Icon: ChartBar,  label: 'Engagement',   value: '0%',     change: '—',     positive: true  },
 ];
 
 function StatCard({ Icon, label, value, change, positive }: StatCard) {
   return (
     <View style={styles.statCard}>
       <View style={styles.statIcon}>
-        <Icon size={18} color={T.TEXT_2} strokeWidth={1.8} />
+        <Icon size={18} color={T.TEXT_2} />
       </View>
       <Text style={styles.statLabel}>{label}</Text>
       <Text style={styles.statValue}>{value}</Text>
@@ -49,7 +49,7 @@ export default function CreatorDashboardScreen() {
           activeOpacity={0.7}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
         >
-          <ArrowLeft size={22} color={T.TEXT} strokeWidth={2} />
+          <ArrowLeft size={22} color={T.TEXT} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Creator Dashboard</Text>
         <View style={{ width: 38 }} />

@@ -8,7 +8,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Bell, Search } from 'lucide-react-native';
+import { Bell, MagnifyingGlass } from 'phosphor-react-native';
 import { router } from 'expo-router';
 import { T } from '@/constants/theme';
 import { MsAvatar } from '@/components/MsAvatar';
@@ -105,10 +105,10 @@ export default function HomeScreen() {
             activeOpacity={0.7}
             onPress={() => router.push('/notifications')}
           >
-            <Bell size={20} color={T.TEXT} strokeWidth={1.8} />
+            <Bell size={20} color={T.TEXT} />
           </TouchableOpacity>
           <TouchableOpacity style={styles.iconBtn} activeOpacity={0.7}>
-            <Search size={20} color={T.TEXT} strokeWidth={1.8} />
+            <MagnifyingGlass size={20} color={T.TEXT} />
           </TouchableOpacity>
         </View>
       </View>

@@ -10,21 +10,21 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ArrowLeft,
-  ChevronRight,
+  CaretRight,
   User,
   Info,
   Link,
   Lock,
   Bell,
   Shield,
-  UserX,
-  HelpCircle,
-  MessageSquare,
-  AlertTriangle,
+  UserMinus,
+  Question,
+  ChatCentered,
+  Warning,
   FileText,
   Eye,
-  LogOut,
-} from 'lucide-react-native';
+  SignOut,
+} from 'phosphor-react-native';
 import { router } from 'expo-router';
 import { T } from '@/constants/theme';
 import { MsAvatar } from '@/components/MsAvatar';
@@ -32,7 +32,7 @@ import { useAuth } from '@/contexts/AuthContext';
 
 // ─── Settings row ─────────────────────────────────────────────────────────────
 
-type RowIcon = React.ComponentType<{ size: number; color: string; strokeWidth: number }>;
+type RowIcon = React.ComponentType<{ size: number; color: string; weight?: string }>;
 
 function SettingsRow({
   Icon,
@@ -60,7 +60,7 @@ function SettingsRow({
     >
       {Icon && (
         <View style={styles.rowIconWrap}>
-          <Icon size={17} color={iconColor} strokeWidth={1.8} />
+          <Icon size={17} color={iconColor} />
         </View>
       )}
       <Text style={[styles.rowLabel, { color: labelColor }]}>{label}</Text>
@@ -70,7 +70,7 @@ function SettingsRow({
         </View>
       )}
       {chevron && (
-        <ChevronRight size={15} color={T.TEXT_3} strokeWidth={1.5} />
+        <CaretRight size={15} color={T.TEXT_3} />
       )}
     </TouchableOpacity>
   );
@@ -94,7 +94,7 @@ export default function SettingsScreen() {
     ? user.name.trim().split(' ').map((w: string) => w[0]?.toUpperCase() ?? '').slice(0, 2).join('')
     : 'U';
 
-  const handleLogOut = () => {
+  const handleSignOut = () => {
     Alert.alert(
       'Log Out',
       'Are you sure you want to log out?',
@@ -122,7 +122,7 @@ export default function SettingsScreen() {
           activeOpacity={0.7}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
         >
-          <ArrowLeft size={22} color={T.TEXT} strokeWidth={2} />
+          <ArrowLeft size={22} color={T.TEXT} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Settings</Text>
         <View style={{ width: 38 }} />
@@ -149,7 +149,7 @@ export default function SettingsScreen() {
               @{user?.username ?? 'username'} · Tap to edit profile
             </Text>
           </View>
-          <ChevronRight size={18} color={T.TEXT_3} strokeWidth={1.5} />
+          <CaretRight size={18} color={T.TEXT_3} />
         </TouchableOpacity>
 
         {/* Account */}
@@ -167,7 +167,7 @@ export default function SettingsScreen() {
         <View style={styles.section}>
           <SettingsRow Icon={Lock}    label="Privacy Settings"   onPress={() => {}} />
           <View style={styles.rowDivider} />
-          <SettingsRow Icon={UserX}   label="Blocked Users"      onPress={() => {}} />
+          <SettingsRow Icon={UserMinus}   label="Blocked Users"      onPress={() => {}} />
           <View style={styles.rowDivider} />
           <SettingsRow Icon={Eye}     label="Content Preferences" onPress={() => {}} />
         </View>
@@ -191,11 +191,11 @@ export default function SettingsScreen() {
         {/* Support */}
         <SectionHeader title="Support" />
         <View style={styles.section}>
-          <SettingsRow Icon={HelpCircle}     label="Help Center"        onPress={() => {}} />
+          <SettingsRow Icon={Question}     label="Help Center"        onPress={() => {}} />
           <View style={styles.rowDivider} />
-          <SettingsRow Icon={MessageSquare}  label="Contact Support"    onPress={() => {}} />
+          <SettingsRow Icon={ChatCentered}  label="Contact Support"    onPress={() => {}} />
           <View style={styles.rowDivider} />
-          <SettingsRow Icon={AlertTriangle}  label="Report a Problem"   onPress={() => {}} />
+          <SettingsRow Icon={Warning}  label="Report a Problem"   onPress={() => {}} />
         </View>
 
         {/* Legal */}
@@ -209,8 +209,8 @@ export default function SettingsScreen() {
         </View>
 
         {/* Log out */}
-        <TouchableOpacity style={styles.logoutBtn} onPress={handleLogOut} activeOpacity={0.8}>
-          <LogOut size={17} color={T.ERROR} strokeWidth={1.8} />
+        <TouchableOpacity style={styles.logoutBtn} onPress={handleSignOut} activeOpacity={0.8}>
+          <SignOut size={17} color={T.ERROR} />
           <Text style={styles.logoutLabel}>Log Out</Text>
         </TouchableOpacity>
 

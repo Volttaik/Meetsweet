@@ -13,13 +13,15 @@ function getResend(): Resend {
   return resend;
 }
 
-const configuredSender = process.env.RESEND_FROM_EMAIL;
-if (!configuredSender) {
-  throw new Error("RESEND_FROM_EMAIL must be set to a verified sender address");
+function getFrom(): string {
+  const configuredSender = process.env.RESEND_FROM_EMAIL;
+  if (!configuredSender) {
+    throw new Error("RESEND_FROM_EMAIL must be set to a verified sender address");
+  }
+  return configuredSender.includes("<")
+    ? configuredSender
+    : `MeetSweet <${configuredSender}>`;
 }
-const FROM = configuredSender.includes("<")
-  ? configuredSender
-  : `MeetSweet <${configuredSender}>`;
 const BRAND = "MeetSweet";
 const SUPPORT_EMAIL = "support@meetsweet.app";
 
@@ -218,7 +220,7 @@ export async function sendVerificationEmail(
   );
 
   await client.emails.send({
-    from: FROM,
+    from: getFrom(),
     to,
     subject: `${code} is your MeetSweet verification code`,
     html,
@@ -254,7 +256,7 @@ export async function sendPasswordResetEmail(
   );
 
   await client.emails.send({
-    from: FROM,
+    from: getFrom(),
     to,
     subject: `${code} is your MeetSweet password reset code`,
     html,
@@ -291,7 +293,7 @@ export async function sendWelcomeEmail(
   );
 
   await client.emails.send({
-    from: FROM,
+    from: getFrom(),
     to,
     subject: `Welcome to MeetSweet, @${username}`,
     html,
@@ -320,7 +322,7 @@ export async function sendPasswordChangedEmail(
   );
 
   await client.emails.send({
-    from: FROM,
+    from: getFrom(),
     to,
     subject: "Your MeetSweet password has been changed",
     html,

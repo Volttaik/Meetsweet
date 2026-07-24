@@ -18,7 +18,7 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import { ArrowLeft, CheckCircle, Lock } from 'lucide-react-native';
+import { ArrowLeft, CheckCircle, Lock } from 'phosphor-react-native';
 import OTPInput, { OTPInputRef } from '@/components/OTPInput';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -50,7 +50,7 @@ function SuccessOverlay({ visible }: { visible: boolean }) {
 
   return (
     <Animated.View style={[styles.successOverlay, style]}>
-      <CheckCircle size={48} color="#22C55E" strokeWidth={1.8} />
+      <CheckCircle size={48} color="#22C55E" />
       <Text style={styles.successText}>Verified!</Text>
     </Animated.View>
   );
@@ -163,7 +163,7 @@ export default function VerificationScreen() {
           style={styles.backBtn}
           hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
         >
-          <ArrowLeft size={22} color="#FFFFFF" strokeWidth={2} />
+          <ArrowLeft size={22} color="#FFFFFF" />
         </TouchableOpacity>
 
         {/* Center content */}
@@ -172,7 +172,7 @@ export default function VerificationScreen() {
           <Animated.View style={[styles.header, headerStyle]}>
             {/* Lock icon circle */}
             <View style={styles.iconCircle}>
-              <Lock size={34} color="#FFFFFF" strokeWidth={1.8} />
+              <Lock size={34} color="#FFFFFF" />
             </View>
 
             <Text style={styles.title}>Verify Your Number</Text>

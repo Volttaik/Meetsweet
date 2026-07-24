@@ -23,7 +23,7 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
-import { ArrowLeft, CheckCircle, Eye, EyeOff, Lock, Mail } from 'lucide-react-native';
+import { ArrowLeft, CheckCircle, Eye, EyeSlash, Lock, Envelope } from 'phosphor-react-native';
 import OTPInput, { OTPInputRef } from '@/components/OTPInput';
 import { apiFetch } from '@/services/api';
 
@@ -94,7 +94,7 @@ function StepEmail({ onNext }: { onNext: (email: string) => void }) {
   return (
     <View style={step.container}>
       <View style={step.iconWrap}>
-        <Mail size={32} color="#FFFFFF" strokeWidth={1.8} />
+        <Envelope size={32} color="#FFFFFF" />
       </View>
       <Text style={step.title}>Forgot Password?</Text>
       <Text style={step.subtitle}>
@@ -105,10 +105,10 @@ function StepEmail({ onNext }: { onNext: (email: string) => void }) {
         <Label style={styles.fieldLabel}>Email Address</Label>
         <InputRow
           icon={
-            <Mail
+            <Envelope
               size={18}
               color={focused ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.3)'}
-              strokeWidth={1.8}
+             
             />
           }
           isError={!!error}
@@ -219,7 +219,7 @@ function StepCode({ email, onNext }: { email: string; onNext: (code: string) => 
   return (
     <View style={step.container}>
       <View style={step.iconWrap}>
-        <Mail size={32} color="#FFFFFF" strokeWidth={1.8} />
+        <Envelope size={32} color="#FFFFFF" />
       </View>
       <Text style={step.title}>Check Your Email</Text>
       <Text style={step.subtitle}>
@@ -308,7 +308,7 @@ function StepNewPassword({ email, code, onNext }: { email: string; code: string;
   return (
     <View style={step.container}>
       <View style={step.iconWrap}>
-        <Lock size={32} color="#FFFFFF" strokeWidth={1.8} />
+        <Lock size={32} color="#FFFFFF" />
       </View>
       <Text style={step.title}>New Password</Text>
       <Text style={step.subtitle}>Choose a strong password of at least 8 characters.</Text>
@@ -320,7 +320,7 @@ function StepNewPassword({ email, code, onNext }: { email: string; code: string;
             <Lock
               size={18}
               color={focused.password ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.3)'}
-              strokeWidth={1.8}
+             
             />
           }
           isError={!!errors.password}
@@ -341,8 +341,8 @@ function StepNewPassword({ email, code, onNext }: { email: string; code: string;
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
             {showPw
-              ? <EyeOff size={18} color="rgba(255,255,255,0.35)" strokeWidth={1.8} />
-              : <Eye size={18} color="rgba(255,255,255,0.35)" strokeWidth={1.8} />}
+              ? <EyeSlash size={18} color="rgba(255,255,255,0.35)" />
+              : <Eye size={18} color="rgba(255,255,255,0.35)" />}
           </TouchableOpacity>
         </InputRow>
         {!!errors.password && (
@@ -357,7 +357,7 @@ function StepNewPassword({ email, code, onNext }: { email: string; code: string;
             <Lock
               size={18}
               color={focused.confirm ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.3)'}
-              strokeWidth={1.8}
+             
             />
           }
           isError={!!errors.confirm}
@@ -378,8 +378,8 @@ function StepNewPassword({ email, code, onNext }: { email: string; code: string;
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
             {showConfirm
-              ? <EyeOff size={18} color="rgba(255,255,255,0.35)" strokeWidth={1.8} />
-              : <Eye size={18} color="rgba(255,255,255,0.35)" strokeWidth={1.8} />}
+              ? <EyeSlash size={18} color="rgba(255,255,255,0.35)" />
+              : <Eye size={18} color="rgba(255,255,255,0.35)" />}
           </TouchableOpacity>
         </InputRow>
         {!!errors.confirm && (
@@ -408,7 +408,7 @@ function StepDone() {
   return (
     <View style={[step.container, { alignItems: 'center' }]}>
       <View style={[step.iconWrap, styles.successIconWrap]}>
-        <CheckCircle size={46} color="#22C55E" strokeWidth={1.6} />
+        <CheckCircle size={46} color="#22C55E" />
       </View>
       <Text style={[step.title, { textAlign: 'center' }]}>Password Reset!</Text>
       <Text style={[step.subtitle, { textAlign: 'center' }]}>
@@ -500,7 +500,7 @@ export default function ForgotPasswordScreen() {
             style={styles.backBtn}
             hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
           >
-            <ArrowLeft size={22} color="#FFFFFF" strokeWidth={2} />
+            <ArrowLeft size={22} color="#FFFFFF" />
           </TouchableOpacity>
         )}
 

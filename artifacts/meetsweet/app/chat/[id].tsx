@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { Spinner } from 'heroui-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowLeft, Send, MoreHorizontal } from 'lucide-react-native';
+import { ArrowLeft, PaperPlaneRight, DotsThree } from 'phosphor-react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { T } from '@/constants/theme';
 import { MsAvatar } from '@/components/MsAvatar';
@@ -252,7 +252,7 @@ export default function ChatScreen() {
           activeOpacity={0.7}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
-          <ArrowLeft size={20} color={T.TEXT} strokeWidth={2} />
+          <ArrowLeft size={20} color={T.TEXT} />
         </TouchableOpacity>
         <MsAvatar
           size={36}
@@ -265,7 +265,7 @@ export default function ChatScreen() {
           </Text>
         </View>
         <TouchableOpacity style={styles.headerMore} activeOpacity={0.7}>
-          <MoreHorizontal size={20} color={T.TEXT_2} strokeWidth={1.8} />
+          <DotsThree size={20} color={T.TEXT_2} />
         </TouchableOpacity>
       </View>
 
@@ -331,7 +331,7 @@ export default function ChatScreen() {
             {sending ? (
               <Spinner size="sm" color="default" />
             ) : (
-              <Send size={18} color={T.BG} strokeWidth={2} />
+              <PaperPlaneRight size={18} color={T.BG} />
             )}
           </TouchableOpacity>
         </View>

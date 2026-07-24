@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowLeft, Check, CreditCard, Plus, Sparkles, WalletCards } from 'lucide-react-native';
+import { ArrowLeft, Check, CreditCard, Plus, Sparkle, Wallet } from 'phosphor-react-native';
 import { Button, Spinner } from 'heroui-native';
 import { T } from '@/constants/theme';
 import { getWallet, type Transaction } from '@/services/wallet';
@@ -51,7 +51,7 @@ export default function WalletScreen() {
         {/* Balance card */}
         <View style={styles.balanceCard}>
           <View style={styles.walletIcon}>
-            <WalletCards size={20} color={T.BG} />
+            <Wallet size={20} color={T.BG} />
           </View>
           <Text style={styles.balanceLabel}>AVAILABLE BALANCE</Text>
           {loading ? (
@@ -116,7 +116,7 @@ export default function WalletScreen() {
                 )}
                 <View style={styles.packageTop}>
                   <View style={[styles.radio, active && styles.radioActive]}>
-                    {active && <Check size={11} color={T.BG} strokeWidth={3} />}
+                    {active && <Check size={11} color={T.BG} />}
                   </View>
                   <Text style={styles.packageLabel}>{item.label}</Text>
                 </View>
@@ -129,7 +129,7 @@ export default function WalletScreen() {
         </View>
 
         <View style={styles.note}>
-          <Sparkles size={16} color={T.TEXT_2} />
+          <Sparkle size={16} color={T.TEXT_2} />
           <Text style={styles.noteText}>
             Credits never expire and go directly toward creator subscriptions and premium content.
           </Text>

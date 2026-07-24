@@ -1,6 +1,6 @@
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Sparkles } from 'lucide-react-native';
+import { Sparkle } from 'phosphor-react-native';
 import { T } from '@/constants/theme';
 
 interface MsEmptyStateProps {
@@ -19,7 +19,7 @@ export function MsEmptyState({
   return (
     <View style={styles.wrap}>
       <View style={styles.iconCircle}>
-        <Sparkles size={24} color={T.TEXT_2} strokeWidth={2} />
+        <Sparkle size={24} color={T.TEXT_2} />
       </View>
       <Text style={styles.title}>{title}</Text>
       {message && <Text style={styles.message}>{message}</Text>}

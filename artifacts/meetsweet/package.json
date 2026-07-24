@@ -60,6 +60,7 @@
     "expo-clipboard": "^8.0.8",
     "heroui-native": "^1.0.6",
     "lucide-react-native": "^1.25.0",
+    "phosphor-react-native": "^3.0.6",
     "tailwind-variants": "^3.2.2",
     "uniwind": "^1.10.0"
   }

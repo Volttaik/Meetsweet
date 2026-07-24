@@ -8,7 +8,7 @@ import {
 } from 'react-native';
 import { Spinner } from 'heroui-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowLeft, BellOff, Check } from 'lucide-react-native';
+import { ArrowLeft, BellSlash, Check } from 'phosphor-react-native';
 import { router } from 'expo-router';
 import { T } from '@/constants/theme';
 import { MsAvatar } from '@/components/MsAvatar';
@@ -172,7 +172,7 @@ export default function NotificationsScreen() {
           activeOpacity={0.7}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
         >
-          <ArrowLeft size={22} color={T.TEXT} strokeWidth={2} />
+          <ArrowLeft size={22} color={T.TEXT} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Notifications</Text>
         {unreadCount > 0 ? (
@@ -180,12 +180,12 @@ export default function NotificationsScreen() {
             {marking ? (
               <Spinner size="sm" color={T.TEXT_2} />
             ) : (
-              <Check size={18} color={T.TEXT_2} strokeWidth={2} />
+              <Check size={18} color={T.TEXT_2} />
             )}
           </TouchableOpacity>
         ) : (
           <TouchableOpacity style={styles.iconBtn} activeOpacity={0.7}>
-            <BellOff size={18} color={T.TEXT_2} strokeWidth={1.8} />
+            <BellSlash size={18} color={T.TEXT_2} />
           </TouchableOpacity>
         )}
       </View>

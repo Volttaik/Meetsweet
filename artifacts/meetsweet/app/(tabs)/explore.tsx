@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { Bell, ChevronRight, CreditCard, Search as SearchIcon, WalletCards } from 'lucide-react-native';
+import { Bell, CaretRight, CreditCard, MagnifyingGlass as SearchIcon, Wallet } from 'phosphor-react-native';
 import { useGetExploreCatalog, type Creator } from '@workspace/api-client-react';
 import { BottomSheet, Button, Chip, Input } from 'heroui-native';
 import { MsCatalogSkeleton, MsCollectionCard, MsFeaturedCreatorCard, MsPreviewCard, MsRecommendedCreatorRow } from '@/components/MsExploreVisual';
@@ -72,11 +72,11 @@ export default function ExploreScreen() {
         </View>
         <View style={styles.headerActions}>
           <Pressable style={styles.iconButton} onPress={() => router.push('/notifications')} accessibilityLabel="Notifications">
-            <Bell size={19} color={T.TEXT} strokeWidth={1.7} />
+            <Bell size={19} color={T.TEXT} />
             <View style={styles.notificationDot} />
           </Pressable>
           <Pressable style={styles.walletButton} onPress={() => router.push('/wallet')}>
-            <WalletCards size={16} color={T.TEXT} strokeWidth={1.7} />
+            <Wallet size={16} color={T.TEXT} />
             <Text style={styles.walletButtonText}>{creditBalance.toLocaleString()}</Text>
           </Pressable>
         </View>
@@ -88,7 +88,7 @@ export default function ExploreScreen() {
         contentContainerStyle={styles.scrollContent}
       >
         <View style={styles.searchField}>
-          <SearchIcon size={16} color={T.TEXT_2} strokeWidth={1.7} />
+          <SearchIcon size={16} color={T.TEXT_2} />
           <Input
             value={search}
             onChangeText={setSearch}
@@ -118,17 +118,17 @@ export default function ExploreScreen() {
         {!query.isLoading && !query.isError && catalog && (
           <>
             <Pressable style={styles.creditBanner} onPress={() => router.push('/wallet')}>
-              <View style={styles.creditIcon}><CreditCard size={18} color={T.BG} strokeWidth={1.8} /></View>
+              <View style={styles.creditIcon}><CreditCard size={18} color={T.BG} /></View>
               <View style={styles.creditCopy}>
                 <Text style={styles.creditEyebrow}>YOUR CREATOR WALLET</Text>
                 <Text style={styles.creditBalance}>{creditBalance.toLocaleString()} <Text style={styles.creditUnit}>credits</Text></Text>
               </View>
-              <View style={styles.creditAction}><Text style={styles.creditActionText}>Top up</Text><ChevronRight size={15} color={T.TEXT} /></View>
+              <View style={styles.creditAction}><Text style={styles.creditActionText}>Top up</Text><CaretRight size={15} color={T.TEXT} /></View>
             </Pressable>
 
             <View style={styles.categoryHeader}>
               <Text style={styles.sectionTitle}>Browse by category</Text>
-                  <SearchIcon size={15} color={T.TEXT_3} strokeWidth={1.6} />
+                  <SearchIcon size={15} color={T.TEXT_3} />
             </View>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryRow}>
               {categories.map((category) => {

@@ -11,7 +11,7 @@ import {
   View,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
-import { Heart, MessageCircle, Bookmark, MoreHorizontal, BadgeCheck, Share2, Play } from 'lucide-react-native';
+import { Heart, ChatCircle, Bookmark, DotsThree, SealCheck, ShareNetwork, Play } from 'phosphor-react-native';
 import { T } from '@/constants/theme';
 import { MsAvatar } from '@/components/MsAvatar';
 import type { Post } from '@/services/posts';
@@ -183,7 +183,7 @@ export function MsPostCard({
                 {post.author.name}
               </Text>
               {post.author.isVerified && (
-                <BadgeCheck size={14} color={T.TEXT} strokeWidth={2} />
+                <SealCheck size={14} color={T.TEXT} />
               )}
             </View>
             <Text style={styles.authorMeta}>
@@ -203,7 +203,7 @@ export function MsPostCard({
             onPress={handleMore}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <MoreHorizontal size={18} color={T.TEXT_2} strokeWidth={2} />
+            <DotsThree size={18} color={T.TEXT_2} />
           </TouchableOpacity>
         </View>
       </View>
@@ -227,7 +227,7 @@ export function MsPostCard({
         <TouchableOpacity onPress={onPress} style={styles.videoPlaceholder} activeOpacity={0.85}>
           <View style={styles.videoOverlay}>
             <View style={styles.playBtn}>
-               <Play size={20} color={T.TEXT} fill={T.TEXT} strokeWidth={2} />
+               <Play size={20} color={T.TEXT} fill={T.TEXT} />
             </View>
             {post.durationSecs != null && (
               <Text style={styles.duration}>
@@ -246,7 +246,7 @@ export function MsPostCard({
           <Heart
             size={18}
             color={liked ? '#EF4444' : T.TEXT_2}
-            strokeWidth={2}
+           
             fill={liked ? '#EF4444' : 'transparent'}
           />
           {likeCount > 0 && (
@@ -258,7 +258,7 @@ export function MsPostCard({
 
         {/* Comment */}
         <TouchableOpacity style={styles.actionBtn} onPress={onPress} activeOpacity={0.7}>
-          <MessageCircle size={18} color={T.TEXT_2} strokeWidth={2} />
+          <ChatCircle size={18} color={T.TEXT_2} />
           {post.commentCount > 0 && (
             <Text style={styles.actionCount}>{formatCount(post.commentCount)}</Text>
           )}
@@ -266,7 +266,7 @@ export function MsPostCard({
 
         {/* Share */}
         <TouchableOpacity style={styles.actionBtn} onPress={handleShare} activeOpacity={0.7}>
-          <Share2 size={18} color={T.TEXT_2} strokeWidth={2} />
+          <ShareNetwork size={18} color={T.TEXT_2} />
         </TouchableOpacity>
 
         <View style={{ flex: 1 }} />
@@ -276,7 +276,7 @@ export function MsPostCard({
           <Bookmark
             size={18}
             color={bookmarked ? T.TEXT : T.TEXT_2}
-            strokeWidth={2}
+           
             fill={bookmarked ? T.TEXT : 'transparent'}
           />
         </TouchableOpacity>

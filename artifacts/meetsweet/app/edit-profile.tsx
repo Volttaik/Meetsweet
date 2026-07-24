@@ -10,7 +10,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowLeft } from 'lucide-react-native';
+import { ArrowLeft } from 'phosphor-react-native';
 import { router } from 'expo-router';
 import { Spinner } from 'heroui-native';
 import { T } from '@/constants/theme';
@@ -110,7 +110,7 @@ export default function EditProfileScreen() {
           style={styles.headerBtn}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
         >
-          <ArrowLeft size={22} color={T.TEXT} strokeWidth={2} />
+          <ArrowLeft size={22} color={T.TEXT} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Edit Profile</Text>
         <TouchableOpacity

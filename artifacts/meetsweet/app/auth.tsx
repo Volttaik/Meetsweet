@@ -19,7 +19,7 @@ import {
 } from 'heroui-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowLeft, AtSign, Eye, EyeOff, Lock } from 'lucide-react-native';
+import { ArrowLeft, At, Eye, EyeSlash, Lock } from 'phosphor-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { ApiError } from '@/services/api';
 
@@ -121,7 +121,7 @@ export default function AuthScreen() {
           style={styles.backBtn}
           hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
         >
-          <ArrowLeft size={22} color="#FFFFFF" strokeWidth={2} />
+          <ArrowLeft size={22} color="#FFFFFF" />
         </TouchableOpacity>
 
         {/* Header */}
@@ -151,10 +151,10 @@ export default function AuthScreen() {
               <Label style={styles.fieldLabel}>Email, Username or Phone</Label>
               <InputRow
                 icon={
-                  <AtSign
+                  <At
                     size={18}
                     color={focused.identifier ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.3)'}
-                    strokeWidth={1.8}
+                   
                   />
                 }
                 isError={!!errors.identifier}
@@ -189,7 +189,7 @@ export default function AuthScreen() {
                   <Lock
                     size={18}
                     color={focused.password ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.3)'}
-                    strokeWidth={1.8}
+                   
                   />
                 }
                 isError={!!errors.password}
@@ -214,9 +214,9 @@ export default function AuthScreen() {
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
                   {showPw ? (
-                    <EyeOff size={18} color="rgba(255,255,255,0.35)" strokeWidth={1.8} />
+                    <EyeSlash size={18} color="rgba(255,255,255,0.35)" />
                   ) : (
-                    <Eye size={18} color="rgba(255,255,255,0.35)" strokeWidth={1.8} />
+                    <Eye size={18} color="rgba(255,255,255,0.35)" />
                   )}
                 </TouchableOpacity>
               </InputRow>

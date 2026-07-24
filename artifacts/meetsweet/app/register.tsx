@@ -31,16 +31,16 @@ import Animated, {
 } from 'react-native-reanimated';
 import {
   ArrowLeft,
-  AtSign,
+  At,
   Camera,
   Calendar,
   Eye,
-  EyeOff,
+  EyeSlash,
   Lock,
-  Mail,
+  Envelope,
   Phone,
   User,
-} from 'lucide-react-native';
+} from 'phosphor-react-native';
 import * as ImagePicker from 'expo-image-picker';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -237,7 +237,7 @@ function Step1({
         <TextField isInvalid={!!errors.username}>
           <Label style={styles.fieldLabel}>Username</Label>
           <InputRow
-            icon={<AtSign size={20} color={focused.username ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.3)'} />}
+            icon={<At size={20} color={focused.username ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.3)'} />}
             isError={!!errors.username}
             isFocused={focused.username}
           >
@@ -260,7 +260,7 @@ function Step1({
         <TextField isInvalid={!!errors.email}>
           <Label style={styles.fieldLabel}>Email</Label>
           <InputRow
-            icon={<Mail size={20} color={focused.email ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.3)'} />}
+            icon={<Envelope size={20} color={focused.email ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.3)'} />}
             isError={!!errors.email}
             isFocused={focused.email}
           >
@@ -390,7 +390,7 @@ function Step2({
         <TextField isInvalid={!!errors.password}>
           <Label style={styles.fieldLabel}>Password</Label>
           <InputRow
-            icon={<Lock size={18} color={focused.password ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.3)'} strokeWidth={1.8} />}
+            icon={<Lock size={18} color={focused.password ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.3)'} />}
             isError={!!errors.password}
             isFocused={focused.password}
           >
@@ -405,7 +405,7 @@ function Step2({
               placeholderTextColor="rgba(255,255,255,0.18)"
             />
             <TouchableOpacity onPress={() => setShowPw((v) => !v)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              {showPw ? <EyeOff size={20} color="rgba(255,255,255,0.35)" /> : <Eye size={20} color="rgba(255,255,255,0.35)" />}
+              {showPw ? <EyeSlash size={20} color="rgba(255,255,255,0.35)" /> : <Eye size={20} color="rgba(255,255,255,0.35)" />}
             </TouchableOpacity>
           </InputRow>
           {data.password.length > 0 && strength && (
@@ -431,7 +431,7 @@ function Step2({
         <TextField isInvalid={!!errors.confirm}>
           <Label style={styles.fieldLabel}>Confirm Password</Label>
           <InputRow
-            icon={<Lock size={18} color={focused.confirm ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.3)'} strokeWidth={1.8} />}
+            icon={<Lock size={18} color={focused.confirm ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.3)'} />}
             isError={!!errors.confirm}
             isFocused={focused.confirm}
           >
@@ -446,7 +446,7 @@ function Step2({
               placeholderTextColor="rgba(255,255,255,0.18)"
             />
             <TouchableOpacity onPress={() => setShowConfirm((v) => !v)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              {showConfirm ? <EyeOff size={20} color="rgba(255,255,255,0.35)" /> : <Eye size={20} color="rgba(255,255,255,0.35)" />}
+              {showConfirm ? <EyeSlash size={20} color="rgba(255,255,255,0.35)" /> : <Eye size={20} color="rgba(255,255,255,0.35)" />}
             </TouchableOpacity>
           </InputRow>
           {!!errors.confirm && <FieldError style={styles.fieldError}>{errors.confirm}</FieldError>}
@@ -689,7 +689,7 @@ export default function RegisterScreen() {
           style={styles.backBtn}
           hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
         >
-          <ArrowLeft size={22} color="#FFFFFF" strokeWidth={2} />
+          <ArrowLeft size={22} color="#FFFFFF" />
         </TouchableOpacity>
 
         {/* Screen title */}

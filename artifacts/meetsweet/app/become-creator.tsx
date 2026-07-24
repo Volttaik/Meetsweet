@@ -7,7 +7,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { X } from 'lucide-react-native';
+import { X } from 'phosphor-react-native';
 import { router } from 'expo-router';
 import { T } from '@/constants/theme';
 
@@ -48,7 +48,7 @@ export default function BecomeCreatorScreen() {
           style={styles.closeBtn}
           activeOpacity={0.7}
         >
-          <X size={18} color={T.TEXT} strokeWidth={2} />
+          <X size={18} color={T.TEXT} />
         </TouchableOpacity>
       </View>
 

@@ -9,7 +9,7 @@ import Animated, {
   withDelay,
   withTiming,
 } from 'react-native-reanimated';
-import { CheckCircle } from 'lucide-react-native';
+import { CheckCircle } from 'phosphor-react-native';
 
 const AUTO_NAVIGATE_MS = 2200;
 
@@ -61,7 +61,7 @@ export default function SuccessScreen() {
         ]}
       >
         <Animated.View style={[styles.iconWrap, iconStyle]}>
-          <CheckCircle size={64} color="#FFFFFF" strokeWidth={1.5} />
+          <CheckCircle size={64} color="#FFFFFF" />
         </Animated.View>
 
         <Animated.Text style={[styles.title, titleStyle]}>

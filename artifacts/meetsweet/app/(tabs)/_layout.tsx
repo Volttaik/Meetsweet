@@ -8,7 +8,7 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
-import { Home, Search, MessageCircle, User } from 'lucide-react-native';
+import { House, MagnifyingGlass, ChatCircle, User } from 'phosphor-react-native';
 import { T } from '@/constants/theme';
 
 const TAB_HEIGHT = 60;
@@ -16,16 +16,16 @@ const INACTIVE_COLOR = '#777777';
 
 type VisualTab = {
   label: string;
-  Icon: React.ComponentType<{ size: number; color: string; strokeWidth: number }>;
+  Icon: React.ComponentType<{ size: number; color: string; weight?: string }>;
   routeName?: string; // undefined = center action
 };
 
 const VISUAL_TABS: VisualTab[] = [
-  { label: 'Home',     Icon: Home,          routeName: 'index' },
-  { label: 'Explore',  Icon: Search,        routeName: 'explore' },
-  { label: 'Create',   Icon: MessageCircle  },
-  { label: 'Messages', Icon: MessageCircle,  routeName: 'messages' },
-  { label: 'Profile',  Icon: User,           routeName: 'profile' },
+  { label: 'Home',     Icon: House,            routeName: 'index' },
+  { label: 'Explore',  Icon: MagnifyingGlass,  routeName: 'explore' },
+  { label: 'Create',   Icon: ChatCircle },
+  { label: 'Messages', Icon: ChatCircle,       routeName: 'messages' },
+  { label: 'Profile',  Icon: User,             routeName: 'profile' },
 ];
 
 function TabBtn({
@@ -71,7 +71,7 @@ function TabBtn({
   return (
     <Pressable onPress={handlePress} style={styles.tabWrap}>
       <Animated.View style={[styles.tabInner, scaleStyle]}>
-        <tab.Icon size={22} color={iconColor} strokeWidth={strokeWidth} />
+        <tab.Icon size={22} color={iconColor} weight="regular" />
         <Text
           style={[
             styles.tabLabel,

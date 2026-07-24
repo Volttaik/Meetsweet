@@ -17,7 +17,7 @@ import Animated, {
   withDelay,
   withTiming,
 } from 'react-native-reanimated';
-import { ArrowLeft, Mail } from 'lucide-react-native';
+import { ArrowLeft, Envelope } from 'phosphor-react-native';
 import OTPInput, { OTPInputRef } from '@/components/OTPInput';
 import { apiFetch } from '@/services/api';
 
@@ -144,13 +144,13 @@ export default function VerifyEmailScreen() {
           style={styles.backBtn}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
         >
-          <ArrowLeft size={22} color="#FFFFFF" strokeWidth={2} />
+          <ArrowLeft size={22} color="#FFFFFF" />
         </TouchableOpacity>
 
         <Animated.View style={[styles.inner, contentStyle]}>
           {/* Icon */}
           <View style={styles.iconCircle}>
-            <Mail size={32} color="#FFFFFF" strokeWidth={1.8} />
+            <Envelope size={32} color="#FFFFFF" />
           </View>
 
           {/* Text */}
