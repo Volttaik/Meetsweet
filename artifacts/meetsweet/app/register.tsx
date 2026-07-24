@@ -31,6 +31,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import {
   ArrowLeft,
+  AtSign,
   Camera,
   Calendar,
   Eye,
@@ -97,10 +98,11 @@ function formatDOB(raw: string): string {
 }
 
 function formatPhone(raw: string): string {
-  const digits = raw.replace(/\D/g, '').slice(0, 10);
-  if (digits.length <= 3) return digits;
-  if (digits.length <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
-  return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+  const digits = raw.replace(/\D/g, '').slice(0, 11);
+  if (digits.length <= 1) return digits;
+  if (digits.length <= 4) return `${digits[0]} (${digits.slice(1)}`;
+  if (digits.length <= 7) return `${digits[0]} (${digits.slice(1, 4)}) ${digits.slice(4)}`;
+  return `${digits[0]} (${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7)}`;
 }
 
 // ─── Input row ────────────────────────────────────────────────────────────────
@@ -160,6 +162,7 @@ function StepBar({ current }: { current: StepNum }) {
 
 interface Step1Data {
   name: string;
+  username: string;
   email: string;
   phone: string;
   dob: string;
@@ -181,10 +184,12 @@ function Step1({
   const validate = () => {
     const e: Record<string, string> = {};
     if (data.name.trim().length < 2) e.name = 'Enter your full name';
+    if (data.username.trim().length < 3) e.username = 'At least 3 characters required';
+    else if (!/^[a-z0-9_.]{3,30}$/i.test(data.username.trim())) e.username = 'Letters, numbers, _ and . only';
     if (!data.email.includes('@') || !data.email.includes('.'))
       e.email = 'Enter a valid email address';
     const phoneDigits = data.phone.replace(/\D/g, '');
-    if (phoneDigits.length < 10) e.phone = 'Enter a valid 10-digit phone number';
+    if (phoneDigits.length < 11) e.phone = 'Enter a valid 11-digit phone number';
     const age = calculateAge(data.dob);
     if (!data.dob || data.dob.length < 10) e.dob = 'Enter your date of birth (MM/DD/YYYY)';
     else if (age < 18) e.dob = 'You must be at least 18 years old to join';
@@ -228,6 +233,29 @@ function Step1({
           {!!errors.name && <FieldError style={styles.fieldError}>{errors.name}</FieldError>}
         </TextField>
 
+        {/* Username */}
+        <TextField isInvalid={!!errors.username}>
+          <Label style={styles.fieldLabel}>Username</Label>
+          <InputRow
+            icon={<AtSign size={20} color={focused.username ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.3)'} />}
+            isError={!!errors.username}
+            isFocused={focused.username}
+          >
+            <Input
+              placeholder="yourhandle"
+              autoCapitalize="none"
+              autoCorrect={false}
+              value={data.username}
+              onChangeText={(v) => { onChange({ username: v.replace(/\s/g, '') }); setErrors((e) => ({ ...e, username: '' })); }}
+              onFocus={() => setFoc('username', true)}
+              onBlur={() => setFoc('username', false)}
+              style={styles.input}
+              placeholderTextColor="rgba(255,255,255,0.18)"
+            />
+          </InputRow>
+          {!!errors.username && <FieldError style={styles.fieldError}>{errors.username}</FieldError>}
+        </TextField>
+
         {/* Email */}
         <TextField isInvalid={!!errors.email}>
           <Label style={styles.fieldLabel}>Email</Label>
@@ -260,7 +288,7 @@ function Step1({
             isFocused={focused.phone}
           >
             <Input
-              placeholder="(555) 000-0000"
+              placeholder="1 (555) 000-0000"
               keyboardType="phone-pad"
               value={data.phone}
               onChangeText={(v) => {
@@ -591,7 +619,7 @@ export default function RegisterScreen() {
   const slideX = useSharedValue(0);
   const opacity = useSharedValue(1);
 
-  const [step1, setStep1] = useState<Step1Data>({ name: '', email: '', phone: '', dob: '' });
+  const [step1, setStep1] = useState<Step1Data>({ name: '', username: '', email: '', phone: '', dob: '' });
   const [step2, setStep2] = useState<Step2Data>({ password: '', confirm: '' });
   const [step3, setStep3] = useState<Step3Data>({ bio: '', avatarUri: null });
 
@@ -622,6 +650,7 @@ export default function RegisterScreen() {
     try {
       await register({
         name: step1.name.trim(),
+        username: step1.username.trim() || undefined,
         email: step1.email.trim() || undefined,
         phone: step1.phone.trim() || undefined,
         password: step2.password,
