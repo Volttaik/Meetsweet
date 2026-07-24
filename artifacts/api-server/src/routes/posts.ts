@@ -1,11 +1,16 @@
 import { Router, type IRouter } from "express";
 import { v4 as uuidv4 } from "uuid";
-import { query, queryOne } from "../lib/db.js";
+import { query, queryOne, queryRaw } from "../lib/db.js";
 import { requireAuth, optionalAuth, type AuthRequest } from "../middlewares/requireAuth.js";
 
 const router: IRouter = Router();
 
-function formatPost(post: Record<string, unknown>, author: Record<string, unknown>, likedByMe = false) {
+function formatPost(
+  post: Record<string, unknown>,
+  author: Record<string, unknown>,
+  likedByMe = false,
+  bookmarkedByMe = false,
+) {
   return {
     id: post.id,
     caption: post.caption,
@@ -19,6 +24,7 @@ function formatPost(post: Record<string, unknown>, author: Record<string, unknow
     height: post.height ?? null,
     likeCount: post.like_count ?? 0,
     commentCount: post.comment_count ?? 0,
+    bookmarkCount: post.bookmark_count ?? 0,
     isPremium: post.is_premium ?? false,
     priceCredits: post.price_credits ?? null,
     createdAt: post.created_at,
@@ -32,6 +38,7 @@ function formatPost(post: Record<string, unknown>, author: Record<string, unknow
       isCreator: author.is_creator ?? false,
     },
     likedByMe,
+    bookmarkedByMe,
   };
 }
 
@@ -43,14 +50,20 @@ router.get("/posts", optionalAuth, async (req: AuthRequest, res) => {
     const limit = Math.min(parseInt(String(req.query.limit ?? "20"), 10), 50);
     const offset = (page - 1) * limit;
     const userId = req.query.userId as string | undefined;
+    const bookmarked = req.query.bookmarked === "true";
 
-    let whereClause = "p.visibility = 'public'";
+    let whereClause: string;
     const params: unknown[] = [limit, offset];
     let paramIdx = 3;
 
-    if (userId) {
-      whereClause = "p.user_id = $" + paramIdx++;
+    if (bookmarked && req.user) {
+      whereClause = `p.id IN (SELECT post_id FROM bookmarks WHERE user_id = $${paramIdx++})`;
+      params.push(req.user.sub);
+    } else if (userId) {
+      whereClause = `p.user_id = $${paramIdx++}`;
       params.push(userId);
+    } else {
+      whereClause = "p.visibility = 'public'";
     }
 
     const posts = await query<Record<string, unknown>>(
@@ -64,15 +77,23 @@ router.get("/posts", optionalAuth, async (req: AuthRequest, res) => {
       params,
     );
 
-    // Get liked post IDs for current user
+    // Get liked + bookmarked post IDs for current user
     const likedSet = new Set<string>();
+    const bookmarkedSet = new Set<string>();
     if (req.user && posts.length > 0) {
       const postIds = posts.map((p) => p.id as string);
-      const liked = await query<{ post_id: string }>(
-        `SELECT post_id FROM likes WHERE user_id = $1 AND post_id = ANY($2::uuid[])`,
-        [req.user.sub, postIds],
-      );
+      const [liked, saved] = await Promise.all([
+        query<{ post_id: string }>(
+          `SELECT post_id FROM likes WHERE user_id = $1 AND post_id = ANY($2::uuid[])`,
+          [req.user.sub, postIds],
+        ),
+        query<{ post_id: string }>(
+          `SELECT post_id FROM bookmarks WHERE user_id = $1 AND post_id = ANY($2::uuid[])`,
+          [req.user.sub, postIds],
+        ),
+      ]);
       liked.forEach((l) => likedSet.add(l.post_id));
+      saved.forEach((b) => bookmarkedSet.add(b.post_id));
     }
 
     const formatted = posts.map((p) =>
@@ -80,6 +101,7 @@ router.get("/posts", optionalAuth, async (req: AuthRequest, res) => {
         p,
         { id: p.user_id, name: p.name, username: p.username, avatar_url: p.avatar_url, is_verified: p.is_verified, is_creator: p.is_creator },
         likedSet.has(p.id as string),
+        bookmarkedSet.has(p.id as string),
       ),
     );
 
@@ -270,22 +292,42 @@ router.post("/posts/:id/like", requireAuth, async (req: AuthRequest, res) => {
     const postId = req.params.id;
     const userId = req.user!.sub;
 
-    await query(
-      `INSERT INTO likes (id, user_id, post_id) VALUES (gen_random_uuid(), $1, $2) ON CONFLICT DO NOTHING`,
+    // Insert — ON CONFLICT DO NOTHING; rowCount tells us if it was new
+    const insertResult = await queryRaw(
+      `INSERT INTO likes (id, user_id, post_id) VALUES (gen_random_uuid(), $1, $2) ON CONFLICT (user_id, post_id) DO NOTHING`,
       [userId, postId],
     );
 
-    const [updated] = await query<{ like_count: number }>(
-      `UPDATE posts SET like_count = like_count + 1 WHERE id = $1 AND NOT EXISTS (
-        SELECT 1 FROM likes WHERE user_id = $2 AND post_id = $1
-        -- we already inserted above; this handles idempotency via the count
-      ) RETURNING like_count`,
-      [postId, userId],
-    );
+    // Only increment counter if we actually inserted a new like
+    if ((insertResult.rowCount ?? 0) > 0) {
+      await queryRaw(`UPDATE posts SET like_count = like_count + 1 WHERE id = $1`, [postId]);
 
-    // Just re-fetch the count
+      // Notify post author (fire-and-forget)
+      queryOne<{ user_id: string; caption: string }>(
+        `SELECT user_id, caption FROM posts WHERE id = $1`,
+        [postId],
+      ).then(async (post) => {
+        if (post && post.user_id !== userId) {
+          const actor = await queryOne<{ name: string }>(
+            `SELECT name FROM users WHERE id = $1`,
+            [userId],
+          );
+          await queryRaw(
+            `INSERT INTO notifications (user_id, type, title, body, actor_id, post_id)
+             VALUES ($1, 'like', $2, $3, $4, $5)`,
+            [
+              post.user_id,
+              "New like",
+              `${actor?.name ?? "Someone"} liked your post`,
+              userId,
+              postId,
+            ],
+          );
+        }
+      }).catch(() => {});
+    }
+
     const post = await queryOne<{ like_count: number }>(`SELECT like_count FROM posts WHERE id = $1`, [postId]);
-
     res.json({ liked: true, likeCount: post?.like_count ?? 0 });
   } catch (err) {
     console.error("Like error:", err);
@@ -300,13 +342,13 @@ router.delete("/posts/:id/like", requireAuth, async (req: AuthRequest, res) => {
     const postId = req.params.id;
     const userId = req.user!.sub;
 
-    const result = await query(
+    const deleteResult = await queryRaw(
       `DELETE FROM likes WHERE user_id = $1 AND post_id = $2`,
       [userId, postId],
     );
 
-    if ((result as unknown as { rowCount: number }).rowCount > 0) {
-      await query(
+    if ((deleteResult.rowCount ?? 0) > 0) {
+      await queryRaw(
         `UPDATE posts SET like_count = GREATEST(0, like_count - 1) WHERE id = $1`,
         [postId],
       );
@@ -422,6 +464,121 @@ router.delete("/posts/:id/comments/:commentId", requireAuth, async (req: AuthReq
   } catch (err) {
     console.error("Delete comment error:", err);
     res.status(500).json({ error: "Failed to delete comment" });
+  }
+});
+
+// ─── POST /api/posts/:id/comments/:commentId/like ─────────────────────────────
+
+router.post("/posts/:id/comments/:commentId/like", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { commentId } = req.params;
+    const userId = req.user!.sub;
+    const result = await queryRaw(
+      `INSERT INTO comment_likes (user_id, comment_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+      [userId, commentId],
+    );
+    if ((result.rowCount ?? 0) > 0) {
+      await queryRaw(`UPDATE comments SET like_count = like_count + 1 WHERE id = $1`, [commentId]);
+    }
+    const c = await queryOne<{ like_count: number }>(`SELECT like_count FROM comments WHERE id = $1`, [commentId]);
+    res.json({ liked: true, likeCount: c?.like_count ?? 0 });
+  } catch (err) {
+    console.error("Like comment error:", err);
+    res.status(500).json({ error: "Failed to like comment" });
+  }
+});
+
+// ─── DELETE /api/posts/:id/comments/:commentId/like ───────────────────────────
+
+router.delete("/posts/:id/comments/:commentId/like", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { commentId } = req.params;
+    const userId = req.user!.sub;
+    const result = await queryRaw(
+      `DELETE FROM comment_likes WHERE user_id = $1 AND comment_id = $2`,
+      [userId, commentId],
+    );
+    if ((result.rowCount ?? 0) > 0) {
+      await queryRaw(`UPDATE comments SET like_count = GREATEST(0, like_count - 1) WHERE id = $1`, [commentId]);
+    }
+    const c = await queryOne<{ like_count: number }>(`SELECT like_count FROM comments WHERE id = $1`, [commentId]);
+    res.json({ liked: false, likeCount: c?.like_count ?? 0 });
+  } catch (err) {
+    console.error("Unlike comment error:", err);
+    res.status(500).json({ error: "Failed to unlike comment" });
+  }
+});
+
+// ─── PUT /api/posts/:id — edit post ──────────────────────────────────────────
+
+router.put("/posts/:id", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const post = await queryOne<Record<string, unknown>>(
+      `SELECT id, user_id FROM posts WHERE id = $1`,
+      [req.params.id],
+    );
+    if (!post) { res.status(404).json({ error: "Post not found" }); return; }
+    if (post.user_id !== req.user!.sub) { res.status(403).json({ error: "Not your post" }); return; }
+
+    const { caption, visibility } = req.body as { caption?: string; visibility?: string };
+    const updates: string[] = [];
+    const params: unknown[] = [];
+    let idx = 1;
+
+    if (caption !== undefined) { updates.push(`caption = $${idx++}`); params.push(caption); }
+    if (visibility !== undefined && ["public","subscribers","draft"].includes(visibility)) {
+      updates.push(`visibility = $${idx++}`);
+      params.push(visibility);
+    }
+    if (updates.length === 0) { res.json({ success: true }); return; }
+
+    updates.push(`updated_at = NOW()`);
+    params.push(req.params.id);
+    await queryRaw(`UPDATE posts SET ${updates.join(", ")} WHERE id = $${idx}`, params);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Edit post error:", err);
+    res.status(500).json({ error: "Failed to edit post" });
+  }
+});
+
+// ─── POST /api/posts/:id/bookmark ─────────────────────────────────────────────
+
+router.post("/posts/:id/bookmark", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const postId = req.params.id;
+    const userId = req.user!.sub;
+    const result = await queryRaw(
+      `INSERT INTO bookmarks (id, user_id, post_id) VALUES (gen_random_uuid(), $1, $2) ON CONFLICT (user_id, post_id) DO NOTHING`,
+      [userId, postId],
+    );
+    if ((result.rowCount ?? 0) > 0) {
+      await queryRaw(`UPDATE posts SET bookmark_count = bookmark_count + 1 WHERE id = $1`, [postId]);
+    }
+    res.json({ bookmarked: true });
+  } catch (err) {
+    console.error("Bookmark error:", err);
+    res.status(500).json({ error: "Failed to bookmark post" });
+  }
+});
+
+// ─── DELETE /api/posts/:id/bookmark ──────────────────────────────────────────
+
+router.delete("/posts/:id/bookmark", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const postId = req.params.id;
+    const userId = req.user!.sub;
+    const result = await queryRaw(
+      `DELETE FROM bookmarks WHERE user_id = $1 AND post_id = $2`,
+      [userId, postId],
+    );
+    if ((result.rowCount ?? 0) > 0) {
+      await queryRaw(`UPDATE posts SET bookmark_count = GREATEST(0, bookmark_count - 1) WHERE id = $1`, [postId]);
+    }
+    res.json({ bookmarked: false });
+  } catch (err) {
+    console.error("Unbookmark error:", err);
+    res.status(500).json({ error: "Failed to remove bookmark" });
   }
 });
 

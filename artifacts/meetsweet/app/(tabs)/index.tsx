@@ -132,7 +132,9 @@ export default function HomeScreen() {
           renderItem={({ item }) => (
             <MsPostCard
               post={item}
+              currentUserId={user?.id}
               onAuthorPress={() => router.push(`/creator/${item.author.username}`)}
+              onDeleted={(id) => setPosts((prev) => prev.filter((p) => p.id !== id))}
             />
           )}
           refreshControl={

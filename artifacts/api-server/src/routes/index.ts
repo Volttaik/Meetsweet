@@ -7,6 +7,8 @@ import postsRouter from "./posts.js";
 import categoriesRouter from "./categories.js";
 import walletRouter from "./wallet.js";
 import mediaRouter from "./media.js";
+import messagesRouter from "./messages.js";
+import notificationsRouter from "./notifications.js";
 
 const router: IRouter = Router();
 
@@ -18,5 +20,7 @@ router.use(postsRouter);
 router.use(categoriesRouter);
 router.use(walletRouter);
 router.use(mediaRouter);
+router.use(messagesRouter);
+router.use(notificationsRouter);
 
 export default router;

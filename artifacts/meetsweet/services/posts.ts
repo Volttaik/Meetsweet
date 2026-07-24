@@ -23,11 +23,13 @@ export interface Post {
   height: number | null;
   likeCount: number;
   commentCount: number;
+  bookmarkCount: number;
   isPremium: boolean;
   priceCredits: number | null;
   createdAt: string;
   author: PostAuthor;
   likedByMe: boolean;
+  bookmarkedByMe: boolean;
 }
 
 export interface Comment {
@@ -142,4 +144,54 @@ export async function deleteComment(postId: string, commentId: string): Promise<
     method: 'DELETE',
     headers: authHeader(token),
   });
+}
+
+export async function likeComment(
+  postId: string,
+  commentId: string,
+): Promise<{ liked: boolean; likeCount: number }> {
+  const token = await getToken();
+  if (!token) throw new Error('Not authenticated');
+  return apiFetch(`/posts/${postId}/comments/${commentId}/like`, {
+    method: 'POST',
+    headers: authHeader(token),
+  });
+}
+
+export async function unlikeComment(
+  postId: string,
+  commentId: string,
+): Promise<{ liked: boolean; likeCount: number }> {
+  const token = await getToken();
+  if (!token) throw new Error('Not authenticated');
+  return apiFetch(`/posts/${postId}/comments/${commentId}/like`, {
+    method: 'DELETE',
+    headers: authHeader(token),
+  });
+}
+
+export async function bookmarkPost(id: string): Promise<{ bookmarked: boolean }> {
+  const token = await getToken();
+  if (!token) throw new Error('Not authenticated');
+  return apiFetch(`/posts/${id}/bookmark`, {
+    method: 'POST',
+    headers: authHeader(token),
+  });
+}
+
+export async function unbookmarkPost(id: string): Promise<{ bookmarked: boolean }> {
+  const token = await getToken();
+  if (!token) throw new Error('Not authenticated');
+  return apiFetch(`/posts/${id}/bookmark`, {
+    method: 'DELETE',
+    headers: authHeader(token),
+  });
+}
+
+export async function getBookmarkedPosts(
+  page = 1,
+): Promise<{ posts: Post[]; hasMore: boolean }> {
+  const token = await getToken();
+  const headers = token ? authHeader(token) : {};
+  return apiFetch(`/posts?bookmarked=true&page=${page}&limit=20`, { headers });
 }

@@ -76,8 +76,10 @@ router.post(
       }
 
       const mediaType = ALLOWED_MIME[file.mimetype] ?? "image";
-      const baseUrl = process.env.API_BASE_URL ?? "";
-      const fileUrl = `${baseUrl}/api/media/${file.filename}`;
+      // Build absolute URL: prefer API_BASE_URL, fall back to Replit dev domain
+      const domain = process.env.API_BASE_URL
+        ?? (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : "");
+      const fileUrl = `${domain}/api/media/${file.filename}`;
 
       res.json({
         url: fileUrl,

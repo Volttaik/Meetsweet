@@ -73,6 +73,7 @@ function RootLayoutNav() {
       <Stack.Screen name="notifications" options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="settings" options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="wallet" options={{ animation: 'slide_from_right' }} />
+      <Stack.Screen name="chat/[id]" options={{ animation: 'slide_from_right', headerShown: false }} />
 
       {/* Authenticated modal screens */}
       <Stack.Screen

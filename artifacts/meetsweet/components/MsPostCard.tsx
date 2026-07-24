@@ -1,16 +1,20 @@
 import React, { useState } from 'react';
 import {
+  ActionSheetIOS,
+  Alert,
   Image,
+  Platform,
+  Share,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Heart, MessageCircle, Bookmark, MoreHorizontal, BadgeCheck } from 'lucide-react-native';
+import { Heart, MessageCircle, Bookmark, MoreHorizontal, BadgeCheck, Share2 } from 'lucide-react-native';
 import { T } from '@/constants/theme';
 import { MsAvatar } from '@/components/MsAvatar';
 import type { Post } from '@/services/posts';
-import { likePost, unlikePost } from '@/services/posts';
+import { likePost, unlikePost, bookmarkPost, unbookmarkPost, deletePost } from '@/services/posts';
 
 function formatCount(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -34,18 +38,29 @@ interface MsPostCardProps {
   post: Post;
   onPress?: () => void;
   onAuthorPress?: () => void;
+  onDeleted?: (id: string) => void;
+  currentUserId?: string;
 }
 
-export function MsPostCard({ post, onPress, onAuthorPress }: MsPostCardProps) {
+export function MsPostCard({
+  post,
+  onPress,
+  onAuthorPress,
+  onDeleted,
+  currentUserId,
+}: MsPostCardProps) {
   const [liked, setLiked] = useState(post.likedByMe);
   const [likeCount, setLikeCount] = useState(post.likeCount);
   const [liking, setLiking] = useState(false);
+  const [bookmarked, setBookmarked] = useState(post.bookmarkedByMe ?? false);
+  const [bookmarking, setBookmarking] = useState(false);
+
+  const isOwn = currentUserId && currentUserId === post.author.id;
 
   const handleLike = async () => {
     if (liking) return;
     setLiking(true);
     const wasLiked = liked;
-    // Optimistic update
     setLiked(!wasLiked);
     setLikeCount((c) => (wasLiked ? Math.max(0, c - 1) : c + 1));
     try {
@@ -57,7 +72,6 @@ export function MsPostCard({ post, onPress, onAuthorPress }: MsPostCardProps) {
         setLikeCount(res.likeCount);
       }
     } catch {
-      // Revert optimistic update
       setLiked(wasLiked);
       setLikeCount((c) => (wasLiked ? c + 1 : Math.max(0, c - 1)));
     } finally {
@@ -65,7 +79,92 @@ export function MsPostCard({ post, onPress, onAuthorPress }: MsPostCardProps) {
     }
   };
 
-  const initials = post.author.name
+  const handleBookmark = async () => {
+    if (bookmarking) return;
+    setBookmarking(true);
+    const was = bookmarked;
+    setBookmarked(!was);
+    try {
+      if (was) {
+        await unbookmarkPost(post.id);
+      } else {
+        await bookmarkPost(post.id);
+      }
+    } catch {
+      setBookmarked(was);
+    } finally {
+      setBookmarking(false);
+    }
+  };
+
+  const handleShare = async () => {
+    try {
+      await Share.share({
+        message: post.caption || 'Check out this post on MeetSweet',
+        title: `${post.author.name} on MeetSweet`,
+      });
+    } catch {}
+  };
+
+  const handleMore = () => {
+    const ownOptions = ['Edit Post', 'Delete Post', 'Cancel'];
+    const guestOptions = ['Share Post', 'Copy Link', 'Report', 'Hide', 'Cancel'];
+    const options = isOwn ? ownOptions : guestOptions;
+
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options,
+          destructiveButtonIndex: isOwn ? 1 : 3,
+          cancelButtonIndex: options.length - 1,
+        },
+        (idx) => handleMoreAction(options[idx]),
+      );
+    } else {
+      Alert.alert('Post Options', undefined, [
+        ...options
+          .filter((o) => o !== 'Cancel')
+          .map((label) => ({
+            text: label,
+            style: (label === 'Delete Post' || label === 'Report' || label === 'Hide') ? ('destructive' as const) : ('default' as const),
+            onPress: () => handleMoreAction(label),
+          })),
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+    }
+  };
+
+  const handleMoreAction = async (action: string) => {
+    switch (action) {
+      case 'Delete Post':
+        Alert.alert('Delete Post', 'This cannot be undone.', [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                await deletePost(post.id);
+                onDeleted?.(post.id);
+              } catch (e) {
+                Alert.alert('Error', 'Could not delete post.');
+              }
+            },
+          },
+        ]);
+        break;
+      case 'Share Post':
+        handleShare();
+        break;
+      case 'Copy Link':
+        // Clipboard.setString(`https://meetsweet.app/post/${post.id}`);
+        break;
+      default:
+        break;
+    }
+  };
+
+  const inits = post.author.name
     .split(' ')
     .map((w) => w[0]?.toUpperCase() ?? '')
     .slice(0, 2)
@@ -75,12 +174,8 @@ export function MsPostCard({ post, onPress, onAuthorPress }: MsPostCardProps) {
     <View style={styles.card}>
       {/* Author row */}
       <View style={styles.authorRow}>
-        <TouchableOpacity
-          onPress={onAuthorPress}
-          style={styles.authorLeft}
-          activeOpacity={0.75}
-        >
-          <MsAvatar size={38} initials={initials} imageUri={post.author.avatarUrl ?? undefined} />
+        <TouchableOpacity onPress={onAuthorPress} style={styles.authorLeft} activeOpacity={0.75}>
+          <MsAvatar size={38} initials={inits} imageUri={post.author.avatarUrl ?? undefined} />
           <View style={styles.authorInfo}>
             <View style={styles.nameRow}>
               <Text style={styles.authorName} numberOfLines={1}>
@@ -104,6 +199,7 @@ export function MsPostCard({ post, onPress, onAuthorPress }: MsPostCardProps) {
           <TouchableOpacity
             style={styles.moreBtn}
             activeOpacity={0.7}
+            onPress={handleMore}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
             <MoreHorizontal size={18} color={T.TEXT_2} strokeWidth={1.8} />
@@ -118,27 +214,24 @@ export function MsPostCard({ post, onPress, onAuthorPress }: MsPostCardProps) {
         </Text>
       )}
 
-      {/* Media */}
+      {/* Media — image */}
       {post.mediaUrl && post.mediaType === 'image' && (
         <TouchableOpacity onPress={onPress} activeOpacity={0.92}>
-          <Image
-            source={{ uri: post.mediaUrl }}
-            style={styles.media}
-            resizeMode="cover"
-          />
+          <Image source={{ uri: post.mediaUrl }} style={styles.media} resizeMode="cover" />
         </TouchableOpacity>
       )}
 
-      {/* Video placeholder */}
+      {/* Media — video */}
       {post.mediaUrl && post.mediaType === 'video' && (
         <TouchableOpacity onPress={onPress} style={styles.videoPlaceholder} activeOpacity={0.85}>
           <View style={styles.videoOverlay}>
             <View style={styles.playBtn}>
               <Text style={styles.playIcon}>▶</Text>
             </View>
-            {post.durationSecs && (
+            {post.durationSecs != null && (
               <Text style={styles.duration}>
-                {Math.floor(post.durationSecs / 60)}:{String(post.durationSecs % 60).padStart(2, '0')}
+                {Math.floor(post.durationSecs / 60)}:
+                {String(post.durationSecs % 60).padStart(2, '0')}
               </Text>
             )}
           </View>
@@ -147,6 +240,7 @@ export function MsPostCard({ post, onPress, onAuthorPress }: MsPostCardProps) {
 
       {/* Actions */}
       <View style={styles.actions}>
+        {/* Like */}
         <TouchableOpacity style={styles.actionBtn} onPress={handleLike} activeOpacity={0.7}>
           <Heart
             size={20}
@@ -161,6 +255,7 @@ export function MsPostCard({ post, onPress, onAuthorPress }: MsPostCardProps) {
           )}
         </TouchableOpacity>
 
+        {/* Comment */}
         <TouchableOpacity style={styles.actionBtn} onPress={onPress} activeOpacity={0.7}>
           <MessageCircle size={20} color={T.TEXT_2} strokeWidth={1.8} />
           {post.commentCount > 0 && (
@@ -168,23 +263,31 @@ export function MsPostCard({ post, onPress, onAuthorPress }: MsPostCardProps) {
           )}
         </TouchableOpacity>
 
+        {/* Share */}
+        <TouchableOpacity style={styles.actionBtn} onPress={handleShare} activeOpacity={0.7}>
+          <Share2 size={20} color={T.TEXT_2} strokeWidth={1.8} />
+        </TouchableOpacity>
+
         <View style={{ flex: 1 }} />
 
-        <TouchableOpacity style={styles.actionBtn} activeOpacity={0.7}>
-          <Bookmark size={20} color={T.TEXT_2} strokeWidth={1.8} />
+        {/* Bookmark */}
+        <TouchableOpacity style={styles.actionBtn} onPress={handleBookmark} activeOpacity={0.7}>
+          <Bookmark
+            size={20}
+            color={bookmarked ? T.TEXT : T.TEXT_2}
+            strokeWidth={1.8}
+            fill={bookmarked ? T.TEXT : 'transparent'}
+          />
         </TouchableOpacity>
       </View>
 
-      {/* Bottom divider */}
       <View style={styles.divider} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
-    backgroundColor: T.BG,
-  },
+  card: { backgroundColor: T.BG },
 
   authorRow: {
     flexDirection: 'row',
@@ -213,11 +316,7 @@ const styles = StyleSheet.create({
     color: T.TEXT_2,
     marginTop: 1,
   },
-  authorRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
+  authorRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   premiumBadge: {
     paddingHorizontal: 8,
     paddingVertical: 3,
@@ -248,11 +347,7 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
   },
 
-  media: {
-    width: '100%',
-    aspectRatio: 1,
-    backgroundColor: T.SURFACE,
-  },
+  media: { width: '100%', aspectRatio: 1, backgroundColor: T.SURFACE },
 
   videoPlaceholder: {
     width: '100%',
@@ -261,10 +356,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  videoOverlay: {
-    alignItems: 'center',
-    gap: 10,
-  },
+  videoOverlay: { alignItems: 'center', gap: 10 },
   playBtn: {
     width: 56,
     height: 56,
@@ -275,16 +367,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  playIcon: {
-    fontSize: 20,
-    color: '#FFFFFF',
-    marginLeft: 4,
-  },
-  duration: {
-    fontSize: 12,
-    fontFamily: T.FONT.medium,
-    color: 'rgba(255,255,255,0.7)',
-  },
+  playIcon: { fontSize: 20, color: '#FFFFFF', marginLeft: 4 },
+  duration: { fontSize: 12, fontFamily: T.FONT.medium, color: 'rgba(255,255,255,0.7)' },
 
   actions: {
     flexDirection: 'row',
@@ -300,18 +384,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     paddingVertical: 4,
   },
-  actionCount: {
-    fontSize: 13,
-    fontFamily: T.FONT.medium,
-    color: T.TEXT_2,
-  },
-  actionCountLiked: {
-    color: '#EF4444',
-  },
+  actionCount: { fontSize: 13, fontFamily: T.FONT.medium, color: T.TEXT_2 },
+  actionCountLiked: { color: '#EF4444' },
 
-  divider: {
-    height: 1,
-    backgroundColor: T.BORDER,
-    marginTop: 2,
-  },
+  divider: { height: 1, backgroundColor: T.BORDER, marginTop: 2 },
 });

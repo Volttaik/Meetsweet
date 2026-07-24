@@ -18,9 +18,9 @@ import { MsSkeletonCard } from '@/components/MsSkeletonCard';
 import { MsPostCard } from '@/components/MsPostCard';
 import { MsEmptyState } from '@/components/MsEmptyState';
 import { useAuth } from '@/contexts/AuthContext';
-import { getUserPosts, type Post } from '@/services/posts';
+import { getUserPosts, getBookmarkedPosts, type Post } from '@/services/posts';
 
-const PROFILE_TABS = ['Posts', 'Media', 'Likes'] as const;
+const PROFILE_TABS = ['Posts', 'Media', 'Saved'] as const;
 type ProfileTab = typeof PROFILE_TABS[number];
 
 function StatItem({ label, value }: { label: string; value: string | number }) {
@@ -49,7 +49,9 @@ export default function ProfileScreen() {
   const { user, refreshUser } = useAuth();
   const [activeTab, setActiveTab] = useState<ProfileTab>('Posts');
   const [posts, setPosts] = useState<Post[]>([]);
+  const [savedPosts, setSavedPosts] = useState<Post[]>([]);
   const [loadingPosts, setLoadingPosts] = useState(true);
+  const [loadingSaved, setLoadingSaved] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   const gridItemSize = Math.floor((width - 2) / 3);
@@ -67,9 +69,25 @@ export default function ProfileScreen() {
     }
   }, [user]);
 
+  const loadSavedPosts = useCallback(async () => {
+    setLoadingSaved(true);
+    try {
+      const data = await getBookmarkedPosts();
+      setSavedPosts(data.posts);
+    } catch {
+      // ignore
+    } finally {
+      setLoadingSaved(false);
+    }
+  }, []);
+
   useEffect(() => {
     loadPosts();
   }, [user?.id]);
+
+  useEffect(() => {
+    if (activeTab === 'Saved') loadSavedPosts();
+  }, [activeTab]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -157,12 +175,38 @@ export default function ProfileScreen() {
         </View>
       );
     }
+    // Saved
+    if (loadingSaved) {
+      return (
+        <View style={styles.grid}>
+          {Array.from({ length: 9 }).map((_, i) => (
+            <MsSkeletonCard key={i} style={{ width: gridItemSize, height: gridItemSize }} radius={0} />
+          ))}
+        </View>
+      );
+    }
+    if (savedPosts.length === 0) {
+      return (
+        <MsEmptyState
+          emoji="🔖"
+          title="No saved posts"
+          message="Posts you bookmark will appear here."
+        />
+      );
+    }
     return (
-      <MsEmptyState
-        emoji="❤️"
-        title="No liked posts"
-        message="Posts you like will appear here."
-      />
+      <View style={[styles.grid, { gap: 1, backgroundColor: T.BORDER }]}>
+        {savedPosts.map((p) => (
+          <View
+            key={p.id}
+            style={{ width: gridItemSize, height: gridItemSize, backgroundColor: T.SURFACE_2, alignItems: 'center', justifyContent: 'center' }}
+          >
+            <Text style={{ color: T.TEXT_3, fontSize: 11 }}>
+              {p.mediaType === 'video' ? '▶' : p.mediaUrl ? '📷' : '📝'}
+            </Text>
+          </View>
+        ))}
+      </View>
     );
   };
 
