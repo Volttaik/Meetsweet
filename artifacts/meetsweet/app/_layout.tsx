@@ -37,6 +37,7 @@ function RootLayoutNav() {
       <Stack.Screen name="welcome" options={{ gestureEnabled: false, animation: 'fade' }} />
       <Stack.Screen name="onboarding" options={{ gestureEnabled: false }} />
       <Stack.Screen name="auth" options={{}} />
+      <Stack.Screen name="register" options={{}} />
       <Stack.Screen name="forgot-password" options={{}} />
       <Stack.Screen name="verify-email" options={{}} />
       <Stack.Screen name="success" options={{ gestureEnabled: false, animation: 'fade' }} />

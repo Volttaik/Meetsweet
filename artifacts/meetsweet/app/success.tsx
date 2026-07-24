@@ -182,10 +182,10 @@ export default function SuccessScreen() {
           <Button
             variant="primary"
             size="lg"
-            onPress={() => router.replace('/home')}
+            onPress={() => router.replace('/auth')}
             style={styles.btn}
           >
-            <Button.Label style={styles.btnLabel}>Enter MeetSweet</Button.Label>
+            <Button.Label style={styles.btnLabel}>Sign In to MeetSweet</Button.Label>
           </Button>
         </Animated.View>
       </View>

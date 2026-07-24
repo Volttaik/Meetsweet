@@ -30,11 +30,36 @@ import { ArrowLeft, Eye, EyeOff, Lock, Mail } from 'lucide-react-native';
 type Step = 'email' | 'code' | 'new_password' | 'done';
 
 const DEMO_CODE = '1234';
+const INPUT_BG = '#111111';
+const INPUT_BORDER = 'rgba(255,255,255,0.1)';
+const INPUT_BORDER_FOCUSED = 'rgba(255,255,255,0.35)';
+const INPUT_BORDER_ERROR = '#EF4444';
 
 // ─── Shared input row ─────────────────────────────────────────────────────────
 
-function InputRow({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
-  return <View style={styles.inputWrapper}>{icon}{children}</View>;
+function InputRow({
+  icon,
+  children,
+  isError,
+  isFocused,
+}: {
+  icon: React.ReactNode;
+  children: React.ReactNode;
+  isError?: boolean;
+  isFocused?: boolean;
+}) {
+  const borderColor = isError
+    ? INPUT_BORDER_ERROR
+    : isFocused
+    ? INPUT_BORDER_FOCUSED
+    : INPUT_BORDER;
+
+  return (
+    <View style={[styles.inputWrapper, { borderColor }]}>
+      {icon}
+      {children}
+    </View>
+  );
 }
 
 // ─── Step 1: Enter email ──────────────────────────────────────────────────────
@@ -43,9 +68,13 @@ function StepEmail({ onNext }: { onNext: (email: string) => void }) {
   const [email, setEmail] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [focused, setFocused] = useState(false);
 
   const handleSend = async () => {
-    if (!email.includes('@') || !email.includes('.')) { setError('Enter a valid email address'); return; }
+    if (!email.includes('@') || !email.includes('.')) {
+      setError('Enter a valid email address');
+      return;
+    }
     setLoading(true);
     await new Promise((r) => setTimeout(r, 900));
     setLoading(false);
@@ -55,7 +84,7 @@ function StepEmail({ onNext }: { onNext: (email: string) => void }) {
   return (
     <View style={step.container}>
       <View style={step.iconWrap}>
-        <Mail size={36} color="#FFFFFF" />
+        <Mail size={38} color="#FFFFFF" />
       </View>
       <Text style={step.title}>Forgot Password?</Text>
       <Text style={step.subtitle}>
@@ -64,22 +93,30 @@ function StepEmail({ onNext }: { onNext: (email: string) => void }) {
 
       <TextField isInvalid={!!error}>
         <Label style={styles.fieldLabel}>Email Address</Label>
-        <InputRow icon={<Mail size={18} color="rgba(255,255,255,0.35)" />}>
+        <InputRow
+          icon={<Mail size={20} color={focused ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.3)'} />}
+          isError={!!error}
+          isFocused={focused}
+        >
           <Input
             placeholder="your@email.com"
             keyboardType="email-address"
             autoCapitalize="none"
             value={email}
             onChangeText={(v) => { setEmail(v); setError(''); }}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
             style={styles.input}
-            placeholderTextColor="rgba(255,255,255,0.2)"
+            placeholderTextColor="rgba(255,255,255,0.18)"
           />
         </InputRow>
         {!!error && <FieldError style={styles.fieldError}>{error}</FieldError>}
       </TextField>
 
       <Button variant="primary" size="lg" onPress={handleSend} isDisabled={loading} style={styles.primaryBtn}>
-        {loading ? <Spinner size="sm" /> : <Button.Label style={styles.btnLabel}>Send Reset Code</Button.Label>}
+        {loading
+          ? <Spinner size="sm" />
+          : <Button.Label style={styles.btnLabel}>Send Reset Code</Button.Label>}
       </Button>
     </View>
   );
@@ -107,7 +144,10 @@ function StepCode({ email, onNext }: { email: string; onNext: () => void }) {
     }, 1000);
   };
 
-  useEffect(() => { startTimer(); return () => { if (timerRef.current) clearInterval(timerRef.current); }; }, []);
+  useEffect(() => {
+    startTimer();
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, []);
 
   const shake = () => {
     shakeX.value = withSequence(
@@ -162,7 +202,17 @@ function StepCode({ email, onNext }: { email: string; onNext: () => void }) {
         <Button.Label style={styles.btnLabel}>Verify Code</Button.Label>
       </Button>
 
-      <TouchableOpacity onPress={() => { if (canResend) { setEnteredCode(''); setCompleted(false); setError(''); startTimer(); } }} style={styles.resendRow}>
+      <TouchableOpacity
+        onPress={() => {
+          if (canResend) {
+            setEnteredCode('');
+            setCompleted(false);
+            setError('');
+            startTimer();
+          }
+        }}
+        style={styles.resendRow}
+      >
         <Text style={[styles.resendText, !canResend && styles.resendDisabled]}>
           {canResend ? 'Resend code' : `Resend in ${countdown}s`}
         </Text>
@@ -180,6 +230,8 @@ function StepNewPassword({ onNext }: { onNext: () => void }) {
   const [showConfirm, setShowConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [focused, setFocused] = useState<Record<string, boolean>>({});
+  const setFoc = (k: string, v: boolean) => setFocused((f) => ({ ...f, [k]: v }));
 
   const validate = () => {
     const e: Record<string, string> = {};
@@ -200,24 +252,32 @@ function StepNewPassword({ onNext }: { onNext: () => void }) {
   return (
     <View style={step.container}>
       <View style={step.iconWrap}>
-        <Lock size={36} color="#FFFFFF" />
+        <Lock size={38} color="#FFFFFF" />
       </View>
       <Text style={step.title}>Create New Password</Text>
       <Text style={step.subtitle}>Choose a strong password of at least 8 characters.</Text>
 
       <TextField isInvalid={!!errors.password}>
         <Label style={styles.fieldLabel}>New Password</Label>
-        <InputRow icon={<Lock size={18} color="rgba(255,255,255,0.35)" />}>
+        <InputRow
+          icon={<Lock size={20} color={focused.password ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.3)'} />}
+          isError={!!errors.password}
+          isFocused={focused.password}
+        >
           <Input
             placeholder="••••••••"
             secureTextEntry={!showPw}
             value={password}
             onChangeText={(v) => { setPassword(v); setErrors((e) => ({ ...e, password: '' })); }}
+            onFocus={() => setFoc('password', true)}
+            onBlur={() => setFoc('password', false)}
             style={[styles.input, { flex: 1 }]}
-            placeholderTextColor="rgba(255,255,255,0.2)"
+            placeholderTextColor="rgba(255,255,255,0.18)"
           />
-          <TouchableOpacity onPress={() => setShowPw((v) => !v)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            {showPw ? <EyeOff size={18} color="rgba(255,255,255,0.35)" /> : <Eye size={18} color="rgba(255,255,255,0.35)" />}
+          <TouchableOpacity onPress={() => setShowPw((v) => !v)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            {showPw
+              ? <EyeOff size={20} color="rgba(255,255,255,0.35)" />
+              : <Eye size={20} color="rgba(255,255,255,0.35)" />}
           </TouchableOpacity>
         </InputRow>
         {!!errors.password && <FieldError style={styles.fieldError}>{errors.password}</FieldError>}
@@ -225,24 +285,34 @@ function StepNewPassword({ onNext }: { onNext: () => void }) {
 
       <TextField isInvalid={!!errors.confirm}>
         <Label style={styles.fieldLabel}>Confirm Password</Label>
-        <InputRow icon={<Lock size={18} color="rgba(255,255,255,0.35)" />}>
+        <InputRow
+          icon={<Lock size={20} color={focused.confirm ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.3)'} />}
+          isError={!!errors.confirm}
+          isFocused={focused.confirm}
+        >
           <Input
             placeholder="••••••••"
             secureTextEntry={!showConfirm}
             value={confirm}
             onChangeText={(v) => { setConfirm(v); setErrors((e) => ({ ...e, confirm: '' })); }}
+            onFocus={() => setFoc('confirm', true)}
+            onBlur={() => setFoc('confirm', false)}
             style={[styles.input, { flex: 1 }]}
-            placeholderTextColor="rgba(255,255,255,0.2)"
+            placeholderTextColor="rgba(255,255,255,0.18)"
           />
-          <TouchableOpacity onPress={() => setShowConfirm((v) => !v)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            {showConfirm ? <EyeOff size={18} color="rgba(255,255,255,0.35)" /> : <Eye size={18} color="rgba(255,255,255,0.35)" />}
+          <TouchableOpacity onPress={() => setShowConfirm((v) => !v)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            {showConfirm
+              ? <EyeOff size={20} color="rgba(255,255,255,0.35)" />
+              : <Eye size={20} color="rgba(255,255,255,0.35)" />}
           </TouchableOpacity>
         </InputRow>
         {!!errors.confirm && <FieldError style={styles.fieldError}>{errors.confirm}</FieldError>}
       </TextField>
 
       <Button variant="primary" size="lg" onPress={handleReset} isDisabled={loading} style={styles.primaryBtn}>
-        {loading ? <Spinner size="sm" /> : <Button.Label style={styles.btnLabel}>Reset Password</Button.Label>}
+        {loading
+          ? <Spinner size="sm" />
+          : <Button.Label style={styles.btnLabel}>Reset Password</Button.Label>}
       </Button>
     </View>
   );
@@ -253,8 +323,8 @@ function StepNewPassword({ onNext }: { onNext: () => void }) {
 function StepDone() {
   return (
     <View style={[step.container, { alignItems: 'center' }]}>
-      <View style={[step.iconWrap, { width: 88, height: 88, borderRadius: 44 }]}>
-        <Text style={{ fontSize: 40 }}>✓</Text>
+      <View style={[step.iconWrap, { width: 96, height: 96, borderRadius: 48 }]}>
+        <Text style={{ fontSize: 42 }}>✓</Text>
       </View>
       <Text style={[step.title, { textAlign: 'center' }]}>Password Reset!</Text>
       <Text style={[step.subtitle, { textAlign: 'center' }]}>
@@ -302,15 +372,23 @@ export default function ForgotPasswordScreen() {
   const [currentStep, setCurrentStep] = useState<Step>('email');
   const [email, setEmail] = useState('');
   const contentOpacity = useSharedValue(1);
+  const contentY = useSharedValue(0);
 
   const advance = (to: Step) => {
-    contentOpacity.value = withTiming(0, { duration: 140, easing: Easing.in(Easing.cubic) }, () => {
-      contentOpacity.value = withTiming(1, { duration: 220, easing: Easing.out(Easing.cubic) });
-    });
-    setTimeout(() => setCurrentStep(to), 120);
+    contentOpacity.value = withTiming(0, { duration: 130, easing: Easing.in(Easing.cubic) });
+    contentY.value = withTiming(-12, { duration: 130, easing: Easing.in(Easing.cubic) });
+    setTimeout(() => {
+      setCurrentStep(to);
+      contentY.value = 16;
+      contentOpacity.value = withTiming(1, { duration: 240, easing: Easing.out(Easing.cubic) });
+      contentY.value = withTiming(0, { duration: 240, easing: Easing.out(Easing.cubic) });
+    }, 110);
   };
 
-  const contentStyle = useAnimatedStyle(() => ({ opacity: contentOpacity.value }));
+  const contentStyle = useAnimatedStyle(() => ({
+    opacity: contentOpacity.value,
+    transform: [{ translateY: contentY.value }],
+  }));
 
   return (
     <View style={styles.bg}>
@@ -320,16 +398,19 @@ export default function ForgotPasswordScreen() {
           styles.scrollContent,
           {
             paddingTop: insets.top + (Platform.OS === 'web' ? 72 : 24),
-            paddingBottom: insets.bottom + (Platform.OS === 'web' ? 60 : 48),
+            paddingBottom: insets.bottom + (Platform.OS === 'web' ? 60 : 52),
           },
         ]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
         {currentStep !== 'done' && (
-          <TouchableOpacity onPress={() => router.back()} style={styles.backRow} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-            <ArrowLeft size={20} color="rgba(255,255,255,0.45)" />
-            <Text style={styles.backText}>Back</Text>
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={styles.backBtn}
+            hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
+          >
+            <ArrowLeft size={22} color="#FFFFFF" strokeWidth={2} />
           </TouchableOpacity>
         )}
 
@@ -358,58 +439,103 @@ export default function ForgotPasswordScreen() {
 const styles = StyleSheet.create({
   bg: { flex: 1, backgroundColor: '#0A0A0A' },
   scroll: { flex: 1 },
-  scrollContent: { paddingHorizontal: 24, gap: 28 },
-  backRow: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start' },
-  backText: { fontSize: 15, fontFamily: 'Poppins_500Medium', color: 'rgba(255,255,255,0.45)' },
-  screenTitle: { fontSize: 26, fontFamily: 'Poppins_700Bold', color: '#FFFFFF', letterSpacing: -0.4 },
+  scrollContent: { paddingHorizontal: 56, gap: 28 },
+  backBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 13,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'flex-start',
+  },
+  screenTitle: {
+    fontSize: 30,
+    fontFamily: 'Poppins_700Bold',
+    color: '#FFFFFF',
+    letterSpacing: -0.5,
+  },
 
-  fieldLabel: { fontFamily: 'Poppins_500Medium', fontSize: 13, color: 'rgba(255,255,255,0.5)', marginBottom: 6 },
+  fieldLabel: {
+    fontFamily: 'Poppins_500Medium',
+    fontSize: 15,
+    color: 'rgba(255,255,255,0.55)',
+    marginBottom: 6,
+  },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#111111',
-    borderRadius: 12,
-    paddingHorizontal: 14,
+    backgroundColor: INPUT_BG,
+    borderRadius: 14,
+    paddingHorizontal: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-    height: 52,
-    gap: 10,
+    borderColor: INPUT_BORDER,
+    height: 50,
+    gap: 12,
   },
-  input: { flex: 1, color: '#FFFFFF', fontSize: 15, fontFamily: 'Poppins_400Regular', height: '100%' },
-  fieldError: { fontFamily: 'Poppins_400Regular', fontSize: 12, color: '#EF4444', marginTop: 4 },
+  input: {
+    flex: 1,
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontFamily: 'Poppins_400Regular',
+    height: '100%',
+  },
+  fieldError: {
+    fontFamily: 'Poppins_400Regular',
+    fontSize: 13,
+    color: '#EF4444',
+    marginTop: 5,
+  },
 
-  primaryBtn: { backgroundColor: '#FFFFFF', borderRadius: 16, height: 56 },
-  btnLabel: { fontFamily: 'Poppins_600SemiBold', fontSize: 16, color: '#000000' },
+  primaryBtn: { backgroundColor: '#FFFFFF', borderRadius: 18, height: 60 },
+  btnLabel: { fontFamily: 'Poppins_600SemiBold', fontSize: 17, color: '#000000' },
 
   otpWrap: { alignItems: 'center' },
-  otpGroup: { flexDirection: 'row', gap: 12 },
+  otpGroup: { flexDirection: 'row', gap: 14 },
   otpSlot: {
-    width: 62,
-    height: 70,
-    borderRadius: 14,
+    width: 68,
+    height: 76,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.12)',
     backgroundColor: '#111111',
-    fontSize: 24,
+    fontSize: 26,
     fontFamily: 'Poppins_700Bold',
     color: '#FFFFFF',
   },
-  errorText: { fontSize: 13, fontFamily: 'Poppins_400Regular', color: '#EF4444', textAlign: 'center' },
+  errorText: {
+    fontSize: 14,
+    fontFamily: 'Poppins_400Regular',
+    color: '#EF4444',
+    textAlign: 'center',
+  },
 
-  demoHint: { backgroundColor: '#111111', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
-  demoHintText: { fontSize: 12, fontFamily: 'Poppins_400Regular', color: 'rgba(255,255,255,0.4)', textAlign: 'center' },
+  demoHint: {
+    backgroundColor: '#111111',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  demoHintText: {
+    fontSize: 13,
+    fontFamily: 'Poppins_400Regular',
+    color: 'rgba(255,255,255,0.4)',
+    textAlign: 'center',
+  },
 
   resendRow: { alignItems: 'center' },
-  resendText: { fontSize: 14, fontFamily: 'Poppins_600SemiBold', color: '#FFFFFF', paddingVertical: 4 },
+  resendText: { fontSize: 15, fontFamily: 'Poppins_600SemiBold', color: '#FFFFFF', paddingVertical: 4 },
   resendDisabled: { color: 'rgba(255,255,255,0.25)' },
 });
 
 const step = StyleSheet.create({
-  container: { gap: 20 },
+  container: { gap: 22 },
   iconWrap: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     backgroundColor: 'rgba(255,255,255,0.06)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.1)',
@@ -417,26 +543,40 @@ const step = StyleSheet.create({
     justifyContent: 'center',
     alignSelf: 'center',
   },
-  iconEmoji: { fontSize: 32 },
-  title: { fontSize: 24, fontFamily: 'Poppins_700Bold', color: '#FFFFFF', letterSpacing: -0.3 },
-  subtitle: { fontSize: 14, fontFamily: 'Poppins_400Regular', color: 'rgba(255,255,255,0.45)', lineHeight: 22 },
+  iconEmoji: { fontSize: 34 },
+  title: {
+    fontSize: 28,
+    fontFamily: 'Poppins_700Bold',
+    color: '#FFFFFF',
+    letterSpacing: -0.4,
+  },
+  subtitle: {
+    fontSize: 15,
+    fontFamily: 'Poppins_400Regular',
+    color: 'rgba(255,255,255,0.45)',
+    lineHeight: 24,
+  },
   highlight: { color: '#FFFFFF', fontFamily: 'Poppins_500Medium' },
 });
 
 const bar = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center' },
-  step: { alignItems: 'center', gap: 4 },
+  step: { alignItems: 'center', gap: 5 },
   dot: {
-    width: 28, height: 28, borderRadius: 14,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: '#111111',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)',
-    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   dotActive: { borderColor: '#FFFFFF', backgroundColor: 'rgba(255,255,255,0.08)' },
-  num: { fontSize: 11, fontFamily: 'Poppins_700Bold', color: 'rgba(255,255,255,0.25)' },
+  num: { fontSize: 12, fontFamily: 'Poppins_700Bold', color: 'rgba(255,255,255,0.25)' },
   numActive: { color: '#FFFFFF' },
-  label: { fontSize: 10, fontFamily: 'Poppins_400Regular', color: 'rgba(255,255,255,0.25)' },
+  label: { fontSize: 11, fontFamily: 'Poppins_400Regular', color: 'rgba(255,255,255,0.25)' },
   labelActive: { color: '#FFFFFF', fontFamily: 'Poppins_500Medium' },
-  connector: { flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.08)', marginBottom: 14 },
+  connector: { flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.08)', marginBottom: 18 },
   connectorActive: { backgroundColor: 'rgba(255,255,255,0.4)' },
 });

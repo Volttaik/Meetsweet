@@ -26,9 +26,11 @@ const { width: SCREEN_W } = Dimensions.get('window');
 
 // ─── Illustrations ─────────────────────────────────────────────────────────
 
+const ILLUS_SIZE = 260;
+
 function IllustrationDiscover() {
   return (
-    <Svg width={220} height={220} viewBox="0 0 220 220">
+    <Svg width={ILLUS_SIZE} height={ILLUS_SIZE} viewBox="0 0 220 220">
       <Rect x="20" y="60" width="80" height="100" rx="16" fill="#111111" />
       <Circle cx="60" cy="100" r="22" fill="#222222" />
       <Circle cx="60" cy="100" r="14" fill="#444444" />
@@ -52,7 +54,7 @@ function IllustrationDiscover() {
 
 function IllustrationChat() {
   return (
-    <Svg width={220} height={220} viewBox="0 0 220 220">
+    <Svg width={ILLUS_SIZE} height={ILLUS_SIZE} viewBox="0 0 220 220">
       <Rect x="20" y="50" width="130" height="48" rx="16" fill="#111111" />
       <Path d="M20 98 L8 110 L32 98Z" fill="#111111" />
       <Rect x="36" y="65" width="96" height="8" rx="4" fill="#2A2A2A" />
@@ -78,7 +80,7 @@ function IllustrationChat() {
 
 function IllustrationSubscribe() {
   return (
-    <Svg width={220} height={220} viewBox="0 0 220 220">
+    <Svg width={ILLUS_SIZE} height={ILLUS_SIZE} viewBox="0 0 220 220">
       <Path
         d="M60 140 L60 100 L85 120 L110 80 L135 120 L160 100 L160 140Z"
         fill="#FFFFFF"
@@ -138,8 +140,8 @@ function FloatingIllustration({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     translateY.value = withRepeat(
       withSequence(
-        withTiming(-10, { duration: 1800, easing: Easing.inOut(Easing.sin) }),
-        withTiming(0, { duration: 1800, easing: Easing.inOut(Easing.sin) }),
+        withTiming(-12, { duration: 2000, easing: Easing.inOut(Easing.sin) }),
+        withTiming(0, { duration: 2000, easing: Easing.inOut(Easing.sin) }),
       ),
       -1,
       false,
@@ -166,8 +168,11 @@ function Dots({ count, active }: { count: number; active: number }) {
 const dotStyles = StyleSheet.create({
   row: { flexDirection: 'row', gap: 8, alignItems: 'center' },
   dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.2)' },
-  dotActive: { width: 24, backgroundColor: '#FFFFFF' },
+  dotActive: { width: 28, backgroundColor: '#FFFFFF' },
 });
+
+const H_PAD = 32;
+const PAGE_W = SCREEN_W - H_PAD * 2;
 
 export default function OnboardingScreen() {
   const insets = useSafeAreaInsets();
@@ -178,7 +183,7 @@ export default function OnboardingScreen() {
     if (activeIndex < PAGES.length - 1) {
       flatListRef.current?.scrollToIndex({ index: activeIndex + 1, animated: true });
     } else {
-      router.push('/auth');
+      router.push('/register');
     }
   };
 
@@ -199,8 +204,8 @@ export default function OnboardingScreen() {
         style={[
           styles.container,
           {
-            paddingTop: insets.top + (Platform.OS === 'web' ? 72 : 16),
-            paddingBottom: insets.bottom + (Platform.OS === 'web' ? 40 : 28),
+            paddingTop: insets.top + (Platform.OS === 'web' ? 72 : 20),
+            paddingBottom: insets.bottom + (Platform.OS === 'web' ? 40 : 32),
           },
         ]}
       >
@@ -222,7 +227,7 @@ export default function OnboardingScreen() {
           viewabilityConfig={viewabilityConfig}
           style={styles.flatList}
           renderItem={({ item }) => (
-            <View style={[styles.page, { width: SCREEN_W - 56 }]}>
+            <View style={[styles.page, { width: PAGE_W }]}>
               <FloatingIllustration>
                 <View style={styles.illustrationWrap}>
                   <item.Illustration />
@@ -235,8 +240,8 @@ export default function OnboardingScreen() {
             </View>
           )}
           getItemLayout={(_, index) => ({
-            length: SCREEN_W - 56,
-            offset: (SCREEN_W - 56) * index,
+            length: PAGE_W,
+            offset: PAGE_W * index,
             index,
           })}
         />
@@ -253,29 +258,29 @@ export default function OnboardingScreen() {
 
 const styles = StyleSheet.create({
   bg: { flex: 1, backgroundColor: '#0A0A0A' },
-  container: { flex: 1, paddingHorizontal: 28, gap: 24 },
+  container: { flex: 1, paddingHorizontal: H_PAD, gap: 28 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  skipText: { fontSize: 15, fontFamily: 'Poppins_500Medium', color: 'rgba(255,255,255,0.45)' },
-  flatList: { flex: 1, marginHorizontal: -28, paddingHorizontal: 28 },
-  page: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 36, paddingHorizontal: 8 },
-  illustrationWrap: { width: 220, height: 220, alignItems: 'center', justifyContent: 'center' },
-  textBlock: { gap: 12, alignItems: 'center' },
+  skipText: { fontSize: 16, fontFamily: 'Poppins_500Medium', color: 'rgba(255,255,255,0.45)' },
+  flatList: { flex: 1, marginHorizontal: -H_PAD, paddingHorizontal: H_PAD },
+  page: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 44, paddingHorizontal: 4 },
+  illustrationWrap: { width: ILLUS_SIZE, height: ILLUS_SIZE, alignItems: 'center', justifyContent: 'center' },
+  textBlock: { gap: 16, alignItems: 'center' },
   title: {
-    fontSize: 32,
+    fontSize: 36,
     fontFamily: 'Poppins_700Bold',
     color: '#FFFFFF',
     textAlign: 'center',
-    lineHeight: 42,
-    letterSpacing: -0.5,
+    lineHeight: 46,
+    letterSpacing: -0.6,
   },
   description: {
-    fontSize: 15,
+    fontSize: 16,
     fontFamily: 'Poppins_400Regular',
     color: 'rgba(255,255,255,0.45)',
     textAlign: 'center',
-    lineHeight: 24,
-    paddingHorizontal: 8,
+    lineHeight: 26,
+    paddingHorizontal: 4,
   },
-  nextBtn: { backgroundColor: '#FFFFFF', borderRadius: 16, height: 56 },
-  nextBtnLabel: { fontFamily: 'Poppins_600SemiBold', fontSize: 16, color: '#000000' },
+  nextBtn: { backgroundColor: '#FFFFFF', borderRadius: 18, height: 60 },
+  nextBtnLabel: { fontFamily: 'Poppins_600SemiBold', fontSize: 17, color: '#000000' },
 });

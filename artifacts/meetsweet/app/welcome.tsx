@@ -19,11 +19,11 @@ const HIGHLIGHTS = [
 
 function FadeUp({ children, delay = 0 }: { children: React.ReactNode; delay?: number }) {
   const opacity = useSharedValue(0);
-  const translateY = useSharedValue(24);
+  const translateY = useSharedValue(28);
 
   useEffect(() => {
-    opacity.value = withDelay(delay, withTiming(1, { duration: 480, easing: Easing.out(Easing.cubic) }));
-    translateY.value = withDelay(delay, withTiming(0, { duration: 480, easing: Easing.out(Easing.cubic) }));
+    opacity.value = withDelay(delay, withTiming(1, { duration: 520, easing: Easing.out(Easing.cubic) }));
+    translateY.value = withDelay(delay, withTiming(0, { duration: 520, easing: Easing.out(Easing.cubic) }));
   }, []);
 
   const style = useAnimatedStyle(() => ({
@@ -43,12 +43,12 @@ export default function WelcomeScreen() {
         style={[
           styles.container,
           {
-            paddingTop: insets.top + (Platform.OS === 'web' ? 72 : 28),
-            paddingBottom: insets.bottom + (Platform.OS === 'web' ? 40 : 32),
+            paddingTop: insets.top + (Platform.OS === 'web' ? 72 : 32),
+            paddingBottom: insets.bottom + (Platform.OS === 'web' ? 40 : 36),
           },
         ]}
       >
-        {/* Logo — no border, no background */}
+        {/* Logo */}
         <FadeUp delay={0}>
           <View style={styles.logoRow}>
             <Image
@@ -82,18 +82,18 @@ export default function WelcomeScreen() {
 
         {/* Actions */}
         <View style={styles.actions}>
-          <FadeUp delay={200}>
+          <FadeUp delay={220}>
             <Button
               variant="primary"
               size="lg"
               onPress={() => router.push('/onboarding')}
               style={styles.primaryBtn}
             >
-              <Button.Label style={styles.primaryBtnLabel}>Create Account</Button.Label>
+              <Button.Label style={styles.primaryBtnLabel}>Get Started</Button.Label>
             </Button>
           </FadeUp>
 
-          <FadeUp delay={280}>
+          <FadeUp delay={300}>
             <Button
               variant="outline"
               size="lg"
@@ -104,7 +104,7 @@ export default function WelcomeScreen() {
             </Button>
           </FadeUp>
 
-          <FadeUp delay={340}>
+          <FadeUp delay={380}>
             <Text style={styles.terms}>
               By continuing you agree to our{' '}
               <Text style={styles.termsLink}>Terms</Text>
@@ -125,7 +125,7 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    paddingHorizontal: 28,
+    paddingHorizontal: 32,
     justifyContent: 'space-between',
   },
   logoRow: {
@@ -133,83 +133,83 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
-  logo: { width: 28, height: 28 },
+  logo: { width: 40, height: 40 },
   logoText: {
-    fontSize: 18,
+    fontSize: 22,
     fontFamily: 'Poppins_700Bold',
     color: '#FFFFFF',
-    letterSpacing: -0.3,
+    letterSpacing: -0.4,
   },
   hero: {
-    gap: 20,
+    gap: 22,
     paddingVertical: 8,
   },
   headline: {
-    fontSize: 42,
+    fontSize: 44,
     fontFamily: 'Poppins_700Bold',
     color: '#FFFFFF',
-    lineHeight: 52,
-    letterSpacing: -1,
+    lineHeight: 54,
+    letterSpacing: -1.2,
   },
   description: {
-    fontSize: 15,
+    fontSize: 16,
     fontFamily: 'Poppins_400Regular',
     color: 'rgba(255,255,255,0.45)',
-    lineHeight: 24,
+    lineHeight: 26,
   },
   highlights: {
-    gap: 10,
+    gap: 12,
     marginTop: 4,
   },
   highlightRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 14,
   },
   bullet: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
     backgroundColor: 'rgba(255,255,255,0.5)',
   },
   highlightText: {
-    fontSize: 14,
+    fontSize: 15,
     fontFamily: 'Poppins_400Regular',
     color: 'rgba(255,255,255,0.6)',
     flex: 1,
   },
   actions: {
-    gap: 12,
+    gap: 14,
   },
   primaryBtn: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    height: 56,
+    borderRadius: 18,
+    height: 60,
   },
   primaryBtnLabel: {
     fontFamily: 'Poppins_600SemiBold',
-    fontSize: 16,
+    fontSize: 17,
     color: '#000000',
   },
   outlineBtn: {
-    borderRadius: 16,
-    height: 56,
+    borderRadius: 18,
+    height: 60,
     borderColor: 'rgba(255,255,255,0.2)',
   },
   outlineBtnLabel: {
     fontFamily: 'Poppins_600SemiBold',
-    fontSize: 16,
+    fontSize: 17,
     color: '#FFFFFF',
   },
   terms: {
-    fontSize: 12,
+    fontSize: 13,
     fontFamily: 'Poppins_400Regular',
     color: 'rgba(255,255,255,0.25)',
     textAlign: 'center',
-    lineHeight: 18,
-    marginTop: 4,
+    lineHeight: 20,
+    marginTop: 2,
   },
   termsLink: {
-    color: 'rgba(255,255,255,0.6)',
+    color: 'rgba(255,255,255,0.55)',
   },
 });
