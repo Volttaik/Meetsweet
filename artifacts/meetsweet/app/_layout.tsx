@@ -20,10 +20,18 @@ import {
 } from '@expo-google-fonts/poppins';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
+import { AuthProvider } from '@/contexts/AuthContext';
 
 SplashScreen.preventAutoHideAsync();
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      staleTime: 30_000,
+    },
+  },
+});
 
 function RootLayoutNav() {
   return (
@@ -64,11 +72,16 @@ function RootLayoutNav() {
       {/* Authenticated push screens */}
       <Stack.Screen name="notifications" options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="settings" options={{ animation: 'slide_from_right' }} />
+      <Stack.Screen name="wallet" options={{ animation: 'slide_from_right' }} />
 
       {/* Authenticated modal screens */}
       <Stack.Screen
         name="become-creator"
         options={{ animation: 'slide_from_bottom', gestureEnabled: true }}
+      />
+      <Stack.Screen
+        name="create-post"
+        options={{ animation: 'slide_from_bottom', gestureEnabled: true, presentation: 'modal' }}
       />
       <Stack.Screen name="creator-dashboard" options={{ animation: 'slide_from_right' }} />
     </Stack>
@@ -98,7 +111,9 @@ export default function RootLayout() {
           <GestureHandlerRootView style={{ flex: 1 }}>
             <HeroUINativeProvider config={{ devInfo: { stylingPrinciples: false } }}>
               <KeyboardProvider>
-                <RootLayoutNav />
+                <AuthProvider>
+                  <RootLayoutNav />
+                </AuthProvider>
               </KeyboardProvider>
             </HeroUINativeProvider>
           </GestureHandlerRootView>

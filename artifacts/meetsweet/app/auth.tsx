@@ -19,7 +19,9 @@ import {
 } from 'heroui-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowLeft, Eye, EyeOff, Lock, Mail } from 'lucide-react-native';
+import { ArrowLeft, AtSign, Eye, EyeOff, Lock } from 'lucide-react-native';
+import { useAuth } from '@/contexts/AuthContext';
+import { ApiError } from '@/services/api';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -55,51 +57,28 @@ function InputRow({
   );
 }
 
-// ─── Divider ─────────────────────────────────────────────────────────────────
-
-function OrDivider() {
-  return (
-    <View style={styles.divider}>
-      <View style={styles.dividerLine} />
-      <Text style={styles.dividerText}>or continue with</Text>
-      <View style={styles.dividerLine} />
-    </View>
-  );
-}
-
-// ─── Social button ────────────────────────────────────────────────────────────
-
-function SocialButton({ label, letter }: { label: string; letter: string }) {
-  return (
-    <TouchableOpacity style={styles.socialBtn} activeOpacity={0.7}>
-      <Text style={styles.socialLetter}>{letter}</Text>
-      <Text style={styles.socialLabel}>{label}</Text>
-    </TouchableOpacity>
-  );
-}
-
 // ─── Login screen ─────────────────────────────────────────────────────────────
 
 export default function AuthScreen() {
   const insets = useSafeAreaInsets();
+  const { login } = useAuth();
 
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [showPw, setShowPw] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [focused, setFocused] = useState<Record<string, boolean>>({});
+  const [serverError, setServerError] = useState('');
 
   const setFoc = (k: string, v: boolean) =>
     setFocused((f) => ({ ...f, [k]: v }));
 
   const validate = () => {
     const e: Record<string, string> = {};
-    if (!email.includes('@') || !email.includes('.'))
-      e.email = 'Enter a valid email address';
-    if (password.length < 6)
-      e.password = 'Password must be at least 6 characters';
+    if (!identifier.trim()) e.identifier = 'Enter your email, username, or phone';
+    if (password.length < 6) e.password = 'Password must be at least 6 characters';
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -107,9 +86,19 @@ export default function AuthScreen() {
   const handleLogin = async () => {
     if (!validate()) return;
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 1000));
-    setLoading(false);
-    router.replace('/home');
+    setServerError('');
+    try {
+      await login({ identifier: identifier.trim().toLowerCase(), password });
+      router.replace('/(tabs)');
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setServerError(err.message);
+      } else {
+        setServerError('Login failed. Please try again.');
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -147,44 +136,48 @@ export default function AuthScreen() {
           <Text style={styles.subtitle}>Sign in to your account to continue</Text>
         </View>
 
+        {/* Server error */}
+        {!!serverError && (
+          <View style={styles.serverError}>
+            <Text style={styles.serverErrorText}>{serverError}</Text>
+          </View>
+        )}
+
         {/* Form */}
         <View style={styles.formOuter}>
           <View style={styles.form}>
-            {/* Email */}
-            <TextField isInvalid={!!errors.email}>
-              <Label style={styles.fieldLabel}>Email</Label>
+            {/* Identifier (email / username / phone) */}
+            <TextField isInvalid={!!errors.identifier}>
+              <Label style={styles.fieldLabel}>Email, Username or Phone</Label>
               <InputRow
                 icon={
-                  <Mail
+                  <AtSign
                     size={18}
-                    color={
-                      focused.email
-                        ? 'rgba(255,255,255,0.6)'
-                        : 'rgba(255,255,255,0.3)'
-                    }
+                    color={focused.identifier ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.3)'}
                     strokeWidth={1.8}
                   />
                 }
-                isError={!!errors.email}
-                isFocused={focused.email}
+                isError={!!errors.identifier}
+                isFocused={focused.identifier}
               >
                 <Input
-                  placeholder="your@email.com"
+                  placeholder="you@email.com or @username"
                   keyboardType="email-address"
                   autoCapitalize="none"
-                  value={email}
+                  value={identifier}
                   onChangeText={(v) => {
-                    setEmail(v);
-                    setErrors((e) => ({ ...e, email: '' }));
+                    setIdentifier(v);
+                    setErrors((e) => ({ ...e, identifier: '' }));
+                    setServerError('');
                   }}
-                  onFocus={() => setFoc('email', true)}
-                  onBlur={() => setFoc('email', false)}
+                  onFocus={() => setFoc('identifier', true)}
+                  onBlur={() => setFoc('identifier', false)}
                   style={styles.input}
                   placeholderTextColor="rgba(255,255,255,0.18)"
                 />
               </InputRow>
-              {!!errors.email && (
-                <FieldError style={styles.fieldError}>{errors.email}</FieldError>
+              {!!errors.identifier && (
+                <FieldError style={styles.fieldError}>{errors.identifier}</FieldError>
               )}
             </TextField>
 
@@ -195,11 +188,7 @@ export default function AuthScreen() {
                 icon={
                   <Lock
                     size={18}
-                    color={
-                      focused.password
-                        ? 'rgba(255,255,255,0.6)'
-                        : 'rgba(255,255,255,0.3)'
-                    }
+                    color={focused.password ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.3)'}
                     strokeWidth={1.8}
                   />
                 }
@@ -213,6 +202,7 @@ export default function AuthScreen() {
                   onChangeText={(v) => {
                     setPassword(v);
                     setErrors((e) => ({ ...e, password: '' }));
+                    setServerError('');
                   }}
                   onFocus={() => setFoc('password', true)}
                   onBlur={() => setFoc('password', false)}
@@ -231,9 +221,7 @@ export default function AuthScreen() {
                 </TouchableOpacity>
               </InputRow>
               {!!errors.password && (
-                <FieldError style={styles.fieldError}>
-                  {errors.password}
-                </FieldError>
+                <FieldError style={styles.fieldError}>{errors.password}</FieldError>
               )}
             </TextField>
 
@@ -269,16 +257,6 @@ export default function AuthScreen() {
                 <Button.Label style={styles.submitBtnLabel}>Log In</Button.Label>
               )}
             </Button>
-
-            <OrDivider />
-
-            {/* Social */}
-            <View style={styles.socialGroup}>
-              <SocialButton label="Continue with Google" letter="G" />
-              {Platform.OS === 'ios' && (
-                <SocialButton label="Continue with Apple" letter="" />
-              )}
-            </View>
           </View>
         </View>
 
@@ -333,6 +311,22 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
+  serverError: {
+    width: '100%',
+    maxWidth: FORM_MAX_WIDTH,
+    backgroundColor: 'rgba(239,68,68,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(239,68,68,0.3)',
+    borderRadius: 10,
+    padding: 12,
+  },
+  serverErrorText: {
+    color: '#EF4444',
+    fontFamily: 'Poppins_400Regular',
+    fontSize: 13,
+    textAlign: 'center',
+  },
+
   formOuter: {
     width: '100%',
     maxWidth: FORM_MAX_WIDTH,
@@ -354,7 +348,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     borderWidth: 1,
     borderColor: INPUT_BORDER,
-    height: 44,
+    height: 48,
     gap: 10,
   },
   input: {
@@ -393,7 +387,7 @@ const styles = StyleSheet.create({
   submitBtn: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
-    height: 46,
+    height: 48,
   },
   submitBtnLoading: {
     backgroundColor: '#111111',
@@ -402,43 +396,6 @@ const styles = StyleSheet.create({
     fontFamily: 'Poppins_600SemiBold',
     fontSize: 15,
     color: '#000000',
-  },
-
-  divider: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: 'rgba(255,255,255,0.07)',
-  },
-  dividerText: {
-    fontSize: 12,
-    fontFamily: 'Poppins_400Regular',
-    color: 'rgba(255,255,255,0.22)',
-  },
-
-  socialGroup: { gap: 10 },
-  socialBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    borderRadius: 12,
-    height: 42,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-    backgroundColor: '#111111',
-  },
-  socialLetter: {
-    fontSize: 16,
-    fontFamily: 'Poppins_700Bold',
-    color: '#FFFFFF',
-    width: 20,
-    textAlign: 'center',
-  },
-  socialLabel: {
-    fontSize: 14,
-    fontFamily: 'Poppins_500Medium',
-    color: '#FFFFFF',
   },
 
   createRow: {

@@ -12,22 +12,21 @@ import { Home, Search, Plus, MessageCircle, User } from 'lucide-react-native';
 import { T } from '@/constants/theme';
 
 const TAB_HEIGHT = 60;
+const INACTIVE_COLOR = '#777777'; // single consistent inactive gray
 
 type VisualTab = {
   label: string;
   Icon: React.ComponentType<{ size: number; color: string; strokeWidth: number }>;
-  routeName?: string; // undefined = center action, no route
+  routeName?: string; // undefined = center action
 };
 
 const VISUAL_TABS: VisualTab[] = [
   { label: 'Home',     Icon: Home,          routeName: 'index' },
   { label: 'Explore',  Icon: Search,        routeName: 'explore' },
-  { label: 'Create',   Icon: Plus            },          // center — no route
+  { label: 'Create',   Icon: Plus            },
   { label: 'Messages', Icon: MessageCircle,  routeName: 'messages' },
   { label: 'Profile',  Icon: User,           routeName: 'profile' },
 ];
-
-// ─── Single tab button ────────────────────────────────────────────────────────
 
 function TabBtn({
   tab,
@@ -61,15 +60,17 @@ function TabBtn({
     );
   }
 
-  const color = isActive ? T.TEXT : T.TEXT_2;
+  const iconColor = isActive ? T.TEXT : INACTIVE_COLOR;
+  const strokeWidth = isActive ? 2.2 : 1.8;
+
   return (
     <Pressable onPress={handlePress} style={styles.tabWrap}>
       <Animated.View style={[styles.tabInner, scaleStyle]}>
-        <tab.Icon size={22} color={color} strokeWidth={isActive ? 2.2 : 1.6} />
+        <tab.Icon size={22} color={iconColor} strokeWidth={strokeWidth} />
         <Text
           style={[
             styles.tabLabel,
-            { color, fontFamily: isActive ? T.FONT.semibold : T.FONT.regular },
+            { color: iconColor, fontFamily: isActive ? T.FONT.semibold : T.FONT.regular },
           ]}
         >
           {tab.label}
@@ -79,15 +80,13 @@ function TabBtn({
   );
 }
 
-// ─── Custom tab bar ───────────────────────────────────────────────────────────
-
 function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
   const insets = useSafeAreaInsets();
 
   const handlePress = useCallback(
     (tab: VisualTab) => {
       if (tab.routeName === undefined) {
-        router.push('/become-creator');
+        router.push('/create-post');
         return;
       }
       const route = state.routes.find((candidate: { name: string }) => candidate.name === tab.routeName);
@@ -117,8 +116,6 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
   );
 }
 
-// ─── Layout ───────────────────────────────────────────────────────────────────
-
 export default function TabLayout() {
   return (
     <Tabs
@@ -134,8 +131,6 @@ export default function TabLayout() {
     </Tabs>
   );
 }
-
-// ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   bar: {
