@@ -27,11 +27,11 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
+import { Ionicons } from '@expo/vector-icons';
 import {
   ArrowLeft,
   Eye,
   EyeOff,
-  Lock,
   Mail,
   Phone,
   User,
@@ -360,7 +360,7 @@ function Step2({
         <TextField isInvalid={!!errors.password}>
           <Label style={styles.fieldLabel}>Password</Label>
           <InputRow
-            icon={<Lock size={20} color={focused.password ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.3)'} />}
+            icon={<Ionicons name="lock-closed" size={18} color={focused.password ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.3)'} />}
             isError={!!errors.password}
             isFocused={focused.password}
           >
@@ -401,7 +401,7 @@ function Step2({
         <TextField isInvalid={!!errors.confirm}>
           <Label style={styles.fieldLabel}>Confirm Password</Label>
           <InputRow
-            icon={<Lock size={20} color={focused.confirm ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.3)'} />}
+            icon={<Ionicons name="lock-closed" size={18} color={focused.confirm ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.3)'} />}
             isError={!!errors.confirm}
             isFocused={focused.confirm}
           >
@@ -697,8 +697,9 @@ const styles = StyleSheet.create({
   bg: { flex: 1, backgroundColor: '#0A0A0A' },
   scroll: { flex: 1, backgroundColor: '#0A0A0A' },
   scrollContent: {
-    paddingHorizontal: 56,
-    gap: 24,
+    paddingHorizontal: 24,
+    gap: 20,
+    flexGrow: 1,
     backgroundColor: '#0A0A0A',
   },
 
@@ -714,10 +715,10 @@ const styles = StyleSheet.create({
 
   screenHead: { gap: 2 },
   screenTitle: {
-    fontSize: 30,
+    fontSize: 24,
     fontFamily: 'Poppins_700Bold',
     color: '#FFFFFF',
-    letterSpacing: -0.5,
+    letterSpacing: -0.4,
   },
   screenSubtitle: {
     fontSize: 14,
@@ -891,12 +892,12 @@ const styles = StyleSheet.create({
   // Buttons
   primaryBtn: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    height: 60,
+    borderRadius: 14,
+    height: 50,
   },
   btnLabel: {
     fontFamily: 'Poppins_600SemiBold',
-    fontSize: 17,
+    fontSize: 15,
     color: '#000000',
   },
   backLink: {

@@ -20,7 +20,8 @@ import {
 } from 'heroui-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowLeft, Eye, EyeOff, Lock, Mail } from 'lucide-react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { ArrowLeft, Eye, EyeOff, Mail } from 'lucide-react-native';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -191,8 +192,9 @@ export default function AuthScreen() {
             <Label style={styles.fieldLabel}>Password</Label>
             <InputRow
               icon={
-                <Lock
-                  size={20}
+                <Ionicons
+                  name="lock-closed"
+                  size={18}
                   color={
                     focused.password
                       ? 'rgba(255,255,255,0.6)'
@@ -296,8 +298,9 @@ const styles = StyleSheet.create({
   bg: { flex: 1, backgroundColor: '#0A0A0A' },
   scroll: { flex: 1, backgroundColor: '#0A0A0A' },
   scrollContent: {
-    paddingHorizontal: 56,
-    gap: 28,
+    paddingHorizontal: 24,
+    gap: 22,
+    flexGrow: 1,
     backgroundColor: '#0A0A0A',
   },
 
@@ -312,17 +315,17 @@ const styles = StyleSheet.create({
   },
 
   header: { alignItems: 'center', gap: 10 },
-  logo: { width: 64, height: 64 },
+  logo: { width: 52, height: 52 },
   title: {
-    fontSize: 32,
+    fontSize: 26,
     fontFamily: 'Poppins_700Bold',
     color: '#FFFFFF',
-    letterSpacing: -0.6,
+    letterSpacing: -0.5,
     textAlign: 'center',
     marginTop: 4,
   },
   subtitle: {
-    fontSize: 15,
+    fontSize: 13,
     fontFamily: 'Poppins_400Regular',
     color: 'rgba(255,255,255,0.4)',
     textAlign: 'center',
@@ -381,13 +384,13 @@ const styles = StyleSheet.create({
 
   submitBtn: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    height: 60,
+    borderRadius: 14,
+    height: 50,
     marginTop: 4,
   },
   submitBtnLabel: {
     fontFamily: 'Poppins_600SemiBold',
-    fontSize: 17,
+    fontSize: 15,
     color: '#000000',
   },
 
@@ -409,8 +412,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
-    borderRadius: 16,
-    height: 56,
+    borderRadius: 14,
+    height: 48,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.12)',
     backgroundColor: '#111111',

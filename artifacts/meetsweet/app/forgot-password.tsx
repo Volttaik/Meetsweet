@@ -25,7 +25,8 @@ import Animated, {
   withSequence,
   withTiming,
 } from 'react-native-reanimated';
-import { ArrowLeft, Eye, EyeOff, Lock, Mail } from 'lucide-react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { ArrowLeft, Eye, EyeOff, Mail } from 'lucide-react-native';
 
 type Step = 'email' | 'code' | 'new_password' | 'done';
 
@@ -252,7 +253,7 @@ function StepNewPassword({ onNext }: { onNext: () => void }) {
   return (
     <View style={step.container}>
       <View style={step.iconWrap}>
-        <Lock size={38} color="#FFFFFF" />
+        <Ionicons name="lock-closed" size={34} color="#FFFFFF" />
       </View>
       <Text style={step.title}>Create New Password</Text>
       <Text style={step.subtitle}>Choose a strong password of at least 8 characters.</Text>
@@ -260,7 +261,7 @@ function StepNewPassword({ onNext }: { onNext: () => void }) {
       <TextField isInvalid={!!errors.password}>
         <Label style={styles.fieldLabel}>New Password</Label>
         <InputRow
-          icon={<Lock size={20} color={focused.password ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.3)'} />}
+          icon={<Ionicons name="lock-closed" size={18} color={focused.password ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.3)'} />}
           isError={!!errors.password}
           isFocused={focused.password}
         >
@@ -286,7 +287,7 @@ function StepNewPassword({ onNext }: { onNext: () => void }) {
       <TextField isInvalid={!!errors.confirm}>
         <Label style={styles.fieldLabel}>Confirm Password</Label>
         <InputRow
-          icon={<Lock size={20} color={focused.confirm ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.3)'} />}
+          icon={<Ionicons name="lock-closed" size={18} color={focused.confirm ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.3)'} />}
           isError={!!errors.confirm}
           isFocused={focused.confirm}
         >
@@ -439,7 +440,7 @@ export default function ForgotPasswordScreen() {
 const styles = StyleSheet.create({
   bg: { flex: 1, backgroundColor: '#0A0A0A' },
   scroll: { flex: 1 },
-  scrollContent: { paddingHorizontal: 56, gap: 28 },
+  scrollContent: { paddingHorizontal: 24, gap: 22, flexGrow: 1 },
   backBtn: {
     width: 42,
     height: 42,
@@ -450,10 +451,10 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   screenTitle: {
-    fontSize: 30,
+    fontSize: 24,
     fontFamily: 'Poppins_700Bold',
     color: '#FFFFFF',
-    letterSpacing: -0.5,
+    letterSpacing: -0.4,
   },
 
   fieldLabel: {
@@ -487,8 +488,8 @@ const styles = StyleSheet.create({
     marginTop: 5,
   },
 
-  primaryBtn: { backgroundColor: '#FFFFFF', borderRadius: 18, height: 60 },
-  btnLabel: { fontFamily: 'Poppins_600SemiBold', fontSize: 17, color: '#000000' },
+  primaryBtn: { backgroundColor: '#FFFFFF', borderRadius: 14, height: 50 },
+  btnLabel: { fontFamily: 'Poppins_600SemiBold', fontSize: 15, color: '#000000' },
 
   otpWrap: { alignItems: 'center' },
   otpGroup: { flexDirection: 'row', gap: 14 },
