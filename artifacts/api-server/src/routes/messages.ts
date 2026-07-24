@@ -334,6 +334,53 @@ router.put("/conversations/:id/mute", requireAuth, async (req: AuthRequest, res)
   }
 });
 
+// ─── PUT /api/messages/:id — edit a message ───────────────────────────────────
+
+router.put("/messages/:id", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const msg = await queryOne<Record<string, unknown>>(
+      `SELECT id, sender_id, is_deleted FROM messages WHERE id = $1`,
+      [req.params.id],
+    );
+
+    if (!msg) {
+      res.status(404).json({ error: "Message not found" });
+      return;
+    }
+    if (msg.sender_id !== req.user!.sub) {
+      res.status(403).json({ error: "Not your message" });
+      return;
+    }
+    if (msg.is_deleted) {
+      res.status(400).json({ error: "Cannot edit a deleted message" });
+      return;
+    }
+
+    const { body } = req.body as { body: string };
+    if (!body?.trim()) {
+      res.status(400).json({ error: "Message body required" });
+      return;
+    }
+
+    await queryRaw(
+      `UPDATE messages SET body = $1, is_edited = true, updated_at = NOW() WHERE id = $2`,
+      [body.trim(), req.params.id],
+    );
+
+    res.json({
+      success: true,
+      message: {
+        id: msg.id,
+        body: body.trim(),
+        isEdited: true,
+      },
+    });
+  } catch (err) {
+    console.error("Edit message error:", err);
+    res.status(500).json({ error: "Failed to edit message" });
+  }
+});
+
 // ─── GET /api/users/search — search users to start a conversation ──────────────
 
 router.get("/users/search", requireAuth, async (req: AuthRequest, res) => {

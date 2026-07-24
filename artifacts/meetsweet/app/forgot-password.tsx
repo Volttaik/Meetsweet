@@ -21,15 +21,14 @@ import Animated, {
   Easing,
   useAnimatedStyle,
   useSharedValue,
-  withSequence,
   withTiming,
 } from 'react-native-reanimated';
 import { ArrowLeft, CheckCircle, Eye, EyeOff, Lock, Mail } from 'lucide-react-native';
 import OTPInput, { OTPInputRef } from '@/components/OTPInput';
+import { apiFetch } from '@/services/api';
 
 type Step = 'email' | 'code' | 'new_password' | 'done';
 
-const DEMO_CODE = '1234';
 const RESEND_DURATION = 60;
 const INPUT_BG = '#111111';
 const INPUT_BORDER = 'rgba(255,255,255,0.1)';
@@ -76,10 +75,20 @@ function StepEmail({ onNext }: { onNext: (email: string) => void }) {
       setError('Enter a valid email address');
       return;
     }
+    setError('');
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 900));
-    setLoading(false);
-    onNext(email);
+    try {
+      await apiFetch('/auth/forgot-password', {
+        method: 'POST',
+        body: JSON.stringify({ email: email.trim().toLowerCase() }),
+      });
+      onNext(email.trim().toLowerCase());
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to send reset code';
+      setError(msg);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -137,12 +146,14 @@ function StepEmail({ onNext }: { onNext: (email: string) => void }) {
 
 // ─── Step 2: Verify code ──────────────────────────────────────────────────────
 
-function StepCode({ email, onNext }: { email: string; onNext: () => void }) {
+function StepCode({ email, onNext }: { email: string; onNext: (code: string) => void }) {
   const [otp, setOtp] = useState('');
   const [completed, setCompleted] = useState(false);
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
   const [countdown, setCountdown] = useState(RESEND_DURATION);
   const [canResend, setCanResend] = useState(false);
+  const [resendMsg, setResendMsg] = useState('');
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const otpRef = useRef<OTPInputRef>(null);
 
@@ -163,21 +174,46 @@ function StepCode({ email, onNext }: { email: string; onNext: () => void }) {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, []);
 
-  const handleVerify = () => {
-    if (!completed) { setError('Enter all 4 digits'); otpRef.current?.shake(); return; }
-    if (otp !== DEMO_CODE) {
-      setError(`Incorrect code. Use ${DEMO_CODE} for demo.`);
+  const handleVerify = async () => {
+    if (!completed) {
+      setError('Enter all 6 digits');
       otpRef.current?.shake();
       return;
     }
     setError('');
-    onNext();
+    setLoading(true);
+    try {
+      // We validate the code exists on the server in reset-password step.
+      // Here just advance with the code.
+      onNext(otp);
+    } catch {
+      setLoading(false);
+    }
   };
 
   const handleComplete = (code: string) => {
     setCompleted(true);
     setOtp(code);
-    if (code === DEMO_CODE) setTimeout(() => onNext(), 300);
+  };
+
+  const handleResend = async () => {
+    if (!canResend) return;
+    setOtp('');
+    setCompleted(false);
+    setError('');
+    setResendMsg('');
+    otpRef.current?.clear();
+    startTimer();
+    try {
+      await apiFetch('/auth/forgot-password', {
+        method: 'POST',
+        body: JSON.stringify({ email }),
+      });
+      setResendMsg('New code sent!');
+      setTimeout(() => setResendMsg(''), 3000);
+    } catch {
+      // continue
+    }
   };
 
   return (
@@ -187,19 +223,13 @@ function StepCode({ email, onNext }: { email: string; onNext: () => void }) {
       </View>
       <Text style={step.title}>Check Your Email</Text>
       <Text style={step.subtitle}>
-        We sent a 4-digit code to{'\n'}
+        We sent a 6-digit code to{'\n'}
         <Text style={step.highlight}>{email}</Text>
       </Text>
 
-      <View style={styles.demoHint}>
-        <Text style={styles.demoHintText}>
-          Demo code: <Text style={styles.demoCode}>{DEMO_CODE}</Text>
-        </Text>
-      </View>
-
       <OTPInput
         ref={otpRef}
-        length={4}
+        length={6}
         value={otp}
         onChange={(v) => { setOtp(v); setCompleted(false); setError(''); }}
         onComplete={handleComplete}
@@ -208,29 +238,24 @@ function StepCode({ email, onNext }: { email: string; onNext: () => void }) {
       />
 
       {!!error && <Text style={styles.errorText}>{error}</Text>}
+      {!!resendMsg && <Text style={styles.successText}>{resendMsg}</Text>}
 
       <Button
         variant="primary"
         size="lg"
         onPress={handleVerify}
-        isDisabled={!completed}
-        style={[styles.primaryBtn, !completed && styles.primaryBtnDisabled]}
+        isDisabled={!completed || loading}
+        style={[styles.primaryBtn, (!completed || loading) && styles.primaryBtnDisabled]}
       >
-        <Button.Label style={[styles.btnLabel, !completed && styles.btnLabelDisabled]}>
-          Verify Code
-        </Button.Label>
+        {loading
+          ? <Spinner size="sm" color="#FFFFFF" />
+          : <Button.Label style={[styles.btnLabel, !completed && styles.btnLabelDisabled]}>
+              Verify Code
+            </Button.Label>}
       </Button>
 
       <TouchableOpacity
-        onPress={() => {
-          if (canResend) {
-            setOtp('');
-            setCompleted(false);
-            setError('');
-            otpRef.current?.clear();
-            startTimer();
-          }
-        }}
+        onPress={handleResend}
         style={styles.resendRow}
       >
         <Text style={[styles.resendText, !canResend && styles.resendDisabled]}>
@@ -245,7 +270,7 @@ function StepCode({ email, onNext }: { email: string; onNext: () => void }) {
 
 // ─── Step 3: New password ─────────────────────────────────────────────────────
 
-function StepNewPassword({ onNext }: { onNext: () => void }) {
+function StepNewPassword({ email, code, onNext }: { email: string; code: string; onNext: () => void }) {
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [showPw, setShowPw] = useState(false);
@@ -266,9 +291,18 @@ function StepNewPassword({ onNext }: { onNext: () => void }) {
   const handleReset = async () => {
     if (!validate()) return;
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 900));
-    setLoading(false);
-    onNext();
+    try {
+      await apiFetch('/auth/reset-password', {
+        method: 'POST',
+        body: JSON.stringify({ email, code, password }),
+      });
+      onNext();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to reset password';
+      setErrors({ password: msg });
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -426,6 +460,7 @@ export default function ForgotPasswordScreen() {
   const insets = useSafeAreaInsets();
   const [currentStep, setCurrentStep] = useState<Step>('email');
   const [email, setEmail] = useState('');
+  const [code, setCode] = useState('');
   const contentOpacity = useSharedValue(1);
   const contentY = useSharedValue(0);
 
@@ -478,10 +513,17 @@ export default function ForgotPasswordScreen() {
               <StepEmail onNext={(e) => { setEmail(e); advance('code'); }} />
             )}
             {currentStep === 'code' && (
-              <StepCode email={email} onNext={() => advance('new_password')} />
+              <StepCode
+                email={email}
+                onNext={(c) => { setCode(c); advance('new_password'); }}
+              />
             )}
             {currentStep === 'new_password' && (
-              <StepNewPassword onNext={() => advance('done')} />
+              <StepNewPassword
+                email={email}
+                code={code}
+                onNext={() => advance('done')}
+              />
             )}
             {currentStep === 'done' && <StepDone />}
           </Animated.View>
@@ -562,31 +604,16 @@ const styles = StyleSheet.create({
   btnLabel: { fontFamily: 'Poppins_600SemiBold', fontSize: 15, color: '#000000' },
   btnLabelDisabled: { color: 'rgba(255,255,255,0.25)' },
 
-  demoHint: {
-    backgroundColor: '#111111',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    alignSelf: 'stretch',
-  },
-  demoHintText: {
-    fontSize: 13,
-    fontFamily: 'Poppins_400Regular',
-    color: 'rgba(255,255,255,0.35)',
-    textAlign: 'center',
-  },
-  demoCode: {
-    color: 'rgba(255,255,255,0.7)',
-    fontFamily: 'Poppins_600SemiBold',
-    letterSpacing: 2,
-  },
-
   errorText: {
     fontSize: 13,
     fontFamily: 'Poppins_400Regular',
     color: '#EF4444',
+    textAlign: 'center',
+  },
+  successText: {
+    fontSize: 13,
+    fontFamily: 'Poppins_500Medium',
+    color: '#22C55E',
     textAlign: 'center',
   },
 

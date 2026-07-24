@@ -17,12 +17,17 @@ import ScreenTransition from '@/components/ScreenTransition';
 
 type UsernameStatus = 'idle' | 'checking' | 'available' | 'taken';
 
-const TAKEN_NAMES = ['admin', 'user', 'meetsweet', 'test', 'root'];
-
-function checkUsernameAvailability(username: string): Promise<boolean> {
-  return new Promise((resolve) => {
-    setTimeout(() => resolve(!TAKEN_NAMES.includes(username.toLowerCase())), 900);
-  });
+async function checkUsernameAvailability(username: string): Promise<boolean> {
+  try {
+    const domain = process.env.EXPO_PUBLIC_DOMAIN;
+    const base = domain ? `https://${domain}/api` : '/api';
+    const res = await fetch(`${base}/auth/check-username?username=${encodeURIComponent(username)}`);
+    if (!res.ok) return true; // default to available on error
+    const data: { available: boolean } = await res.json();
+    return data.available;
+  } catch {
+    return true; // default to available on network error
+  }
 }
 
 function calcAge(dob: string): number {

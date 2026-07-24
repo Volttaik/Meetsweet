@@ -28,6 +28,7 @@ import {
 import { router } from 'expo-router';
 import { T } from '@/constants/theme';
 import { MsAvatar } from '@/components/MsAvatar';
+import { useAuth } from '@/contexts/AuthContext';
 
 // ─── Settings row ─────────────────────────────────────────────────────────────
 
@@ -87,6 +88,11 @@ function SectionHeader({ title }: { title: string }) {
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
+  const { user, logout } = useAuth();
+
+  const initials = user?.name
+    ? user.name.trim().split(' ').map((w: string) => w[0]?.toUpperCase() ?? '').slice(0, 2).join('')
+    : 'U';
 
   const handleLogOut = () => {
     Alert.alert(
@@ -97,7 +103,10 @@ export default function SettingsScreen() {
         {
           text: 'Log Out',
           style: 'destructive',
-          onPress: () => router.replace('/welcome'),
+          onPress: async () => {
+            await logout();
+            router.replace('/welcome');
+          },
         },
       ],
     );
@@ -124,11 +133,21 @@ export default function SettingsScreen() {
         contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 40 }]}
       >
         {/* Profile summary */}
-        <TouchableOpacity style={styles.profileCard} activeOpacity={0.8}>
-          <MsAvatar size={54} initials="U" />
+        <TouchableOpacity
+          style={styles.profileCard}
+          activeOpacity={0.8}
+          onPress={() => router.push('/edit-profile')}
+        >
+          <MsAvatar
+            size={54}
+            initials={initials}
+            imageUri={user?.avatarUrl ?? undefined}
+          />
           <View style={styles.profileInfo}>
-            <Text style={styles.profileName}>Display Name</Text>
-            <Text style={styles.profileHandle}>@username · Tap to edit profile</Text>
+            <Text style={styles.profileName}>{user?.name ?? 'Display Name'}</Text>
+            <Text style={styles.profileHandle}>
+              @{user?.username ?? 'username'} · Tap to edit profile
+            </Text>
           </View>
           <ChevronRight size={18} color={T.TEXT_3} strokeWidth={1.5} />
         </TouchableOpacity>
@@ -136,7 +155,7 @@ export default function SettingsScreen() {
         {/* Account */}
         <SectionHeader title="Account" />
         <View style={styles.section}>
-          <SettingsRow Icon={User}        label="Profile"            onPress={() => {}} />
+          <SettingsRow Icon={User}        label="Profile"            onPress={() => router.push('/edit-profile')} />
           <View style={styles.rowDivider} />
           <SettingsRow Icon={Info}        label="Account Information" onPress={() => {}} />
           <View style={styles.rowDivider} />
@@ -162,7 +181,7 @@ export default function SettingsScreen() {
         {/* Security */}
         <SectionHeader title="Security" />
         <View style={styles.section}>
-          <SettingsRow Icon={Lock}    label="Change Password"          onPress={() => {}} />
+          <SettingsRow Icon={Lock}    label="Change Password"          onPress={() => router.push('/change-password')} />
           <View style={styles.rowDivider} />
           <SettingsRow Icon={Shield}  label="Two-Factor Authentication" onPress={() => {}} badge="Off" />
           <View style={styles.rowDivider} />

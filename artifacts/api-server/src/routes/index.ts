@@ -9,6 +9,7 @@ import walletRouter from "./wallet.js";
 import mediaRouter from "./media.js";
 import messagesRouter from "./messages.js";
 import notificationsRouter from "./notifications.js";
+import searchRouter from "./search.js";
 
 const router: IRouter = Router();
 
@@ -22,5 +23,6 @@ router.use(walletRouter);
 router.use(mediaRouter);
 router.use(messagesRouter);
 router.use(notificationsRouter);
+router.use(searchRouter);
 
 export default router;

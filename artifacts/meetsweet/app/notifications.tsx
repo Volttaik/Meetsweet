@@ -1,12 +1,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import { Spinner } from 'heroui-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowLeft, BellOff, Check } from 'lucide-react-native';
 import { router } from 'expo-router';
@@ -142,7 +142,7 @@ export default function NotificationsScreen() {
     }
     // Navigate to post if available
     if (n.postId) {
-      // router.push(`/content/${n.postId}`);
+      router.push(`/content/${n.postId}`);
     }
   };
 
@@ -178,7 +178,7 @@ export default function NotificationsScreen() {
         {unreadCount > 0 ? (
           <TouchableOpacity style={styles.iconBtn} onPress={handleMarkAll} activeOpacity={0.7}>
             {marking ? (
-              <ActivityIndicator size="small" color={T.TEXT_2} />
+              <Spinner size="sm" color={T.TEXT_2} />
             ) : (
               <Check size={18} color={T.TEXT_2} strokeWidth={2} />
             )}
@@ -191,7 +191,9 @@ export default function NotificationsScreen() {
       </View>
 
       {loading ? (
-        <ActivityIndicator color={T.TEXT} style={{ marginTop: 60 }} />
+        <View style={styles.loadingWrap}>
+          <Spinner size="lg" color="default" />
+        </View>
       ) : notifications.length === 0 ? (
         <MsEmptyState
           emoji="🔔"
@@ -243,6 +245,12 @@ const styles = StyleSheet.create({
     height: 38,
     borderRadius: T.RADIUS.md,
     backgroundColor: T.SURFACE,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  loadingWrap: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },

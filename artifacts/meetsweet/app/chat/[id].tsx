@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   FlatList,
   Image,
@@ -12,8 +11,9 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { Spinner } from 'heroui-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowLeft, Send, MoreHorizontal, Trash2 } from 'lucide-react-native';
+import { ArrowLeft, Send, MoreHorizontal } from 'lucide-react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { T } from '@/constants/theme';
 import { MsAvatar } from '@/components/MsAvatar';
@@ -276,7 +276,9 @@ export default function ChatScreen() {
         keyboardVerticalOffset={0}
       >
         {loading ? (
-          <ActivityIndicator color={T.TEXT} style={{ marginTop: 60 }} />
+          <View style={styles.loadingWrap}>
+            <Spinner size="lg" color="default" />
+          </View>
         ) : (
           <FlatList
             ref={flatRef}
@@ -290,7 +292,9 @@ export default function ChatScreen() {
             onStartReached={handleLoadMore}
             ListHeaderComponent={
               loadingMore ? (
-                <ActivityIndicator color={T.TEXT} style={{ marginVertical: 16 }} />
+                <View style={{ alignItems: 'center', marginVertical: 16 }}>
+                  <Spinner size="sm" color="default" />
+                </View>
               ) : null
             }
             ListEmptyComponent={
@@ -325,7 +329,7 @@ export default function ChatScreen() {
             disabled={!text.trim() || sending}
           >
             {sending ? (
-              <ActivityIndicator size="small" color={T.BG} />
+              <Spinner size="sm" color="default" />
             ) : (
               <Send size={18} color={T.BG} strokeWidth={2} />
             )}
@@ -367,6 +371,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
+  loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   messageList: { paddingHorizontal: 16, paddingVertical: 12, flexGrow: 1 },
 
   bubbleWrap: {

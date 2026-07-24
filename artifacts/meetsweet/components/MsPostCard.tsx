@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { Heart, MessageCircle, Bookmark, MoreHorizontal, BadgeCheck, Share2 } from 'lucide-react-native';
 import { T } from '@/constants/theme';
 import { MsAvatar } from '@/components/MsAvatar';
@@ -157,7 +158,7 @@ export function MsPostCard({
         handleShare();
         break;
       case 'Copy Link':
-        // Clipboard.setString(`https://meetsweet.app/post/${post.id}`);
+        Clipboard.setStringAsync(`https://meetsweet.app/post/${post.id}`).catch(() => {});
         break;
       default:
         break;

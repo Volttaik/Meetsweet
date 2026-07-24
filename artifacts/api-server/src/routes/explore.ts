@@ -1,158 +1,162 @@
 import { Router, type IRouter } from "express";
+import { query, queryOne } from "../lib/db.js";
 import { GetExploreCatalogResponse } from "@workspace/api-zod";
+import { optionalAuth, type AuthRequest } from "../middlewares/requireAuth.js";
 
 const router: IRouter = Router();
 
-const creators = [
-  {
-    id: "creator-1",
-    name: "Alex Rivera",
-    handle: "@alex.r",
-    initials: "AR",
-    bio: "Visual stories from the road, one frame at a time.",
-    category: "Lifestyle",
-    followers: "84.2K",
-    subscriberCount: 84200,
-    monthlyCredits: 650,
-    isVerified: true,
-    isOnline: true,
-    gradient: "mono-sand",
-  },
-  {
-    id: "creator-2",
-    name: "Sarah Moon",
-    handle: "@sarah_m",
-    initials: "SM",
-    bio: "Slow living, thoughtful spaces, and everyday rituals.",
-    category: "Lifestyle",
-    followers: "62.8K",
-    subscriberCount: 62800,
-    monthlyCredits: 480,
-    isVerified: true,
-    isOnline: false,
-    gradient: "mono-mist",
-  },
-  {
-    id: "creator-3",
-    name: "Dev Studio",
-    handle: "@devstudio",
-    initials: "DS",
-    bio: "Clearer code, better products, and the thinking behind both.",
-    category: "Tech",
-    followers: "48.1K",
-    subscriberCount: 48100,
-    monthlyCredits: 720,
-    isVerified: true,
-    isOnline: true,
-    gradient: "mono-slate",
-  },
-  {
-    id: "creator-4",
-    name: "Creative X",
-    handle: "@creativex",
-    initials: "CX",
-    bio: "Art direction and visual systems for curious brands.",
-    category: "Art",
-    followers: "39.6K",
-    subscriberCount: 39600,
-    monthlyCredits: 550,
-    isVerified: false,
-    isOnline: true,
-    gradient: "mono-ink",
-  },
-  {
-    id: "creator-5",
-    name: "Luna Kim",
-    handle: "@luna.k",
-    initials: "LK",
-    bio: "Strength, balance, and a kinder approach to fitness.",
-    category: "Fitness",
-    followers: "27.4K",
-    subscriberCount: 27400,
-    monthlyCredits: 390,
-    isVerified: true,
-    isOnline: false,
-    gradient: "mono-cloud",
-  },
-  {
-    id: "creator-6",
-    name: "Jay Torres",
-    handle: "@jay.t",
-    initials: "JT",
-    bio: "Late-night loops, studio notes, and unfinished ideas.",
-    category: "Music",
-    followers: "19.7K",
-    subscriberCount: 19700,
-    monthlyCredits: 430,
-    isVerified: false,
-    isOnline: true,
-    gradient: "mono-charcoal",
-  },
-  {
-    id: "creator-7",
-    name: "Mia Chen",
-    handle: "@mia.c",
-    initials: "MC",
-    bio: "A field guide to beautiful places and good food.",
-    category: "Travel",
-    followers: "15.3K",
-    subscriberCount: 15300,
-    monthlyCredits: 350,
-    isVerified: false,
-    isOnline: true,
-    gradient: "mono-stone",
-  },
-  {
-    id: "creator-8",
-    name: "Noah Vale",
-    handle: "@noah.v",
-    initials: "NV",
-    bio: "Indie game worlds, process breakdowns, and play.",
-    category: "Gaming",
-    followers: "11.9K",
-    subscriberCount: 11900,
-    monthlyCredits: 300,
-    isVerified: false,
-    isOnline: false,
-    gradient: "mono-fog",
-  },
+// Static fallback arrays for content that has no DB equivalent
+const TRENDING_SEARCHES = [
+  "slow living",
+  "new creators",
+  "exclusive",
+  "music rooms",
+  "visual diaries",
+  "wellness",
 ];
 
-const previews = [
-  { id: "preview-1", creatorId: "creator-1", title: "A week in Lisbon", category: "Lifestyle", kind: "photo", duration: "04:12", likes: "2.4K", isPremium: true, gradient: "mono-sand", lockedLabel: "650 credits" },
-  { id: "preview-2", creatorId: "creator-3", title: "The calm product stack", category: "Tech", kind: "video", duration: "08:46", likes: "1.8K", isPremium: true, gradient: "mono-slate", lockedLabel: "720 credits" },
-  { id: "preview-3", creatorId: "creator-4", title: "Shapes in quiet light", category: "Art", kind: "gallery", duration: "12 frames", likes: "986", isPremium: false, gradient: "mono-ink", lockedLabel: "Free preview" },
-  { id: "preview-4", creatorId: "creator-6", title: "After hours / 02", category: "Music", kind: "audio", duration: "03:28", likes: "744", isPremium: true, gradient: "mono-charcoal", lockedLabel: "430 credits" },
-  { id: "preview-5", creatorId: "creator-5", title: "A stronger morning", category: "Fitness", kind: "video", duration: "06:18", likes: "621", isPremium: false, gradient: "mono-cloud", lockedLabel: "Free preview" },
-  { id: "preview-6", creatorId: "creator-7", title: "North coast notes", category: "Travel", kind: "photo", duration: "09 frames", likes: "512", isPremium: true, gradient: "mono-stone", lockedLabel: "350 credits" },
+const GRADIENT_OPTIONS = [
+  "mono-sand",
+  "mono-mist",
+  "mono-slate",
+  "mono-ink",
+  "mono-cloud",
+  "mono-charcoal",
+  "mono-stone",
+  "mono-fog",
 ];
 
-const catalog = GetExploreCatalogResponse.parse({
-  creditBalance: 2450,
-  categories: [
-    { id: "all", label: "All", count: 128 },
-    { id: "lifestyle", label: "Lifestyle", count: 34 },
-    { id: "music", label: "Music", count: 18 },
-    { id: "tech", label: "Tech", count: 22 },
-    { id: "art", label: "Art", count: 26 },
-    { id: "fitness", label: "Fitness", count: 14 },
-    { id: "travel", label: "Travel", count: 9 },
-    { id: "gaming", label: "Gaming", count: 5 },
-  ],
-  trendingSearches: ["slow living", "new creators", "exclusive", "music rooms", "visual diaries", "wellness"],
-  featuredCreatorIds: ["creator-1", "creator-3", "creator-4"],
-  recommendedCreatorIds: ["creator-2", "creator-5", "creator-6", "creator-7"],
-  creators,
-  previews,
-  collections: [
-    { id: "collection-1", title: "Quiet luxury", subtitle: "A slower kind of feed", itemCount: 18, gradient: "mono-sand" },
-    { id: "collection-2", title: "Behind the build", subtitle: "Creators making things", itemCount: 24, gradient: "mono-slate" },
-    { id: "collection-3", title: "New this week", subtitle: "Fresh voices to know", itemCount: 12, gradient: "mono-mist" },
-  ],
-});
+function pickGradient(index: number): string {
+  return GRADIENT_OPTIONS[index % GRADIENT_OPTIONS.length];
+}
 
-router.get("/explore", (_req, res) => {
-  res.json(catalog);
+function formatFollowers(count: number): string {
+  if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`;
+  if (count >= 1_000) return `${(count / 1_000).toFixed(1)}K`;
+  return String(count);
+}
+
+router.get("/explore", optionalAuth, async (req: AuthRequest, res) => {
+  try {
+    // Fetch all data in parallel
+    const [categoriesRaw, creatorsRaw, postsRaw, userRow] = await Promise.all([
+      query<Record<string, unknown>>(
+        `SELECT id, name, slug, post_count FROM categories ORDER BY name`,
+      ),
+      query<Record<string, unknown>>(
+        `SELECT id, name, username, bio, avatar_url, is_verified, is_creator,
+                follower_count, subscriber_count, post_count
+         FROM users
+         WHERE is_creator = true OR post_count > 0
+         ORDER BY follower_count DESC
+         LIMIT 20`,
+      ),
+      query<Record<string, unknown>>(
+        `SELECT id, user_id, caption, media_url, media_type, thumbnail_url,
+                is_premium, price_credits, like_count
+         FROM posts
+         WHERE visibility = 'public' AND is_archived = false
+         ORDER BY created_at DESC
+         LIMIT 12`,
+      ),
+      req.user
+        ? queryOne<{ credits: number }>(
+            `SELECT credits FROM users WHERE id = $1`,
+            [req.user.sub],
+          )
+        : Promise.resolve(null),
+    ]);
+
+    // Map categories to schema shape
+    const categories = [
+      { id: "all", label: "All", count: categoriesRaw.reduce((s, c) => s + Number(c.post_count ?? 0), 0) },
+      ...categoriesRaw.map((c) => ({
+        id: String(c.slug),
+        label: String(c.name),
+        count: Number(c.post_count ?? 0),
+      })),
+    ];
+
+    // Map creators to schema shape
+    const creators = creatorsRaw.map((u, i) => {
+      const name = String(u.name ?? "Creator");
+      const words = name.trim().split(" ");
+      const initials = words.slice(0, 2).map((w: string) => w[0]?.toUpperCase() ?? "").join("");
+      return {
+        id: String(u.id),
+        name,
+        handle: `@${u.username}`,
+        initials,
+        bio: String(u.bio ?? ""),
+        category: "Lifestyle",
+        followers: formatFollowers(Number(u.follower_count ?? 0)),
+        subscriberCount: Number(u.subscriber_count ?? 0),
+        monthlyCredits: 500,
+        isVerified: Boolean(u.is_verified),
+        isOnline: false,
+        gradient: pickGradient(i),
+      };
+    });
+
+    // Map posts to content previews
+    const previews = postsRaw.map((p, i) => {
+      const caption = String(p.caption ?? "").slice(0, 60);
+      const isPremium = Boolean(p.is_premium);
+      return {
+        id: String(p.id),
+        creatorId: String(p.user_id),
+        title: caption || "Untitled",
+        category: "Lifestyle",
+        kind: (p.media_type as string) || "photo",
+        duration: "",
+        likes: formatFollowers(Number(p.like_count ?? 0)),
+        isPremium,
+        gradient: pickGradient(i),
+        lockedLabel: isPremium
+          ? `${p.price_credits ?? 500} credits`
+          : "Free preview",
+      };
+    });
+
+    // Featured = first 3 creators; recommended = next 5
+    const featuredCreatorIds = creators.slice(0, 3).map((c) => c.id);
+    const recommendedCreatorIds = creators.slice(3, 8).map((c) => c.id);
+
+    const catalog = GetExploreCatalogResponse.parse({
+      creditBalance: userRow?.credits ?? 0,
+      categories,
+      trendingSearches: TRENDING_SEARCHES,
+      featuredCreatorIds,
+      recommendedCreatorIds,
+      creators,
+      previews,
+      collections: [
+        { id: "collection-1", title: "Quiet luxury", subtitle: "A slower kind of feed", itemCount: 18, gradient: "mono-sand" },
+        { id: "collection-2", title: "Behind the build", subtitle: "Creators making things", itemCount: 24, gradient: "mono-slate" },
+        { id: "collection-3", title: "New this week", subtitle: "Fresh voices to know", itemCount: 12, gradient: "mono-mist" },
+      ],
+    });
+
+    res.json(catalog);
+  } catch (err) {
+    console.error("Explore error:", err);
+    // Fallback: serve empty catalog rather than crashing
+    try {
+      const fallback = GetExploreCatalogResponse.parse({
+        creditBalance: 0,
+        categories: [{ id: "all", label: "All", count: 0 }],
+        trendingSearches: TRENDING_SEARCHES,
+        featuredCreatorIds: [],
+        recommendedCreatorIds: [],
+        creators: [],
+        previews: [],
+        collections: [],
+      });
+      res.json(fallback);
+    } catch {
+      res.status(500).json({ error: "Failed to fetch explore catalog" });
+    }
+  }
 });
 
 export default router;

@@ -364,24 +364,55 @@ router.delete("/posts/:id/like", requireAuth, async (req: AuthRequest, res) => {
 
 // ─── GET /api/posts/:id/comments ─────────────────────────────────────────────
 
-router.get("/posts/:id/comments", async (req, res) => {
+router.get("/posts/:id/comments", optionalAuth, async (req: AuthRequest, res) => {
   try {
+    const parentId = req.query.parentId as string | undefined;
+    const limit = parentId ? 50 : 100;
+
+    let whereClause: string;
+    let params: unknown[];
+
+    if (parentId) {
+      whereClause = `c.post_id = $1 AND c.parent_id = $2`;
+      params = [req.params.id, parentId];
+    } else {
+      whereClause = `c.post_id = $1 AND c.parent_id IS NULL`;
+      params = [req.params.id];
+    }
+
     const comments = await query<Record<string, unknown>>(
-      `SELECT c.id, c.body, c.created_at,
-              u.id as user_id, u.name, u.username, u.avatar_url
+      `SELECT c.id, c.body, c.like_count, c.created_at, c.updated_at, c.parent_id,
+              u.id as user_id, u.name, u.username, u.avatar_url,
+              (SELECT COUNT(*) FROM comments r WHERE r.parent_id = c.id) as reply_count
        FROM comments c
        JOIN users u ON c.user_id = u.id
-       WHERE c.post_id = $1
+       WHERE ${whereClause}
        ORDER BY c.created_at ASC
-       LIMIT 50`,
-      [req.params.id],
+       LIMIT ${limit}`,
+      params,
     );
+
+    // Get liked comment IDs for current user
+    const likedSet = new Set<string>();
+    if (req.user && comments.length > 0) {
+      const commentIds = comments.map((c) => c.id as string);
+      const liked = await query<{ comment_id: string }>(
+        `SELECT comment_id FROM comment_likes WHERE user_id = $1 AND comment_id = ANY($2::uuid[])`,
+        [req.user.sub, commentIds],
+      );
+      liked.forEach((l) => likedSet.add(l.comment_id));
+    }
 
     res.json({
       comments: comments.map((c) => ({
         id: c.id,
         body: c.body,
+        likeCount: c.like_count ?? 0,
+        replyCount: Number(c.reply_count ?? 0),
+        parentId: c.parent_id ?? null,
+        likedByMe: likedSet.has(c.id as string),
         createdAt: c.created_at,
+        updatedAt: c.updated_at,
         author: {
           id: c.user_id,
           name: c.name,
@@ -400,19 +431,34 @@ router.get("/posts/:id/comments", async (req, res) => {
 
 router.post("/posts/:id/comments", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const { body } = req.body as { body: string };
+    const { body, parentId } = req.body as { body: string; parentId?: string };
     if (!body?.trim()) {
       res.status(400).json({ error: "Comment body required" });
       return;
     }
 
+    // Validate parent comment if provided
+    if (parentId) {
+      const parent = await queryOne(
+        `SELECT id FROM comments WHERE id = $1 AND post_id = $2`,
+        [parentId, req.params.id],
+      );
+      if (!parent) {
+        res.status(404).json({ error: "Parent comment not found" });
+        return;
+      }
+    }
+
     const commentId = uuidv4();
     const [comment] = await query<Record<string, unknown>>(
-      `INSERT INTO comments (id, user_id, post_id, body) VALUES ($1, $2, $3, $4) RETURNING *`,
-      [commentId, req.user!.sub, req.params.id, body.trim()],
+      `INSERT INTO comments (id, user_id, post_id, body, parent_id) VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [commentId, req.user!.sub, req.params.id, body.trim(), parentId ?? null],
     );
 
-    await query(`UPDATE posts SET comment_count = comment_count + 1 WHERE id = $1`, [req.params.id]);
+    // Only increment post comment_count for top-level comments
+    if (!parentId) {
+      await query(`UPDATE posts SET comment_count = comment_count + 1 WHERE id = $1`, [req.params.id]);
+    }
 
     const author = await queryOne<Record<string, unknown>>(
       `SELECT id, name, username, avatar_url FROM users WHERE id = $1`,
@@ -423,7 +469,12 @@ router.post("/posts/:id/comments", requireAuth, async (req: AuthRequest, res) =>
       comment: {
         id: comment.id,
         body: comment.body,
+        likeCount: 0,
+        replyCount: 0,
+        parentId: comment.parent_id ?? null,
+        likedByMe: false,
         createdAt: comment.created_at,
+        updatedAt: comment.updated_at,
         author: {
           id: author!.id,
           name: author!.name,
@@ -435,6 +486,48 @@ router.post("/posts/:id/comments", requireAuth, async (req: AuthRequest, res) =>
   } catch (err) {
     console.error("Create comment error:", err);
     res.status(500).json({ error: "Failed to add comment" });
+  }
+});
+
+// ─── PUT /api/posts/:id/comments/:commentId — edit comment ────────────────────
+
+router.put("/posts/:id/comments/:commentId", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const comment = await queryOne<Record<string, unknown>>(
+      `SELECT id, user_id FROM comments WHERE id = $1 AND post_id = $2`,
+      [req.params.commentId, req.params.id],
+    );
+
+    if (!comment) {
+      res.status(404).json({ error: "Comment not found" });
+      return;
+    }
+    if (comment.user_id !== req.user!.sub) {
+      res.status(403).json({ error: "Not your comment" });
+      return;
+    }
+
+    const { body } = req.body as { body: string };
+    if (!body?.trim()) {
+      res.status(400).json({ error: "Comment body required" });
+      return;
+    }
+
+    await queryRaw(
+      `UPDATE comments SET body = $1, updated_at = NOW() WHERE id = $2`,
+      [body.trim(), req.params.commentId],
+    );
+
+    res.json({
+      comment: {
+        id: comment.id,
+        body: body.trim(),
+        updatedAt: new Date().toISOString(),
+      },
+    });
+  } catch (err) {
+    console.error("Edit comment error:", err);
+    res.status(500).json({ error: "Failed to edit comment" });
   }
 });
 

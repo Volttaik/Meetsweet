@@ -19,8 +19,8 @@ import Animated, {
 } from 'react-native-reanimated';
 import { ArrowLeft, Mail } from 'lucide-react-native';
 import OTPInput, { OTPInputRef } from '@/components/OTPInput';
+import { apiFetch } from '@/services/api';
 
-const DEMO_CODE = '123456';
 const RESEND_DURATION = 60;
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
@@ -34,6 +34,7 @@ export default function VerifyEmailScreen() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [completed, setCompleted] = useState(false);
+  const [resendMsg, setResendMsg] = useState('');
   const [countdown, setCountdown] = useState(RESEND_DURATION);
   const [canResend, setCanResend] = useState(false);
   const otpRef = useRef<OTPInputRef>(null);
@@ -80,34 +81,47 @@ export default function VerifyEmailScreen() {
       otpRef.current?.shake();
       return;
     }
-    if (otp !== DEMO_CODE) {
-      setError(`Incorrect code — use ${DEMO_CODE} for demo`);
-      otpRef.current?.shake();
-      return;
-    }
     setError('');
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 700));
-    setLoading(false);
-    router.replace('/success');
+    try {
+      await apiFetch('/auth/verify-email', {
+        method: 'POST',
+        body: JSON.stringify({ email: displayEmail, code: otp }),
+      });
+      router.replace('/success');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Incorrect code. Please try again.';
+      setError(msg);
+      otpRef.current?.shake();
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleComplete = (code: string) => {
     setCompleted(true);
     setOtp(code);
     setError('');
-    if (code === DEMO_CODE) {
-      setTimeout(() => handleVerify(), 300);
-    }
   };
 
-  const handleResend = () => {
+  const handleResend = async () => {
     if (!canResend) return;
     setOtp('');
     setCompleted(false);
     setError('');
+    setResendMsg('');
     otpRef.current?.clear();
     startTimer();
+    try {
+      await apiFetch('/auth/resend-verification', {
+        method: 'POST',
+        body: JSON.stringify({ email: displayEmail }),
+      });
+      setResendMsg('New code sent!');
+      setTimeout(() => setResendMsg(''), 3000);
+    } catch {
+      // startTimer already reset state — just continue
+    }
   };
 
   return (
@@ -148,13 +162,6 @@ export default function VerifyEmailScreen() {
             </Text>
           </View>
 
-          {/* Demo hint */}
-          <View style={styles.demoHint}>
-            <Text style={styles.demoHintText}>
-              Demo code: <Text style={styles.demoCode}>{DEMO_CODE}</Text>
-            </Text>
-          </View>
-
           {/* OTP */}
           <OTPInput
             ref={otpRef}
@@ -172,6 +179,10 @@ export default function VerifyEmailScreen() {
 
           {!!error && (
             <Text style={styles.errorText}>{error}</Text>
+          )}
+
+          {!!resendMsg && (
+            <Text style={styles.successText}>{resendMsg}</Text>
           )}
 
           {/* Verify button */}
@@ -270,29 +281,16 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontFamily: 'Poppins_500Medium',
   },
-  demoHint: {
-    backgroundColor: '#111111',
-    borderRadius: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-  },
-  demoHintText: {
-    fontSize: 13,
-    fontFamily: 'Poppins_400Regular',
-    color: 'rgba(255,255,255,0.35)',
-    textAlign: 'center',
-  },
-  demoCode: {
-    color: 'rgba(255,255,255,0.7)',
-    fontFamily: 'Poppins_600SemiBold',
-    letterSpacing: 2,
-  },
   errorText: {
     fontSize: 13,
     fontFamily: 'Poppins_400Regular',
     color: '#EF4444',
+    textAlign: 'center',
+  },
+  successText: {
+    fontSize: 13,
+    fontFamily: 'Poppins_500Medium',
+    color: '#22C55E',
     textAlign: 'center',
   },
   verifyBtn: {
@@ -332,24 +330,5 @@ const styles = StyleSheet.create({
   },
   resendDisabled: {
     color: 'rgba(255,255,255,0.25)',
-  },
-  // Success state
-  successState: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 16,
-    backgroundColor: '#000000',
-  },
-  successTitle: {
-    fontSize: 24,
-    fontFamily: 'Poppins_700Bold',
-    color: '#FFFFFF',
-    letterSpacing: -0.4,
-  },
-  successSubtitle: {
-    fontSize: 15,
-    fontFamily: 'Poppins_400Regular',
-    color: 'rgba(255,255,255,0.4)',
   },
 });

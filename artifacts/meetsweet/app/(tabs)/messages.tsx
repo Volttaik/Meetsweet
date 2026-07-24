@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   FlatList,
   Modal,
   StyleSheet,
@@ -9,6 +8,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { Spinner } from 'heroui-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Pencil, Plus, Search, X } from 'lucide-react-native';
 import { router } from 'expo-router';
@@ -151,7 +151,9 @@ function NewMessageModal({
           />
         </View>
         {searching ? (
-          <ActivityIndicator color={T.TEXT} style={{ marginTop: 40 }} />
+          <View style={{ marginTop: 40, alignItems: 'center' }}>
+            <Spinner size="lg" color="default" />
+          </View>
         ) : results.length > 0 ? (
           <FlatList
             data={results}
@@ -270,7 +272,9 @@ export default function MessagesScreen() {
 
       {/* Content */}
       {loading ? (
-        <ActivityIndicator color={T.TEXT} style={{ marginTop: 60 }} />
+        <View style={styles.loadingWrap}>
+          <Spinner size="lg" color="default" />
+        </View>
       ) : (
         <FlatList
           data={filtered}
@@ -375,6 +379,12 @@ const styles = StyleSheet.create({
   tabChipActive: { backgroundColor: T.TEXT, borderColor: T.TEXT },
   tabChipLabel: { fontSize: 13, fontFamily: T.FONT.medium, color: T.TEXT_2 },
   tabChipLabelActive: { color: T.BG },
+
+  loadingWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 
   convoRow: {
     flexDirection: 'row',

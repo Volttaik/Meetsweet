@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import bcrypt from "bcryptjs";
 import { v4 as uuidv4 } from "uuid";
-import { query, queryOne } from "../lib/db.js";
+import { query, queryOne, queryRaw } from "../lib/db.js";
 import {
   signAccessToken,
   signRefreshToken,
@@ -9,6 +9,7 @@ import {
   hashToken,
 } from "../lib/auth.js";
 import { requireAuth, type AuthRequest } from "../middlewares/requireAuth.js";
+import * as emailService from "../lib/email.js";
 
 const router: IRouter = Router();
 
@@ -30,6 +31,7 @@ function publicUser(user: Record<string, unknown>) {
     followingCount: user.following_count ?? 0,
     subscriberCount: user.subscriber_count ?? 0,
     postCount: user.post_count ?? 0,
+    emailVerified: user.email_verified ?? false,
     createdAt: user.created_at,
   };
 }
@@ -42,6 +44,11 @@ function generateUsername(name: string): string {
     .slice(0, 16);
   const suffix = Math.floor(Math.random() * 9000) + 1000;
   return `${base}${suffix}`;
+}
+
+// Generate 6-digit OTP code
+function generateCode(): string {
+  return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
 // ─── POST /api/auth/register ─────────────────────────────────────────────────
@@ -133,6 +140,19 @@ router.post("/auth/register", async (req, res) => {
       [uuidv4(), userId],
     );
     user.credits = 500;
+
+    // Send welcome email + verification code (fire-and-forget)
+    if (email) {
+      const code = generateCode();
+      queryRaw(
+        `INSERT INTO email_verifications (user_id, email, code, type, expires_at)
+         VALUES ($1, $2, $3, 'verify', NOW() + INTERVAL '15 minutes')`,
+        [userId, email, code],
+      ).then(() => {
+        emailService.sendWelcomeEmail(email, finalUsername).catch(() => {});
+        emailService.sendVerificationEmail(email, finalUsername, code).catch(() => {});
+      }).catch(() => {});
+    }
 
     res.status(201).json({
       user: publicUser(user),
@@ -266,6 +286,253 @@ router.post("/auth/logout", async (req, res) => {
     res.json({ success: true });
   } catch {
     res.json({ success: true });
+  }
+});
+
+// ─── GET /api/auth/check-username ────────────────────────────────────────────
+
+router.get("/auth/check-username", async (req, res) => {
+  try {
+    const username = (req.query.username as string)?.trim();
+
+    if (!username || username.length < 2) {
+      res.json({ available: false, reason: "Too short" });
+      return;
+    }
+
+    if (!/^[a-z0-9_.]{2,30}$/i.test(username)) {
+      res.json({ available: false, reason: "Invalid characters (use letters, numbers, _ or .)" });
+      return;
+    }
+
+    const existing = await queryOne(
+      `SELECT id FROM users WHERE LOWER(username) = LOWER($1)`,
+      [username],
+    );
+
+    res.json({ available: !existing });
+  } catch (err) {
+    console.error("Check username error:", err);
+    res.status(500).json({ error: "Failed to check username" });
+  }
+});
+
+// ─── POST /api/auth/verify-email ─────────────────────────────────────────────
+
+router.post("/auth/verify-email", async (req, res) => {
+  try {
+    const { email, code } = req.body as { email: string; code: string };
+
+    if (!email || !code) {
+      res.status(400).json({ error: "Email and code are required" });
+      return;
+    }
+
+    const record = await queryOne<{ id: string; user_id: string; code: string }>(
+      `SELECT id, user_id, code FROM email_verifications
+       WHERE email = $1 AND type = 'verify' AND expires_at > NOW() AND used_at IS NULL
+       ORDER BY created_at DESC LIMIT 1`,
+      [email.toLowerCase()],
+    );
+
+    if (!record || record.code !== code.trim()) {
+      res.status(400).json({ error: "Invalid or expired code" });
+      return;
+    }
+
+    // Mark verified
+    await queryRaw(`UPDATE users SET email_verified = true WHERE id = $1`, [record.user_id]);
+    await queryRaw(`UPDATE email_verifications SET used_at = NOW() WHERE id = $1`, [record.id]);
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Verify email error:", err);
+    res.status(500).json({ error: "Failed to verify email" });
+  }
+});
+
+// ─── POST /api/auth/resend-verification ──────────────────────────────────────
+
+router.post("/auth/resend-verification", async (req, res) => {
+  try {
+    const { email } = req.body as { email: string };
+
+    if (!email) {
+      res.status(400).json({ error: "Email required" });
+      return;
+    }
+
+    const user = await queryOne<{ id: string; name: string; username: string }>(
+      `SELECT id, name, username FROM users WHERE email = $1`,
+      [email.toLowerCase()],
+    );
+
+    // Always return success to prevent email enumeration
+    if (!user) {
+      res.json({ success: true });
+      return;
+    }
+
+    const code = generateCode();
+    await queryRaw(
+      `INSERT INTO email_verifications (user_id, email, code, type, expires_at)
+       VALUES ($1, $2, $3, 'verify', NOW() + INTERVAL '15 minutes')`,
+      [user.id, email.toLowerCase(), code],
+    );
+
+    emailService.sendVerificationEmail(email, user.username, code).catch(() => {});
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Resend verification error:", err);
+    res.status(500).json({ error: "Failed to resend code" });
+  }
+});
+
+// ─── POST /api/auth/forgot-password ──────────────────────────────────────────
+
+router.post("/auth/forgot-password", async (req, res) => {
+  try {
+    const { email } = req.body as { email: string };
+
+    if (!email) {
+      res.status(400).json({ error: "Email required" });
+      return;
+    }
+
+    const user = await queryOne<{ id: string; name: string; username: string }>(
+      `SELECT id, name, username FROM users WHERE email = $1`,
+      [email.toLowerCase()],
+    );
+
+    // Always return success to prevent email enumeration
+    if (!user) {
+      res.json({ success: true });
+      return;
+    }
+
+    const code = generateCode();
+    await queryRaw(
+      `INSERT INTO email_verifications (user_id, email, code, type, expires_at)
+       VALUES ($1, $2, $3, 'reset', NOW() + INTERVAL '15 minutes')`,
+      [user.id, email.toLowerCase(), code],
+    );
+
+    emailService.sendPasswordResetEmail(email, user.username, code).catch(() => {});
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Forgot password error:", err);
+    res.status(500).json({ error: "Failed to send reset code" });
+  }
+});
+
+// ─── POST /api/auth/reset-password ───────────────────────────────────────────
+
+router.post("/auth/reset-password", async (req, res) => {
+  try {
+    const { email, code, password } = req.body as {
+      email: string;
+      code: string;
+      password: string;
+    };
+
+    if (!email || !code || !password) {
+      res.status(400).json({ error: "Email, code and password are required" });
+      return;
+    }
+
+    if (password.length < 8) {
+      res.status(400).json({ error: "Password must be at least 8 characters" });
+      return;
+    }
+
+    const record = await queryOne<{ id: string; user_id: string; code: string }>(
+      `SELECT id, user_id, code FROM email_verifications
+       WHERE email = $1 AND type = 'reset' AND expires_at > NOW() AND used_at IS NULL
+       ORDER BY created_at DESC LIMIT 1`,
+      [email.toLowerCase()],
+    );
+
+    if (!record || record.code !== code.trim()) {
+      res.status(400).json({ error: "Invalid or expired code" });
+      return;
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12);
+
+    await queryRaw(`UPDATE users SET password_hash = $1 WHERE id = $2`, [passwordHash, record.user_id]);
+    await queryRaw(`UPDATE email_verifications SET used_at = NOW() WHERE id = $1`, [record.id]);
+    // Revoke all refresh tokens for security
+    await queryRaw(`DELETE FROM refresh_tokens WHERE user_id = $1`, [record.user_id]);
+
+    // Fetch user to send confirmation email
+    queryOne<{ email: string; username: string }>(
+      `SELECT email, username FROM users WHERE id = $1`,
+      [record.user_id],
+    ).then((u) => {
+      if (u?.email) {
+        emailService.sendPasswordChangedEmail(u.email, u.username).catch(() => {});
+      }
+    }).catch(() => {});
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Reset password error:", err);
+    res.status(500).json({ error: "Failed to reset password" });
+  }
+});
+
+// ─── PUT /api/auth/password — change password (authenticated) ─────────────────
+
+router.put("/auth/password", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body as {
+      currentPassword: string;
+      newPassword: string;
+    };
+
+    if (!currentPassword || !newPassword) {
+      res.status(400).json({ error: "Current and new password required" });
+      return;
+    }
+
+    if (newPassword.length < 8) {
+      res.status(400).json({ error: "New password must be at least 8 characters" });
+      return;
+    }
+
+    const user = await queryOne<{ id: string; email: string; username: string; password_hash: string }>(
+      `SELECT id, email, username, password_hash FROM users WHERE id = $1`,
+      [req.user!.sub],
+    );
+
+    if (!user) {
+      res.status(404).json({ error: "User not found" });
+      return;
+    }
+
+    const valid = await bcrypt.compare(currentPassword, user.password_hash);
+    if (!valid) {
+      res.status(401).json({ error: "Current password is incorrect" });
+      return;
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    await queryRaw(`UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2`, [passwordHash, user.id]);
+
+    // Revoke all OTHER refresh tokens (current session stays active)
+    await queryRaw(`DELETE FROM refresh_tokens WHERE user_id = $1`, [user.id]);
+
+    // Send password changed email
+    if (user.email) {
+      emailService.sendPasswordChangedEmail(user.email, user.username).catch(() => {});
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Change password error:", err);
+    res.status(500).json({ error: "Failed to change password" });
   }
 });
 
