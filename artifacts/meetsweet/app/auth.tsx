@@ -14,9 +14,9 @@ import {
   FieldError,
   Input,
   Label,
+  Spinner,
   TextField,
 } from 'heroui-native';
-import { ActivityIndicator } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowLeft, Eye, EyeOff, Lock, Mail } from 'lucide-react-native';
@@ -261,10 +261,10 @@ export default function AuthScreen() {
               size="lg"
               onPress={handleLogin}
               isDisabled={loading}
-              style={styles.submitBtn}
+              style={[styles.submitBtn, loading && styles.submitBtnLoading]}
             >
               {loading ? (
-                <ActivityIndicator size="small" color="#000000" />
+                <Spinner size="sm" />
               ) : (
                 <Button.Label style={styles.submitBtnLabel}>Log In</Button.Label>
               )}
@@ -394,6 +394,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
     height: 46,
+  },
+  submitBtnLoading: {
+    backgroundColor: '#111111',
   },
   submitBtnLabel: {
     fontFamily: 'Poppins_600SemiBold',

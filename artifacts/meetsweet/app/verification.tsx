@@ -6,8 +6,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Button } from 'heroui-native';
-import { ActivityIndicator } from 'react-native';
+import { Button, Spinner } from 'heroui-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
@@ -252,11 +251,12 @@ export default function VerificationScreen() {
             isDisabled={loading || !isReady || success}
             style={[
               styles.verifyBtn,
-              (!isReady || loading || success) && styles.verifyBtnDisabled,
+              loading && styles.verifyBtnLoading,
+              (!isReady && !loading) && styles.verifyBtnDisabled,
             ]}
           >
             {loading ? (
-              <ActivityIndicator size="small" color="#000000" />
+              <Spinner size="sm" />
             ) : (
               <Button.Label style={[
                 styles.verifyBtnLabel,
@@ -395,6 +395,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
     height: 46,
+  },
+  verifyBtnLoading: {
+    backgroundColor: '#111111',
   },
   verifyBtnDisabled: {
     backgroundColor: 'rgba(255,255,255,0.12)',

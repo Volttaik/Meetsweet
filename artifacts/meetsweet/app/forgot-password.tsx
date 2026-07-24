@@ -12,9 +12,9 @@ import {
   FieldError,
   Input,
   Label,
+  Spinner,
   TextField,
 } from 'heroui-native';
-import { ActivityIndicator } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
@@ -128,7 +128,7 @@ function StepEmail({ onNext }: { onNext: (email: string) => void }) {
         style={styles.primaryBtn}
       >
         {loading
-          ? <ActivityIndicator size="small" color="#000000" />
+          ? <Spinner size="sm" />
           : <Button.Label style={styles.btnLabel}>Send Reset Code</Button.Label>}
       </Button>
     </View>
@@ -361,7 +361,7 @@ function StepNewPassword({ onNext }: { onNext: () => void }) {
         style={styles.primaryBtn}
       >
         {loading
-          ? <ActivityIndicator size="small" color="#000000" />
+          ? <Spinner size="sm" />
           : <Button.Label style={styles.btnLabel}>Reset Password</Button.Label>}
       </Button>
     </View>
@@ -557,6 +557,7 @@ const styles = StyleSheet.create({
   },
 
   primaryBtn: { backgroundColor: '#FFFFFF', borderRadius: 12, height: 46 },
+  primaryBtnLoading: { backgroundColor: '#111111' },
   primaryBtnDisabled: { backgroundColor: 'rgba(255,255,255,0.1)' },
   btnLabel: { fontFamily: 'Poppins_600SemiBold', fontSize: 15, color: '#000000' },
   btnLabelDisabled: { color: 'rgba(255,255,255,0.25)' },
