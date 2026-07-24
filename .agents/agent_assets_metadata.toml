@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "0SM90TNCsySIvPDP1gWf7"
+uri = "file://mobile.zip"
+type = "unspecified"
+title = "mobile.zip — your React Native app (download here)"

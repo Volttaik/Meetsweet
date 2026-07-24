@@ -1,0 +1,62 @@
+{
+  "version": 3,
+  "middleware": {
+    "/": {
+      "files": [
+        "server/edge-runtime-webpack.js",
+        "server/middleware.js"
+      ],
+      "name": "middleware",
+      "page": "/",
+      "matchers": [
+        {
+          "regexp": "^(?:\\/(_next\\/data\\/[^/]{1,}))?\\/api(?:\\/((?:[^\\/#\\?]+?)(?:\\/(?:[^\\/#\\?]+?))*))?(\\.json|\\.rsc|\\.segments\\/.+\\.segment\\.rsc)?[\\/#\\?]?$",
+          "originalSource": "/api/:path*"
+        }
+      ],
+      "wasm": [],
+      "assets": [],
+      "env": {
+        "__NEXT_BUILD_ID": "GwAviwaOz1jOtJ6o8OA8d",
+        "NEXT_SERVER_ACTIONS_ENCRYPTION_KEY": "y5cxIgX51UQ7BWQDaJNyvv+vNY4gfKr5dDR1SDuvgzg=",
+        "__NEXT_PREVIEW_MODE_ID": "eae1ffc1a52d1010d996ca5aeb41f05a",
+        "__NEXT_PREVIEW_MODE_SIGNING_KEY": "2d2b204b0abaabcffd2e452198ab35af08a72be1bba22a9307304ebcd211c973",
+        "__NEXT_PREVIEW_MODE_ENCRYPTION_KEY": "089d1906b68b967e1ab999e2e364a67967917e40eb3367a02dd43d2483a81f5b"
+      }
+    }
+  },
+  "functions": {
+    "/api/healthz/route": {
+      "files": [
+        "server/server-reference-manifest.js",
+        "server/app/api/healthz/route_client-reference-manifest.js",
+        "server/middleware-build-manifest.js",
+        "server/middleware-react-loadable-manifest.js",
+        "server/next-font-manifest.js",
+        "server/interception-route-rewrite-manifest.js",
+        "server/edge-runtime-webpack.js",
+        "server/app/api/healthz/route.js"
+      ],
+      "name": "app/api/healthz/route",
+      "page": "/api/healthz/route",
+      "matchers": [
+        {
+          "regexp": "^/api/healthz$",
+          "originalSource": "/api/healthz"
+        }
+      ],
+      "wasm": [],
+      "assets": [],
+      "env": {
+        "__NEXT_BUILD_ID": "GwAviwaOz1jOtJ6o8OA8d",
+        "NEXT_SERVER_ACTIONS_ENCRYPTION_KEY": "y5cxIgX51UQ7BWQDaJNyvv+vNY4gfKr5dDR1SDuvgzg=",
+        "__NEXT_PREVIEW_MODE_ID": "eae1ffc1a52d1010d996ca5aeb41f05a",
+        "__NEXT_PREVIEW_MODE_SIGNING_KEY": "2d2b204b0abaabcffd2e452198ab35af08a72be1bba22a9307304ebcd211c973",
+        "__NEXT_PREVIEW_MODE_ENCRYPTION_KEY": "089d1906b68b967e1ab999e2e364a67967917e40eb3367a02dd43d2483a81f5b"
+      }
+    }
+  },
+  "sortedMiddleware": [
+    "/"
+  ]
+}
