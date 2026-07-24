@@ -40,8 +40,8 @@ function RootLayoutNav() {
     >
       {/* Onboarding & Auth — new HeroUI Native flow */}
       <Stack.Screen name="index" options={{ gestureEnabled: false }} />
-      <Stack.Screen name="welcome" options={{ gestureEnabled: false, animation: 'fade' }} />
-      <Stack.Screen name="onboarding" options={{ gestureEnabled: false }} />
+      <Stack.Screen name="welcome" options={{ gestureEnabled: false, animation: 'none' }} />
+      <Stack.Screen name="onboarding" options={{ gestureEnabled: false, animation: 'slide_from_right' }} />
       <Stack.Screen name="auth" options={{}} />
       <Stack.Screen name="register" options={{}} />
       <Stack.Screen name="forgot-password" options={{}} />

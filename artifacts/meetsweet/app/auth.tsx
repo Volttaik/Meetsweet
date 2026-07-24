@@ -354,7 +354,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     borderWidth: 1,
     borderColor: INPUT_BORDER,
-    height: 48,
+    height: 44,
     gap: 10,
   },
   input: {
@@ -393,7 +393,7 @@ const styles = StyleSheet.create({
   submitBtn: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
-    height: 48,
+    height: 46,
   },
   submitBtnLabel: {
     fontFamily: 'Poppins_600SemiBold',
@@ -420,7 +420,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 10,
     borderRadius: 12,
-    height: 46,
+    height: 42,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.1)',
     backgroundColor: '#111111',

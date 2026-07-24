@@ -392,8 +392,8 @@ const styles = StyleSheet.create({
   },
   verifyBtn: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    height: 52,
+    borderRadius: 12,
+    height: 46,
   },
   verifyBtnDisabled: {
     backgroundColor: 'rgba(255,255,255,0.12)',

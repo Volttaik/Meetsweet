@@ -222,14 +222,14 @@ export default OTPInput;
 const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 10,
     justifyContent: 'center',
     alignItems: 'center',
   },
   box: {
-    width: 56,
-    height: 64,
-    borderRadius: 14,
+    width: 44,
+    height: 52,
+    borderRadius: 11,
     borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
@@ -239,7 +239,7 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
     textAlign: 'center',
-    fontSize: 24,
+    fontSize: 20,
     fontFamily: 'Poppins_700Bold',
     color: '#FFFFFF',
     includeFontPadding: false,

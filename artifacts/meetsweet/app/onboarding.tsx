@@ -281,6 +281,6 @@ const styles = StyleSheet.create({
     lineHeight: 26,
     paddingHorizontal: 4,
   },
-  nextBtn: { backgroundColor: '#FFFFFF', borderRadius: 18, height: 60 },
-  nextBtnLabel: { fontFamily: 'Poppins_600SemiBold', fontSize: 17, color: '#000000' },
+  nextBtn: { backgroundColor: '#FFFFFF', borderRadius: 12, height: 48 },
+  nextBtnLabel: { fontFamily: 'Poppins_600SemiBold', fontSize: 15, color: '#000000' },
 });

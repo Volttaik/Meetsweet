@@ -444,9 +444,6 @@ function Step2({
         <Button.Label style={styles.btnLabel}>Continue</Button.Label>
       </Button>
 
-      <TouchableOpacity onPress={onBack} style={styles.backLink} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-        <ArrowLeft size={20} color="rgba(255,255,255,0.45)" strokeWidth={2} />
-      </TouchableOpacity>
     </View>
   );
 }
@@ -570,9 +567,6 @@ function Step3({
         )}
       </Button>
 
-      <TouchableOpacity onPress={onBack} style={styles.backLink} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-        <ArrowLeft size={20} color="rgba(255,255,255,0.45)" strokeWidth={2} />
-      </TouchableOpacity>
     </View>
   );
 }
@@ -766,12 +760,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: INPUT_BG,
-    borderRadius: 14,
-    paddingHorizontal: 16,
+    borderRadius: 12,
+    paddingHorizontal: 14,
     borderWidth: 1,
     borderColor: INPUT_BORDER,
-    height: 50,
-    gap: 12,
+    height: 44,
+    gap: 10,
   },
   input: {
     flex: 1,
@@ -892,8 +886,8 @@ const styles = StyleSheet.create({
   // Buttons
   primaryBtn: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    height: 50,
+    borderRadius: 12,
+    height: 46,
   },
   btnLabel: {
     fontFamily: 'Poppins_600SemiBold',

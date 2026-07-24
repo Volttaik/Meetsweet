@@ -183,22 +183,22 @@ const styles = StyleSheet.create({
   },
   primaryBtn: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    height: 60,
+    borderRadius: 12,
+    height: 52,
   },
   primaryBtnLabel: {
     fontFamily: 'Poppins_600SemiBold',
-    fontSize: 17,
+    fontSize: 16,
     color: '#000000',
   },
   outlineBtn: {
-    borderRadius: 18,
-    height: 60,
+    borderRadius: 12,
+    height: 52,
     borderColor: 'rgba(255,255,255,0.2)',
   },
   outlineBtnLabel: {
     fontFamily: 'Poppins_600SemiBold',
-    fontSize: 17,
+    fontSize: 16,
     color: '#FFFFFF',
   },
   terms: {

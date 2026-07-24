@@ -538,7 +538,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     borderWidth: 1,
     borderColor: INPUT_BORDER,
-    height: 48,
+    height: 44,
     gap: 10,
   },
   input: {
@@ -556,7 +556,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
 
-  primaryBtn: { backgroundColor: '#FFFFFF', borderRadius: 12, height: 48 },
+  primaryBtn: { backgroundColor: '#FFFFFF', borderRadius: 12, height: 46 },
   primaryBtnDisabled: { backgroundColor: 'rgba(255,255,255,0.1)' },
   btnLabel: { fontFamily: 'Poppins_600SemiBold', fontSize: 15, color: '#000000' },
   btnLabelDisabled: { color: 'rgba(255,255,255,0.25)' },

@@ -235,8 +235,8 @@ const styles = StyleSheet.create({
   },
   btn: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    height: 52,
+    borderRadius: 12,
+    height: 46,
   },
   btnLabel: {
     fontFamily: 'Poppins_600SemiBold',
