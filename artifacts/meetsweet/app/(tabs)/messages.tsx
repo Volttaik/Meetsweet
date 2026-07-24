@@ -15,6 +15,7 @@ import { router } from 'expo-router';
 import { T } from '@/constants/theme';
 import { MsAvatar } from '@/components/MsAvatar';
 import { MsEmptyState } from '@/components/MsEmptyState';
+import { MsActionSheet, type ActionItem } from '@/components/MsActionSheet';
 import {
   getConversations,
   searchUsers,
@@ -53,15 +54,29 @@ function initials(name: string): string {
 
 // ─── Conversation row ─────────────────────────────────────────────────────────
 
-function ConversationRow({ item }: { item: Conversation }) {
+function ConversationRow({
+  item,
+  onLongPress,
+}: {
+  item: Conversation;
+  onLongPress: (item: Conversation) => void;
+}) {
   const isUnread = item.unreadCount > 0;
+  const avatarUrl = (item.otherUser as any)?.avatarUrl as string | undefined;
+
   return (
     <TouchableOpacity
       style={styles.convoRow}
       activeOpacity={0.7}
       onPress={() => router.push(`/chat/${item.id}`)}
+      onLongPress={() => onLongPress(item)}
+      delayLongPress={400}
     >
-      <MsAvatar size={50} initials={initials(item.otherUser.name)} />
+      <MsAvatar
+        size={50}
+        initials={initials(item.otherUser.name)}
+        imageUri={avatarUrl}
+      />
       <View style={styles.convoContent}>
         <Text style={[styles.convoName, isUnread && styles.bold]} numberOfLines={1}>
           {item.otherUser.name}
@@ -106,7 +121,10 @@ function NewMessageModal({
   const handleSearch = (text: string) => {
     setQ(text);
     if (timerRef.current) clearTimeout(timerRef.current);
-    if (text.trim().length < 2) { setResults([]); return; }
+    if (text.trim().length < 2) {
+      setResults([]);
+      return;
+    }
     timerRef.current = setTimeout(async () => {
       setSearching(true);
       try {
@@ -158,19 +176,22 @@ function NewMessageModal({
           <FlatList
             data={results}
             keyExtractor={(u) => u.id}
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                style={styles.userRow}
-                activeOpacity={0.7}
-                onPress={() => handleSelect(item)}
-              >
-                <MsAvatar size={42} initials={initials(item.name)} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.userName}>{item.name}</Text>
-                  <Text style={styles.userHandle}>@{item.username}</Text>
-                </View>
-              </TouchableOpacity>
-            )}
+            renderItem={({ item }) => {
+              const userAvatar = (item as any)?.avatarUrl as string | undefined;
+              return (
+                <TouchableOpacity
+                  style={styles.userRow}
+                  activeOpacity={0.7}
+                  onPress={() => handleSelect(item)}
+                >
+                  <MsAvatar size={42} initials={initials(item.name)} imageUri={userAvatar} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.userName}>{item.name}</Text>
+                    <Text style={styles.userHandle}>@{item.username}</Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            }}
           />
         ) : q.length >= 2 ? (
           <MsEmptyState title="No users found" message={`No one matches "${q}"`} />
@@ -192,20 +213,24 @@ export default function MessagesScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [showNewMsg, setShowNewMsg] = useState(false);
   const [searchText, setSearchText] = useState('');
+  const [menuConvo, setMenuConvo] = useState<Conversation | null>(null);
 
-  const load = useCallback(async (showRefresh = false) => {
-    if (showRefresh) setRefreshing(true);
-    try {
-      const tab = activeTab === 'Archived' ? 'archived' : 'all';
-      const data = await getConversations(tab);
-      setConversations(data.conversations);
-    } catch {
-      // keep existing list
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [activeTab]);
+  const load = useCallback(
+    async (showRefresh = false) => {
+      if (showRefresh) setRefreshing(true);
+      try {
+        const tab = activeTab === 'Archived' ? 'archived' : 'all';
+        const data = await getConversations(tab);
+        setConversations(data.conversations);
+      } catch {
+        // keep existing list
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [activeTab],
+  );
 
   useEffect(() => {
     setLoading(true);
@@ -219,6 +244,28 @@ export default function MessagesScreen() {
           c.otherUser.username.toLowerCase().includes(searchText.toLowerCase()),
       )
     : conversations;
+
+  // Long-press conversation actions
+  const convoActions = (convo: Conversation): ActionItem[] => [
+    {
+      label: 'Mark as Read',
+      onPress: () => {
+        setConversations((prev) =>
+          prev.map((c) => (c.id === convo.id ? { ...c, unreadCount: 0 } : c)),
+        );
+      },
+    },
+    { label: 'Pin Conversation', onPress: () => {} },
+    { label: 'Archive', onPress: () => {} },
+    { label: 'Mute', onPress: () => {} },
+    {
+      label: 'Delete',
+      destructive: true,
+      onPress: () => {
+        setConversations((prev) => prev.filter((c) => c.id !== convo.id));
+      },
+    },
+  ];
 
   return (
     <View style={[styles.bg, { paddingTop: insets.top }]}>
@@ -245,7 +292,10 @@ export default function MessagesScreen() {
           onChangeText={setSearchText}
         />
         {searchText.length > 0 && (
-          <TouchableOpacity onPress={() => setSearchText('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <TouchableOpacity
+            onPress={() => setSearchText('')}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
             <X size={14} color={T.TEXT_3} />
           </TouchableOpacity>
         )}
@@ -279,7 +329,9 @@ export default function MessagesScreen() {
         <FlatList
           data={filtered}
           keyExtractor={(item) => item.id}
-          renderItem={({ item }) => <ConversationRow item={item} />}
+          renderItem={({ item }) => (
+            <ConversationRow item={item} onLongPress={setMenuConvo} />
+          )}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingBottom: 100 }}
           ItemSeparatorComponent={() => <View style={styles.separator} />}
@@ -292,15 +344,17 @@ export default function MessagesScreen() {
                   ? 'No archived conversations'
                   : searchText
                   ? 'No results'
-                  : 'No messages yet'
+                  : 'Start your first conversation'
               }
               message={
                 activeTab === 'Archived'
                   ? 'Archived chats will appear here.'
                   : searchText
                   ? `No conversations matching "${searchText}".`
-                  : 'Tap the pencil icon to start a conversation.'
+                  : 'Tap the pencil icon above to message a creator you love.'
               }
+              actionLabel={!activeTab && !searchText ? 'New Message' : undefined}
+              onAction={!activeTab && !searchText ? () => setShowNewMsg(true) : undefined}
             />
           }
         />
@@ -316,6 +370,15 @@ export default function MessagesScreen() {
       </TouchableOpacity>
 
       <NewMessageModal visible={showNewMsg} onClose={() => setShowNewMsg(false)} />
+
+      {/* Conversation long-press action sheet */}
+      <MsActionSheet
+        visible={!!menuConvo}
+        title={menuConvo?.otherUser.name}
+        subtitle={menuConvo ? `@${menuConvo.otherUser.username}` : undefined}
+        actions={menuConvo ? convoActions(menuConvo) : []}
+        onClose={() => setMenuConvo(null)}
+      />
     </View>
   );
 }
@@ -351,7 +414,6 @@ const styles = StyleSheet.create({
     marginVertical: 12,
     backgroundColor: T.SURFACE,
     borderRadius: T.RADIUS.md,
-    borderWidth: 0,
     paddingHorizontal: 14,
     height: 42,
     gap: 10,
@@ -372,7 +434,7 @@ const styles = StyleSheet.create({
     borderRadius: T.RADIUS.full,
     backgroundColor: T.SURFACE,
   },
-  tabChipActive: { backgroundColor: T.TEXT, borderColor: T.TEXT },
+  tabChipActive: { backgroundColor: T.TEXT },
   tabChipLabel: { fontSize: 13, fontFamily: T.FONT.medium, color: T.TEXT_2 },
   tabChipLabelActive: { color: T.BG },
 

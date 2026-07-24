@@ -4,3 +4,4 @@
 - [MeetSweet Registration Email](meetsweet-registration-email.md) — email sending on register is best-effort; missing RESEND_API_KEY must not crash registration. RESEND_API_KEY and RESEND_FROM_EMAIL are now set as Replit Secrets.
 - [MeetSweet Auth JWT](meetsweet-auth-jwt.md) — JWT signing uses JWT_ACCESS_SECRET env var with SESSION_SECRET as fallback; never store signing secrets in .replit (tracked); use Replit Secrets only.
 - [MeetSweet DB Setup](meetsweet-db-setup.md) — Replit's PostgreSQL is runtime-managed; DATABASE_URL is auto-injected, do not set it manually. Schema was pushed via executeSql; all 19 tables exist in development DB.
+- [MeetSweet UI Component Map](meetsweet-ui-components.md) — locations of all screens, shared components, action sheets, creator preview, and avatar system.

@@ -1,7 +1,5 @@
 import React, { useMemo, useState } from 'react';
 import {
-  Alert,
-  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -12,29 +10,98 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { Bell, CaretRight, CreditCard, MagnifyingGlass as SearchIcon, Wallet, X } from 'phosphor-react-native';
+import { Bell, CaretRight, CreditCard, MagnifyingGlass as SearchIcon, Wallet } from 'phosphor-react-native';
 import { useGetExploreCatalog, type Creator } from '@workspace/api-client-react';
-import { Button, Chip, Input } from 'heroui-native';
-import { MsCatalogSkeleton, MsCollectionCard, MsFeaturedCreatorCard, MsPreviewCard, MsRecommendedCreatorRow } from '@/components/MsExploreVisual';
+import { Chip, Input } from 'heroui-native';
+import {
+  MsCatalogSkeleton,
+  MsCollectionCard,
+  MsFeaturedCreatorCard,
+  MsPreviewCard,
+  MsRecommendedCreatorRow,
+} from '@/components/MsExploreVisual';
 import { MsEmptyState } from '@/components/MsEmptyState';
 import { MsSectionHeader } from '@/components/MsSectionHeader';
+import { MsActionSheet, type ActionItem } from '@/components/MsActionSheet';
+import { MsCreatorPreview, type CreatorPreviewData } from '@/components/MsCreatorPreview';
 import { T } from '@/constants/theme';
+
+// ─── Creator-focused category list ────────────────────────────────────────────
+
+const CREATOR_CATEGORIES = [
+  { id: 'all',                label: 'All' },
+  { id: 'trending',           label: 'Trending' },
+  { id: 'new',                label: 'New Creators' },
+  { id: 'premium',            label: 'Premium' },
+  { id: 'lifestyle',          label: 'Lifestyle' },
+  { id: 'fashion',            label: 'Fashion' },
+  { id: 'fitness',            label: 'Fitness' },
+  { id: 'models',             label: 'Models' },
+  { id: 'photography',        label: 'Photography' },
+  { id: 'gaming',             label: 'Gaming' },
+  { id: 'music',              label: 'Music' },
+  { id: 'dance',              label: 'Dance' },
+  { id: 'comedy',             label: 'Comedy' },
+  { id: 'education',          label: 'Education' },
+  { id: 'art',                label: 'Art' },
+  { id: 'cooking',            label: 'Cooking' },
+  { id: 'travel',             label: 'Travel' },
+  { id: 'technology',         label: 'Technology' },
+  { id: 'cars',               label: 'Cars' },
+  { id: 'luxury',             label: 'Luxury' },
+  { id: 'behind-the-scenes',  label: 'Behind the Scenes' },
+];
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function findCreator(creators: Creator[], id: string) {
   return creators.find((c) => c.id === id);
 }
+
+function creatorMatchesCategory(creator: Creator, categoryId: string): boolean {
+  if (categoryId === 'all') return true;
+  if (categoryId === 'trending') return true; // show all as "trending" for now
+  if (categoryId === 'new') return true;       // show all as "new" for now
+  if (categoryId === 'premium') return Number(creator.monthlyCredits ?? 0) > 0;
+  const cat = String(creator.category ?? '').toLowerCase();
+  // Match "behind-the-scenes" → "behind the scenes"
+  const normalized = categoryId.replace(/-/g, ' ');
+  return cat.includes(normalized) || cat === categoryId;
+}
+
+function toPreviewData(creator: Creator): CreatorPreviewData {
+  return {
+    id: creator.id,
+    name: creator.name,
+    handle: creator.handle,
+    bio: creator.bio,
+    initials: creator.initials,
+    isVerified: creator.isVerified,
+    isOnline: creator.isOnline,
+    followers: creator.followers,
+    monthlyCredits: creator.monthlyCredits,
+    category: creator.category,
+  };
+}
+
+// ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function ExploreScreen() {
   const insets = useSafeAreaInsets();
   const [search, setSearch] = useState('');
   const [activeCategory, setActiveCategory] = useState('all');
   const [refreshing, setRefreshing] = useState(false);
+
+  // Long-press context menu
   const [menuCreator, setMenuCreator] = useState<Creator | null>(null);
+
+  // Avatar-tap preview card
+  const [previewCreator, setPreviewCreator] = useState<CreatorPreviewData | null>(null);
+  const [previewVisible, setPreviewVisible] = useState(false);
 
   const query = useGetExploreCatalog();
   const catalog = query.data;
   const creators = catalog?.creators ?? [];
-  const categories = catalog?.categories ?? [];
   const previewsData = catalog?.previews ?? [];
   const featuredCreatorIds = catalog?.featuredCreatorIds ?? [];
   const recommendedCreatorIds = catalog?.recommendedCreatorIds ?? [];
@@ -45,11 +112,10 @@ export default function ExploreScreen() {
     if (!catalog) return [];
     const needle = search.trim().toLowerCase();
     return creators.filter((creator) => {
-      const category = String(creator.category ?? '');
-      const categoryMatch = activeCategory === 'all' || category.toLowerCase() === activeCategory;
+      const categoryMatch = creatorMatchesCategory(creator, activeCategory);
       const searchMatch =
         !needle ||
-        `${creator.name ?? ''} ${creator.handle ?? ''} ${creator.bio ?? ''} ${category}`
+        `${creator.name ?? ''} ${creator.handle ?? ''} ${creator.bio ?? ''} ${creator.category ?? ''}`
           .toLowerCase()
           .includes(needle);
       return categoryMatch && searchMatch;
@@ -59,20 +125,25 @@ export default function ExploreScreen() {
   const featured = featuredCreatorIds
     .map((id) => findCreator(creators, id))
     .filter(Boolean) as Creator[];
+
   const recommended = recommendedCreatorIds
     .map((id) => findCreator(creators, id))
     .filter(Boolean) as Creator[];
+
   const previews = previewsData.filter((preview) => {
     const creator = findCreator(creators, preview.creatorId);
     return (
       creator &&
-      (activeCategory === 'all' ||
-        String(creator.category ?? '').toLowerCase() === activeCategory)
+      (activeCategory === 'all' || creatorMatchesCategory(creator, activeCategory))
     );
   });
 
   const openCreator = (creator: Creator) => router.push(`/creator/${creator.id}`);
-  const openMenu = (creator: Creator) => setMenuCreator(creator);
+
+  const openAvatarPreview = (creator: Creator) => {
+    setPreviewCreator(toPreviewData(creator));
+    setPreviewVisible(true);
+  };
 
   const refresh = async () => {
     setRefreshing(true);
@@ -82,6 +153,16 @@ export default function ExploreScreen() {
       setRefreshing(false);
     }
   };
+
+  // Long-press creator context menu actions
+  const creatorMenuActions = (creator: Creator): ActionItem[] => [
+    { label: 'View Profile',    onPress: () => openCreator(creator) },
+    { label: 'Subscribe',       onPress: () => router.push(`/creator/${creator.id}`) },
+    { label: 'Copy Username',   onPress: () => {} },
+    { label: 'Share Profile',   onPress: () => {} },
+    { label: 'Mute',            onPress: () => {} },
+    { label: 'Block',           destructive: true, onPress: () => {} },
+  ];
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
@@ -120,7 +201,7 @@ export default function ExploreScreen() {
           <Input
             value={search}
             onChangeText={setSearch}
-            placeholder="Search creators, tags, content"
+            placeholder="Search creators, categories, content"
             placeholderTextColor={T.TEXT_3}
             style={styles.searchInput}
           />
@@ -185,7 +266,7 @@ export default function ExploreScreen() {
               </View>
             </Pressable>
 
-            {/* Categories */}
+            {/* Categories — creator-focused list */}
             <View style={styles.categoryHeader}>
               <Text style={styles.sectionTitle}>Browse by category</Text>
             </View>
@@ -194,7 +275,7 @@ export default function ExploreScreen() {
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.categoryRow}
             >
-              {categories.map((category) => {
+              {CREATOR_CATEGORIES.map((category) => {
                 const active = category.id === activeCategory;
                 return (
                   <Chip
@@ -208,10 +289,7 @@ export default function ExploreScreen() {
                     <Chip.Label
                       style={[styles.categoryLabel, active && styles.categoryLabelActive]}
                     >
-                      {category.label}{' '}
-                      <Text style={active ? styles.categoryCountActive : styles.categoryCount}>
-                        · {category.count}
-                      </Text>
+                      {category.label}
                     </Chip.Label>
                   </Chip>
                 );
@@ -237,7 +315,8 @@ export default function ExploreScreen() {
                       key={creator.id}
                       creator={creator}
                       onPress={() => openCreator(creator)}
-                      onLongPress={() => openMenu(creator)}
+                      onLongPress={() => setMenuCreator(creator)}
+                      onAvatarPress={() => openAvatarPreview(creator)}
                     />
                   ))}
                 </ScrollView>
@@ -259,7 +338,8 @@ export default function ExploreScreen() {
                       key={creator.id}
                       creator={creator}
                       onPress={() => openCreator(creator)}
-                      onLongPress={() => openMenu(creator)}
+                      onLongPress={() => setMenuCreator(creator)}
+                      onAvatarPress={() => openAvatarPreview(creator)}
                     />
                   ))}
                 </View>
@@ -282,15 +362,15 @@ export default function ExploreScreen() {
                       preview={preview}
                       creator={creator}
                       onPress={() => router.push(`/content/${preview.id}`)}
-                      onLongPress={() => openMenu(creator)}
+                      onLongPress={() => setMenuCreator(creator)}
                     />
                   ) : null;
                 })}
               </View>
             ) : (
               <MsEmptyState
-                title="Nothing in this category yet"
-                message="Try another category or search for a different creator."
+                title="Discover creators you'll love"
+                message="Try a different category or search to find your next favourite creator."
                 actionLabel="Show all"
                 onAction={() => setActiveCategory('all')}
               />
@@ -322,18 +402,20 @@ export default function ExploreScreen() {
               actionLabel="Meet the newest"
               style={styles.sectionHeader}
             />
-            {visibleCreators.slice(-3).map((creator) => (
-              <MsRecommendedCreatorRow
-                key={creator.id}
-                creator={creator}
-                onPress={() => openCreator(creator)}
-                onLongPress={() => openMenu(creator)}
-              />
-            ))}
-            {visibleCreators.length === 0 && (
+            {visibleCreators.length > 0 ? (
+              visibleCreators.slice(-3).map((creator) => (
+                <MsRecommendedCreatorRow
+                  key={creator.id}
+                  creator={creator}
+                  onPress={() => openCreator(creator)}
+                  onLongPress={() => setMenuCreator(creator)}
+                  onAvatarPress={() => openAvatarPreview(creator)}
+                />
+              ))
+            ) : (
               <MsEmptyState
                 title="No creators match that search"
-                message="Try a trending search or clear your filters."
+                message="Try a trending tag or clear your filters to keep discovering."
                 actionLabel="Clear search"
                 onAction={() => {
                   setSearch('');
@@ -347,46 +429,27 @@ export default function ExploreScreen() {
         )}
       </ScrollView>
 
-      {/* Creator action sheet — pure RN Modal, no external dep */}
-      <Modal
+      {/* Creator long-press action sheet */}
+      <MsActionSheet
         visible={!!menuCreator}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setMenuCreator(null)}
-      >
-        <Pressable style={styles.modalOverlay} onPress={() => setMenuCreator(null)}>
-          <Pressable style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
-            <View style={styles.sheetHandle} />
-            <View style={styles.sheetHeader}>
-              <Text style={styles.sheetTitle}>{menuCreator?.name}</Text>
-              <TouchableOpacity onPress={() => setMenuCreator(null)} hitSlop={10}>
-                <X size={18} color={T.TEXT_2} />
-              </TouchableOpacity>
-            </View>
-            <Text style={styles.sheetSub}>Choose what you'd like to do.</Text>
-            <Button
-              variant="primary"
-              size="lg"
-              onPress={() => {
-                const c = menuCreator;
-                setMenuCreator(null);
-                if (c) openCreator(c);
-              }}
-              style={styles.sheetBtn}
-            >
-              <Button.Label>View creator profile</Button.Label>
-            </Button>
-            <Button
-              variant="outline"
-              size="lg"
-              onPress={() => setMenuCreator(null)}
-              style={styles.sheetBtn}
-            >
-              <Button.Label>Save for later</Button.Label>
-            </Button>
-          </Pressable>
-        </Pressable>
-      </Modal>
+        title={menuCreator?.name}
+        subtitle={menuCreator?.handle}
+        actions={menuCreator ? creatorMenuActions(menuCreator) : []}
+        onClose={() => setMenuCreator(null)}
+      />
+
+      {/* Creator avatar-tap preview card */}
+      <MsCreatorPreview
+        visible={previewVisible}
+        creator={previewCreator}
+        onClose={() => setPreviewVisible(false)}
+        onViewProfile={() => {
+          if (previewCreator) router.push(`/creator/${previewCreator.id}`);
+        }}
+        onSubscribe={() => {
+          if (previewCreator) router.push(`/creator/${previewCreator.id}`);
+        }}
+      />
     </View>
   );
 }
@@ -472,8 +535,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   creditCopy: { flex: 1 },
-  creditEyebrow: { color: 'rgba(0,0,0,0.55)', fontFamily: T.FONT.semibold, fontSize: 8, letterSpacing: 1.1 },
-  creditBalance: { color: T.BG, fontFamily: T.FONT.bold, fontSize: 22, letterSpacing: -0.5, marginTop: 2 },
+  creditEyebrow: {
+    color: 'rgba(0,0,0,0.55)',
+    fontFamily: T.FONT.semibold,
+    fontSize: 8,
+    letterSpacing: 1.1,
+  },
+  creditBalance: {
+    color: T.BG,
+    fontFamily: T.FONT.bold,
+    fontSize: 22,
+    letterSpacing: -0.5,
+    marginTop: 2,
+  },
   creditUnit: { fontFamily: T.FONT.medium, fontSize: 11 },
   creditAction: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   creditActionText: { color: T.BG, fontFamily: T.FONT.semibold, fontSize: 11 },
@@ -491,41 +565,9 @@ const styles = StyleSheet.create({
   categoryChipActive: { backgroundColor: T.TEXT },
   categoryLabel: { color: T.TEXT_2, fontFamily: T.FONT.medium, fontSize: 11 },
   categoryLabelActive: { color: T.BG },
-  categoryCount: { color: T.TEXT_3, fontSize: 10 },
-  categoryCountActive: { color: 'rgba(0,0,0,0.45)', fontSize: 10 },
   sectionHeader: { paddingTop: 22, paddingBottom: 11 },
   featuredRow: { gap: 12, paddingHorizontal: 20, paddingBottom: 3 },
   previewGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, paddingHorizontal: 20 },
   collectionRow: { gap: 12, paddingHorizontal: 20 },
   bottomSpace: { height: 24 },
-
-  // Modal sheet
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'flex-end',
-  },
-  sheet: {
-    backgroundColor: T.SURFACE,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 22,
-    gap: 11,
-  },
-  sheetHandle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    alignSelf: 'center',
-    marginBottom: 6,
-  },
-  sheetHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  sheetTitle: { color: T.TEXT, fontFamily: T.FONT.bold, fontSize: 20 },
-  sheetSub: { color: T.TEXT_2, fontFamily: T.FONT.regular, fontSize: 13, marginBottom: 4 },
-  sheetBtn: { width: '100%' },
 });

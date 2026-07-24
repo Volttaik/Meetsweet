@@ -72,6 +72,11 @@ function NotifRow({
   item: Notification;
   onPress: (n: Notification) => void;
 }) {
+  const actorName = item.actor?.name ?? 'MeetSweet';
+  const actorInitials = initials(actorName);
+  // Use avatarUrl from actor if available
+  const actorAvatar = (item.actor as any)?.avatarUrl as string | undefined;
+
   return (
     <TouchableOpacity
       style={[styles.notifRow, !item.isRead && styles.notifRowUnread]}
@@ -80,14 +85,16 @@ function NotifRow({
     >
       <MsAvatar
         size={44}
-        initials={item.actor ? initials(item.actor.name) : '!'}
+        initials={item.actor ? actorInitials : '!'}
+        imageUri={actorAvatar}
       />
       <View style={styles.notifContent}>
         <Text style={styles.notifBody} numberOfLines={2}>
-          <Text style={styles.notifActor}>
-            {item.actor?.name ?? 'MeetSweet'}{' '}
-          </Text>
-          {item.body.replace(/^.*?sent you|^.*?liked|^.*?followed|^.*?commented/, (m) => m.split(/\s/).slice(1).join(' '))}
+          <Text style={styles.notifActor}>{actorName} </Text>
+          {item.body
+            .replace(/^.*?sent you|^.*?liked|^.*?followed|^.*?commented/, (m) =>
+              m.split(/\s/).slice(1).join(' '),
+            )}
         </Text>
         <Text style={styles.notifTime}>{formatTime(item.createdAt)}</Text>
       </View>
@@ -96,7 +103,15 @@ function NotifRow({
   );
 }
 
-function NotifGroup({ title, items, onPress }: { title: string; items: Notification[]; onPress: (n: Notification) => void }) {
+function NotifGroup({
+  title,
+  items,
+  onPress,
+}: {
+  title: string;
+  items: Notification[];
+  onPress: (n: Notification) => void;
+}) {
   if (items.length === 0) return null;
   return (
     <View>
@@ -140,7 +155,6 @@ export default function NotificationsScreen() {
       );
       markNotificationRead(n.id).catch(() => {});
     }
-    // Navigate to post if available
     if (n.postId) {
       router.push(`/content/${n.postId}`);
     }
@@ -178,7 +192,7 @@ export default function NotificationsScreen() {
         {unreadCount > 0 ? (
           <TouchableOpacity style={styles.iconBtn} onPress={handleMarkAll} activeOpacity={0.7}>
             {marking ? (
-              <Spinner size="sm" color={T.TEXT_2} />
+              <Spinner size="sm" color={T.TEXT_2 as any} />
             ) : (
               <Check size={18} color={T.TEXT_2} />
             )}
@@ -196,11 +210,14 @@ export default function NotificationsScreen() {
         </View>
       ) : notifications.length === 0 ? (
         <MsEmptyState
-          title="No notifications yet"
-          message="When someone likes your post, follows you, or sends a message, you'll see it here."
+          title="You're all caught up"
+          message="When someone likes your post, follows you, or messages you — it'll show up here."
         />
       ) : (
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: 40 }}
+        >
           <NotifGroup title="Today" items={today} onPress={handlePress} />
           <NotifGroup title="Yesterday" items={yesterday} onPress={handlePress} />
           <NotifGroup title="Earlier" items={earlier} onPress={handlePress} />

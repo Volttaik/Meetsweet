@@ -1,5 +1,5 @@
-import React from 'react';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import React, { useRef } from 'react';
+import { Animated, StyleSheet, Text, View } from 'react-native';
 import { T } from '@/constants/theme';
 
 interface MsAvatarProps {
@@ -20,6 +20,15 @@ export function MsAvatar({
   const radius = size / 2;
   const dotSize = Math.max(Math.floor(size * 0.26), 10);
   const fontSize = Math.floor(size * 0.36);
+  const imgOpacity = useRef(new Animated.Value(0)).current;
+
+  const onLoad = () => {
+    Animated.timing(imgOpacity, {
+      toValue: 1,
+      duration: 220,
+      useNativeDriver: true,
+    }).start();
+  };
 
   return (
     <View style={{ width: size, height: size }}>
@@ -29,28 +38,29 @@ export function MsAvatar({
           { width: size, height: size, borderRadius: radius },
         ]}
       >
+        {/* Initials always rendered underneath — visible while image loads */}
+        <Text style={[styles.initials, { fontSize }]}>
+          {(initials || 'U').toUpperCase().slice(0, 2)}
+        </Text>
+
         {imageUri ? (
-          <Image
+          <Animated.Image
             source={{ uri: imageUri }}
-            style={{ width: size, height: size, borderRadius: radius }}
+            style={[
+              styles.absoluteImage,
+              { width: size, height: size, borderRadius: radius, opacity: imgOpacity },
+            ]}
             resizeMode="cover"
+            onLoad={onLoad}
           />
-        ) : (
-          <Text style={[styles.initials, { fontSize }]}>
-            {initials.toUpperCase().slice(0, 2)}
-          </Text>
-        )}
+        ) : null}
       </View>
 
       {showOnline && (
         <View
           style={[
             styles.onlineDot,
-            {
-              width: dotSize,
-              height: dotSize,
-              borderRadius: dotSize / 2,
-            },
+            { width: dotSize, height: dotSize, borderRadius: dotSize / 2 },
           ]}
         />
       )}
@@ -78,6 +88,11 @@ const styles = StyleSheet.create({
   initials: {
     fontFamily: T.FONT.semibold,
     color: T.TEXT,
+  },
+  absoluteImage: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
   },
   onlineDot: {
     position: 'absolute',

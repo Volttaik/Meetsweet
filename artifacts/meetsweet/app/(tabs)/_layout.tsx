@@ -1,5 +1,5 @@
 import React, { useCallback } from 'react';
-import { Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View, Image } from 'react-native';
 import { Tabs, router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
@@ -18,15 +18,29 @@ type VisualTab = {
   label: string;
   Icon: Icon;
   routeName?: string; // undefined = center action
+  badge?: number;
 };
 
 const VISUAL_TABS: VisualTab[] = [
-  { label: 'Home',     Icon: House,            routeName: 'index' },
-  { label: 'Explore',  Icon: MagnifyingGlass,  routeName: 'explore' },
+  { label: 'Home',     Icon: House,           routeName: 'index' },
+  { label: 'Explore',  Icon: MagnifyingGlass, routeName: 'explore' },
   { label: 'Create',   Icon: ChatCircle },
-  { label: 'Messages', Icon: ChatCircle,       routeName: 'messages' },
-  { label: 'Profile',  Icon: User,             routeName: 'profile' },
+  { label: 'Messages', Icon: ChatCircle,      routeName: 'messages' },
+  { label: 'Profile',  Icon: User,            routeName: 'profile' },
 ];
+
+function TabBadgeDot({ count }: { count?: number }) {
+  if (!count || count <= 0) return null;
+  return (
+    <View style={badgeStyles.wrap}>
+      {count <= 9 ? (
+        <Text style={badgeStyles.text}>{count}</Text>
+      ) : (
+        <Text style={badgeStyles.text}>9+</Text>
+      )}
+    </View>
+  );
+}
 
 function TabBtn({
   tab,
@@ -66,12 +80,14 @@ function TabBtn({
   }
 
   const iconColor = isActive ? T.TEXT : INACTIVE_COLOR;
-  const strokeWidth = 2.2;
 
   return (
     <Pressable onPress={handlePress} style={styles.tabWrap}>
       <Animated.View style={[styles.tabInner, scaleStyle]}>
-        <tab.Icon size={22} color={iconColor} weight="regular" />
+        <View style={styles.iconWrap}>
+          <tab.Icon size={22} color={iconColor} weight="regular" />
+          <TabBadgeDot count={tab.badge} />
+        </View>
         <Text
           style={[
             styles.tabLabel,
@@ -94,7 +110,9 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
         router.push('/create-post');
         return;
       }
-      const route = state.routes.find((candidate: { name: string }) => candidate.name === tab.routeName);
+      const route = state.routes.find(
+        (candidate: { name: string }) => candidate.name === tab.routeName,
+      );
       if (route && state.routes[state.index]?.name !== tab.routeName) {
         navigation.navigate(route.name);
       }
@@ -113,7 +131,10 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
         <TabBtn
           key={i}
           tab={tab}
-          isActive={tab.routeName !== undefined && state.routes[state.index]?.name === tab.routeName}
+          isActive={
+            tab.routeName !== undefined &&
+            state.routes[state.index]?.name === tab.routeName
+          }
           onPress={() => handlePress(tab)}
         />
       ))}
@@ -137,11 +158,36 @@ export default function TabLayout() {
   );
 }
 
+const badgeStyles = StyleSheet.create({
+  wrap: {
+    position: 'absolute',
+    top: -4,
+    right: -6,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#EF4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+    borderWidth: 1.5,
+    borderColor: T.BG,
+  },
+  text: {
+    fontSize: 9,
+    fontFamily: T.FONT.bold,
+    color: '#FFFFFF',
+    lineHeight: 12,
+  },
+});
+
 const styles = StyleSheet.create({
   bar: {
     flexDirection: 'row',
     backgroundColor: T.BG,
     paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: T.BORDER,
   },
   tabWrap: {
     flex: 1,
@@ -152,6 +198,9 @@ const styles = StyleSheet.create({
   tabInner: {
     alignItems: 'center',
     gap: 3,
+  },
+  iconWrap: {
+    position: 'relative',
   },
   tabLabel: {
     fontSize: 10,

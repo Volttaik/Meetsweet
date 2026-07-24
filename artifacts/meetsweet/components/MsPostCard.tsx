@@ -1,19 +1,31 @@
 import React, { useState } from 'react';
 import {
-  ActionSheetIOS,
   Alert,
   Image,
-  Platform,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+  Easing,
+} from 'react-native-reanimated';
 import { Heart, ChatCircle, Bookmark, DotsThree, SealCheck, Play } from 'phosphor-react-native';
 import { T } from '@/constants/theme';
 import { MsAvatar } from '@/components/MsAvatar';
+import { MsActionSheet, type ActionItem } from '@/components/MsActionSheet';
 import type { Post } from '@/services/posts';
-import { likePost, unlikePost, bookmarkPost, unbookmarkPost, deletePost, reportPost } from '@/services/posts';
+import {
+  likePost,
+  unlikePost,
+  bookmarkPost,
+  unbookmarkPost,
+  deletePost,
+  reportPost,
+} from '@/services/posts';
 
 function formatCount(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -31,6 +43,42 @@ function formatTime(iso: string): string {
   const days = Math.floor(hrs / 24);
   if (days < 7) return `${days}d`;
   return new Date(iso).toLocaleDateString();
+}
+
+/** Scale-on-press wrapper */
+function ScalePressable({
+  children,
+  onPress,
+  style,
+  onLongPress,
+}: {
+  children: React.ReactNode;
+  onPress?: () => void;
+  onLongPress?: () => void;
+  style?: any;
+}) {
+  const scale = useSharedValue(1);
+  const animStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+  return (
+    <Animated.View style={[animStyle, style]}>
+      <TouchableOpacity
+        activeOpacity={1}
+        onPress={onPress}
+        onLongPress={onLongPress}
+        onPressIn={() => {
+          scale.value = withTiming(0.93, { duration: 80, easing: Easing.out(Easing.cubic) });
+        }}
+        onPressOut={() => {
+          scale.value = withTiming(1, { duration: 160, easing: Easing.out(Easing.back(1.4)) });
+        }}
+        delayLongPress={400}
+      >
+        {children}
+      </TouchableOpacity>
+    </Animated.View>
+  );
 }
 
 interface MsPostCardProps {
@@ -53,8 +101,9 @@ export function MsPostCard({
   const [liking, setLiking] = useState(false);
   const [bookmarked, setBookmarked] = useState(post.bookmarkedByMe ?? false);
   const [bookmarking, setBookmarking] = useState(false);
+  const [sheetVisible, setSheetVisible] = useState(false);
 
-  const isOwn = currentUserId && currentUserId === post.author.id;
+  const isOwn = Boolean(currentUserId && currentUserId === post.author.id);
 
   const handleLike = async () => {
     if (liking) return;
@@ -84,11 +133,8 @@ export function MsPostCard({
     const was = bookmarked;
     setBookmarked(!was);
     try {
-      if (was) {
-        await unbookmarkPost(post.id);
-      } else {
-        await bookmarkPost(post.id);
-      }
+      if (was) await unbookmarkPost(post.id);
+      else await bookmarkPost(post.id);
     } catch {
       setBookmarked(was);
     } finally {
@@ -96,64 +142,46 @@ export function MsPostCard({
     }
   };
 
-  const handleMore = () => {
-    const ownOptions = ['Edit Post', 'Delete Post', 'Cancel'];
-    const guestOptions = ['Report', 'Cancel'];
-    const options = isOwn ? ownOptions : guestOptions;
-
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          options,
-          destructiveButtonIndex: isOwn ? 1 : 3,
-          cancelButtonIndex: options.length - 1,
+  const doDelete = () => {
+    Alert.alert('Delete Post', 'This cannot be undone.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await deletePost(post.id);
+            onDeleted?.(post.id);
+          } catch {
+            Alert.alert('Error', 'Could not delete post.');
+          }
         },
-        (idx) => handleMoreAction(options[idx]),
-      );
-    } else {
-      Alert.alert('Post Options', undefined, [
-        ...options
-          .filter((o) => o !== 'Cancel')
-          .map((label) => ({
-            text: label,
-             style: (label === 'Delete Post' || label === 'Report') ? ('destructive' as const) : ('default' as const),
-            onPress: () => handleMoreAction(label),
-          })),
-        { text: 'Cancel', style: 'cancel' },
-      ]);
-    }
+      },
+    ]);
   };
 
-  const handleMoreAction = async (action: string) => {
-    switch (action) {
-      case 'Delete Post':
-        Alert.alert('Delete Post', 'This cannot be undone.', [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Delete',
-            style: 'destructive',
-            onPress: async () => {
-              try {
-                await deletePost(post.id);
-                onDeleted?.(post.id);
-              } catch (e) {
-                Alert.alert('Error', 'Could not delete post.');
-              }
-            },
-          },
-        ]);
-        break;
-      case 'Report':
-        Alert.alert('Report post', 'Why are you reporting this post?', [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Inappropriate', onPress: () => reportPost(post.id, 'inappropriate').catch(() => Alert.alert('Error', 'Could not report post.')) },
-          { text: 'Something else', onPress: () => reportPost(post.id, 'other').catch(() => Alert.alert('Error', 'Could not report post.')) },
-        ]);
-        break;
-      default:
-        break;
-    }
-  };
+  const doReport = (reason: string) =>
+    reportPost(post.id, reason).catch(() =>
+      Alert.alert('Error', 'Could not report post.'),
+    );
+
+  // Own post actions
+  const ownActions: ActionItem[] = [
+    { label: 'Edit Post', onPress: () => {} },
+    { label: 'Archive Post', onPress: () => {} },
+    { label: 'View Statistics', onPress: () => {} },
+    { label: 'Delete Post', destructive: true, onPress: doDelete },
+  ];
+
+  // Guest post actions
+  const guestActions: ActionItem[] = [
+    { label: 'Save Post', onPress: () => handleBookmark() },
+    { label: 'Copy Link', onPress: () => {} },
+    { label: 'Share Profile', onPress: () => onAuthorPress?.() },
+    { label: 'Not Interested', onPress: () => {} },
+    { label: 'Hide Creator', onPress: () => {} },
+    { label: 'Report', destructive: true, onPress: () => doReport('inappropriate') },
+  ];
 
   const inits = post.author.name
     .split(' ')
@@ -165,15 +193,25 @@ export function MsPostCard({
     <View style={styles.card}>
       {/* Author row */}
       <View style={styles.authorRow}>
-        <TouchableOpacity onPress={onAuthorPress} style={styles.authorLeft} activeOpacity={0.75}>
-          <MsAvatar size={38} initials={inits} imageUri={post.author.avatarUrl ?? undefined} />
+        <TouchableOpacity
+          onPress={onAuthorPress}
+          style={styles.authorLeft}
+          activeOpacity={0.75}
+          onLongPress={() => setSheetVisible(true)}
+          delayLongPress={400}
+        >
+          <MsAvatar
+            size={38}
+            initials={inits}
+            imageUri={post.author.avatarUrl ?? undefined}
+          />
           <View style={styles.authorInfo}>
             <View style={styles.nameRow}>
               <Text style={styles.authorName} numberOfLines={1}>
                 {post.author.name}
               </Text>
               {post.author.isVerified && (
-                <SealCheck size={14} color={T.TEXT} />
+                <SealCheck size={14} color={T.TEXT} weight="fill" />
               )}
             </View>
             <Text style={styles.authorMeta}>
@@ -181,6 +219,7 @@ export function MsPostCard({
             </Text>
           </View>
         </TouchableOpacity>
+
         <View style={styles.authorRight}>
           {post.isPremium && (
             <View style={styles.premiumBadge}>
@@ -190,7 +229,7 @@ export function MsPostCard({
           <TouchableOpacity
             style={styles.moreBtn}
             activeOpacity={0.7}
-            onPress={handleMore}
+            onPress={() => setSheetVisible(true)}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
             <DotsThree size={18} color={T.TEXT_2} />
@@ -200,33 +239,37 @@ export function MsPostCard({
 
       {/* Caption */}
       {!!post.caption && (
-        <Text style={styles.caption} numberOfLines={3}>
-          {post.caption}
-        </Text>
+        <TouchableOpacity activeOpacity={0.9} onPress={onPress} onLongPress={() => setSheetVisible(true)} delayLongPress={400}>
+          <Text style={styles.caption} numberOfLines={3}>
+            {post.caption}
+          </Text>
+        </TouchableOpacity>
       )}
 
       {/* Media — image */}
       {post.mediaUrl && post.mediaType === 'image' && (
-        <TouchableOpacity onPress={onPress} activeOpacity={0.92}>
+        <ScalePressable onPress={onPress} onLongPress={() => setSheetVisible(true)}>
           <Image source={{ uri: post.mediaUrl }} style={styles.media} resizeMode="cover" />
-        </TouchableOpacity>
+        </ScalePressable>
       )}
 
       {/* Media — video */}
       {post.mediaUrl && post.mediaType === 'video' && (
-        <TouchableOpacity onPress={onPress} style={styles.videoPlaceholder} activeOpacity={0.85}>
-          <View style={styles.videoOverlay}>
-            <View style={styles.playBtn}>
-               <Play size={20} color={T.TEXT} weight="fill" />
+        <ScalePressable onPress={onPress} onLongPress={() => setSheetVisible(true)}>
+          <View style={styles.videoPlaceholder}>
+            <View style={styles.videoOverlay}>
+              <View style={styles.playBtn}>
+                <Play size={20} color={T.TEXT} weight="fill" />
+              </View>
+              {post.durationSecs != null && (
+                <Text style={styles.duration}>
+                  {Math.floor(post.durationSecs / 60)}:
+                  {String(post.durationSecs % 60).padStart(2, '0')}
+                </Text>
+              )}
             </View>
-            {post.durationSecs != null && (
-              <Text style={styles.duration}>
-                {Math.floor(post.durationSecs / 60)}:
-                {String(post.durationSecs % 60).padStart(2, '0')}
-              </Text>
-            )}
           </View>
-        </TouchableOpacity>
+        </ScalePressable>
       )}
 
       {/* Actions */}
@@ -236,7 +279,6 @@ export function MsPostCard({
           <Heart
             size={18}
             color={liked ? '#EF4444' : T.TEXT_2}
-           
             weight={liked ? 'fill' : 'regular'}
           />
           {likeCount > 0 && (
@@ -261,13 +303,21 @@ export function MsPostCard({
           <Bookmark
             size={18}
             color={bookmarked ? T.TEXT : T.TEXT_2}
-           
             weight={bookmarked ? 'fill' : 'regular'}
           />
         </TouchableOpacity>
       </View>
 
       <View style={styles.divider} />
+
+      {/* Context menu bottom sheet */}
+      <MsActionSheet
+        visible={sheetVisible}
+        title={isOwn ? 'Your Post' : post.author.name}
+        subtitle={isOwn ? undefined : `@${post.author.username}`}
+        actions={isOwn ? ownActions : guestActions}
+        onClose={() => setSheetVisible(false)}
+      />
     </View>
   );
 }
@@ -361,13 +411,12 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   actionBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: T.SURFACE,
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    justifyContent: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: T.RADIUS.sm,
   },
   actionCount: { fontSize: 13, fontFamily: T.FONT.medium, color: T.TEXT_2 },
   actionCountLiked: { color: '#EF4444' },
