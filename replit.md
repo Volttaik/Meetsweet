@@ -1,53 +1,45 @@
-# MeetSweet
+# [Project name]
 
-MeetSweet is a creator-focused social app with an Expo mobile client and a standalone Next.js API backend.
+_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
 
 ## Run & Operate
 
-- `pnpm --dir mobile run dev` — run the Expo mobile app
-- `pnpm --dir server run dev` — run the Next.js backend locally
-- `pnpm run typecheck` — check mobile and server TypeScript
-- `pnpm run build` — check both apps and build the backend
-- `pnpm --dir server run db:push` — push the Turso schema in development
-- Required server env: `DATABASE_URL`, `TURSO_AUTH_TOKEN`, `BLOB_READ_WRITE_TOKEN`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `PAYSTACK_SECRET_KEY`, `JWT_SECRET` or `SESSION_SECRET`, `APP_URL`, `CLIENT_APP_ID`, and `CRON_SECRET`
-- Required mobile env: `EXPO_PUBLIC_API_URL`
+- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
+- `pnpm run typecheck` — full typecheck across all packages
+- `pnpm run build` — typecheck + build all packages
+- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
+- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
+- Required env: `DATABASE_URL` — Postgres connection string
 
 ## Stack
 
-- pnpm workspace with two packages: `mobile/` and `server/`
-- Mobile: Expo Router, React Native, Uniwind, React Query
-- Backend: Next.js App Router, Turso LibSQL, Drizzle ORM, Vercel Blob, Resend, Paystack, JWT, Argon2, and Zod
+- pnpm workspaces, Node.js 24, TypeScript 5.9
+- API: Express 5
+- DB: PostgreSQL + Drizzle ORM
+- Validation: Zod (`zod/v4`), `drizzle-zod`
+- API codegen: Orval (from OpenAPI spec)
+- Build: esbuild (CJS bundle)
 
 ## Where things live
 
-- `mobile/` — Expo application, screens, services, theme, and local generated API client
-- `server/app/api/` — backend route handlers
-- `server/lib/db/` — Turso/Drizzle client and schema
-- `server/lib/auth/` — JWT, password hashing, and code generation
-- `server/lib/services/` — email and Vercel Blob services
-- `server/.env.example` — backend environment variable template
+_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
 
 ## Architecture decisions
 
-- The backend is a standalone Next.js project intended for Vercel deployment.
-- The mobile app calls the backend through `EXPO_PUBLIC_API_URL` and appends `/api`.
-- The mobile API client is kept locally under `mobile/lib/api-client-react` so the app does not depend on a shared workspace library.
-- Database initialization is lazy so Vercel route collection does not require production-only database variables.
+_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
 
 ## Product
 
-MeetSweet provides onboarding and authentication, a creator marketplace, posts and comments, profiles, messaging, notifications, subscriptions, wallet and payment flows, media uploads, and creator tools.
+_Describe the high-level user-facing capabilities of this app once they exist._
 
 ## User preferences
 
-Keep the project focused on the two application directories: `mobile/` and `server/`.
+_Populate as you build — explicit user instructions worth remembering across sessions._
 
 ## Gotchas
 
-- The server expects Turso/LibSQL `DATABASE_URL`, not a PostgreSQL connection string.
-- Configure provider secrets in the deployment environment; never commit them.
-- The Expo app should be pointed at the deployed backend URL before testing authenticated flows.
+_Populate as you build — sharp edges, "always run X before Y" rules._
 
 ## Pointers
 
-- See `server/README.md` for the backend API and Vercel deployment notes.
+- See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details
