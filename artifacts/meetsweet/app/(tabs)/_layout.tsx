@@ -1,85 +1,178 @@
-import React from 'react';
-import { Platform, StyleSheet, useColorScheme, View } from 'react-native';
-import { useColors } from '@/hooks/useColors';
-import { Feather } from '@expo/vector-icons';
-import { BlurView } from 'expo-blur';
-import { isLiquidGlassAvailable } from 'expo-glass-effect';
-import { Tabs } from 'expo-router';
-import { Icon, Label, NativeTabs } from 'expo-router/unstable-native-tabs';
-import { SymbolView } from 'expo-symbols';
+import React, { useCallback } from 'react';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Tabs, router } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
+import { Home, Search, Plus, MessageCircle, User } from 'lucide-react-native';
+import { T } from '@/constants/theme';
 
-// IMPORTANT: iOS 26 uses NativeTabs for native tabs with liquid glass support.
-// NativeTabs intentionally does NOT use custom design tokens — liquid glass
-// is a system-level appearance provided by iOS and cannot be overridden.
-// Custom brand colors are applied only on the ClassicTabLayout path (older iOS / Android / web).
-function NativeTabLayout() {
+const TAB_HEIGHT = 60;
+
+type VisualTab = {
+  label: string;
+  Icon: React.ComponentType<{ size: number; color: string; strokeWidth: number }>;
+  routeIndex?: number; // undefined = center action, no route
+};
+
+const VISUAL_TABS: VisualTab[] = [
+  { label: 'Home',     Icon: Home,          routeIndex: 0 },
+  { label: 'Explore',  Icon: Search,         routeIndex: 1 },
+  { label: 'Create',   Icon: Plus            },          // center — no routeIndex
+  { label: 'Messages', Icon: MessageCircle,  routeIndex: 2 },
+  { label: 'Profile',  Icon: User,           routeIndex: 3 },
+];
+
+// ─── Single tab button ────────────────────────────────────────────────────────
+
+function TabBtn({
+  tab,
+  isActive,
+  onPress,
+}: {
+  tab: VisualTab;
+  isActive: boolean;
+  onPress: () => void;
+}) {
+  const scale = useSharedValue(1);
+  const scaleStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  const handlePress = () => {
+    scale.value = withTiming(0.84, { duration: 75, easing: Easing.out(Easing.cubic) }, () => {
+      scale.value = withTiming(1, { duration: 150, easing: Easing.out(Easing.back(1.6)) });
+    });
+    onPress();
+  };
+
+  // Center Create button
+  if (tab.routeIndex === undefined) {
+    return (
+      <Pressable onPress={handlePress} style={styles.centerWrap}>
+        <Animated.View style={[styles.centerBtn, scaleStyle]}>
+          <tab.Icon size={20} color="#000000" strokeWidth={2.5} />
+        </Animated.View>
+      </Pressable>
+    );
+  }
+
+  const color = isActive ? T.TEXT : T.TEXT_2;
   return (
-    <NativeTabs>
-      <NativeTabs.Trigger name="index">
-        <Icon sf={{ default: 'house', selected: 'house.fill' }} />
-        <Label>Home</Label>
-      </NativeTabs.Trigger>
-    </NativeTabs>
+    <Pressable onPress={handlePress} style={styles.tabWrap}>
+      <Animated.View style={[styles.tabInner, scaleStyle]}>
+        <tab.Icon size={22} color={color} strokeWidth={isActive ? 2.2 : 1.6} />
+        <Text
+          style={[
+            styles.tabLabel,
+            { color, fontFamily: isActive ? T.FONT.semibold : T.FONT.regular },
+          ]}
+        >
+          {tab.label}
+        </Text>
+      </Animated.View>
+    </Pressable>
   );
 }
 
-function ClassicTabLayout() {
-  const colors = useColors();
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  const isIOS = Platform.OS === 'ios';
-  const isWeb = Platform.OS === 'web';
+// ─── Custom tab bar ───────────────────────────────────────────────────────────
+
+function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
+  const insets = useSafeAreaInsets();
+
+  const handlePress = useCallback(
+    (tab: VisualTab) => {
+      if (tab.routeIndex === undefined) {
+        // TODO: check creator status → route to creator-dashboard if already a creator
+        router.push('/become-creator');
+        return;
+      }
+      const route = state.routes[tab.routeIndex];
+      if (route && state.index !== tab.routeIndex) {
+        navigation.navigate(route.name);
+      }
+    },
+    [state, navigation],
+  );
 
   return (
-    <Tabs
-      screenOptions={{
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.mutedForeground,
-        headerShown: true,
-        tabBarStyle: {
-          position: 'absolute',
-          backgroundColor: isIOS ? 'transparent' : colors.background,
-          borderTopWidth: isWeb ? 1 : 0,
-          borderTopColor: colors.border,
-          elevation: 0,
-          ...(isWeb ? { height: 84 } : {}),
-        },
-        tabBarBackground: () =>
-          isIOS ? (
-            <BlurView
-              intensity={100}
-              tint={isDark ? 'dark' : 'light'}
-              style={StyleSheet.absoluteFill}
-            />
-          ) : isWeb ? (
-            <View
-              style={[
-                StyleSheet.absoluteFill,
-                { backgroundColor: colors.background },
-              ]}
-            />
-          ) : null,
-      }}
+    <View
+      style={[
+        styles.bar,
+        { paddingBottom: Math.max(insets.bottom, Platform.OS === 'android' ? 10 : 0) },
+      ]}
     >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Home',
-          tabBarIcon: ({ color }) =>
-            isIOS ? (
-              <SymbolView name="house" tintColor={color} size={24} />
-            ) : (
-              <Feather name="home" size={22} color={color} />
-            ),
-        }}
-      />
+      {VISUAL_TABS.map((tab, i) => (
+        <TabBtn
+          key={i}
+          tab={tab}
+          isActive={tab.routeIndex !== undefined && state.index === tab.routeIndex}
+          onPress={() => handlePress(tab)}
+        />
+      ))}
+    </View>
+  );
+}
+
+// ─── Layout ───────────────────────────────────────────────────────────────────
+
+export default function TabLayout() {
+  return (
+    <Tabs
+      tabBar={(props) => (
+        <CustomTabBar state={props.state} navigation={props.navigation} />
+      )}
+      screenOptions={{ headerShown: false }}
+    >
+      <Tabs.Screen name="index" />
+      <Tabs.Screen name="explore" />
+      <Tabs.Screen name="messages" />
+      <Tabs.Screen name="profile" />
     </Tabs>
   );
 }
 
-export default function TabLayout() {
-  if (isLiquidGlassAvailable()) {
-    return <NativeTabLayout />;
-  }
-  return <ClassicTabLayout />;
-}
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
+const styles = StyleSheet.create({
+  bar: {
+    flexDirection: 'row',
+    backgroundColor: T.BG,
+    borderTopWidth: 1,
+    borderTopColor: T.BORDER_2,
+    paddingTop: 8,
+  },
+  tabWrap: {
+    flex: 1,
+    height: TAB_HEIGHT,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tabInner: {
+    alignItems: 'center',
+    gap: 3,
+  },
+  tabLabel: {
+    fontSize: 10,
+    letterSpacing: 0.1,
+  },
+  centerWrap: {
+    flex: 1,
+    height: TAB_HEIGHT,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  centerBtn: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: T.TEXT,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+});

@@ -7,10 +7,9 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { HeroUINativeProvider } from 'heroui-native';
 import { Uniwind } from 'uniwind';
 
-// MeetSweet is a dark-first app — force dark theme so all HeroUI Native
-// components (Button, Input, Label, Checkbox, InputOTP…) use the dark palette
-// rather than defaulting to the system light theme on web.
+// MeetSweet is a dark-first app — force dark theme
 Uniwind.setTheme('dark');
+
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import {
   Poppins_400Regular,
@@ -32,20 +31,20 @@ function RootLayoutNav() {
       screenOptions={{
         headerShown: false,
         animation: 'slide_from_right',
-        animationDuration: 280,
+        animationDuration: 260,
         gestureEnabled: true,
         gestureDirection: 'horizontal',
         fullScreenGestureEnabled: true,
       }}
     >
-      {/* Onboarding & Auth — new HeroUI Native flow */}
+      {/* Onboarding & Auth */}
       <Stack.Screen name="index" options={{ gestureEnabled: false }} />
       <Stack.Screen name="welcome" options={{ gestureEnabled: false, animation: 'none' }} />
       <Stack.Screen name="onboarding" options={{ gestureEnabled: false, animation: 'slide_from_right' }} />
-      <Stack.Screen name="auth" options={{}} />
-      <Stack.Screen name="register" options={{}} />
-      <Stack.Screen name="forgot-password" options={{}} />
-      <Stack.Screen name="verify-email" options={{}} />
+      <Stack.Screen name="auth" />
+      <Stack.Screen name="register" />
+      <Stack.Screen name="forgot-password" />
+      <Stack.Screen name="verify-email" />
       <Stack.Screen name="success" options={{ gestureEnabled: false, animation: 'fade' }} />
 
       {/* Legacy screens (kept for compatibility) */}
@@ -56,9 +55,22 @@ function RootLayoutNav() {
       <Stack.Screen name="complete-registration" />
       <Stack.Screen name="verification" />
 
-      {/* Authenticated area */}
-      <Stack.Screen name="home" options={{ gestureEnabled: false }} />
-      <Stack.Screen name="(tabs)" options={{ gestureEnabled: false }} />
+      {/* Auth → App transition */}
+      <Stack.Screen name="home" options={{ gestureEnabled: false, animation: 'fade' }} />
+
+      {/* Authenticated tab shell */}
+      <Stack.Screen name="(tabs)" options={{ gestureEnabled: false, animation: 'fade' }} />
+
+      {/* Authenticated push screens */}
+      <Stack.Screen name="notifications" options={{ animation: 'slide_from_right' }} />
+      <Stack.Screen name="settings" options={{ animation: 'slide_from_right' }} />
+
+      {/* Authenticated modal screens */}
+      <Stack.Screen
+        name="become-creator"
+        options={{ animation: 'slide_from_bottom', gestureEnabled: true }}
+      />
+      <Stack.Screen name="creator-dashboard" options={{ animation: 'slide_from_right' }} />
     </Stack>
   );
 }
