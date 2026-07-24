@@ -20,6 +20,8 @@ import {
 } from 'heroui-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useAuth } from '@/contexts/AuthContext';
+import { ApiError } from '@/services/api';
 import Animated, {
   Easing,
   runOnJS,
@@ -461,14 +463,18 @@ function Step3({
   onChange,
   onNext,
   onBack,
+  isLoading,
+  serverError,
 }: {
   data: Step3Data;
   step1Name: string;
   onChange: (d: Partial<Step3Data>) => void;
   onNext: () => void;
   onBack: () => void;
+  isLoading?: boolean;
+  serverError?: string;
 }) {
-  const [loading, setLoading] = useState(false);
+  const loading = isLoading ?? false;
   const [focused, setFocused] = useState(false);
 
   const initials = step1Name
@@ -492,10 +498,7 @@ function Step3({
     }
   };
 
-  const handleComplete = async () => {
-    setLoading(true);
-    await new Promise((r) => setTimeout(r, 900));
-    setLoading(false);
+  const handleComplete = () => {
     onNext();
   };
 
@@ -553,6 +556,10 @@ function Step3({
         </View>
       </View>
 
+      {!!serverError && (
+        <Text style={styles.serverError}>{serverError}</Text>
+      )}
+
       <Button
         variant="primary"
         size="lg"
@@ -575,7 +582,10 @@ function Step3({
 
 export default function RegisterScreen() {
   const insets = useSafeAreaInsets();
+  const { register } = useAuth();
   const [step, setStep] = useState<StepNum>(1);
+  const [submitting, setSubmitting] = useState(false);
+  const [registerError, setRegisterError] = useState('');
   const scrollRef = useRef<ScrollView>(null);
 
   const slideX = useSharedValue(0);
@@ -606,8 +616,27 @@ export default function RegisterScreen() {
   const handleStep2Next = () => transitionTo(3);
   const handleStep2Back = () => transitionTo(1);
   const handleStep3Back = () => transitionTo(2);
-  const handleStep3Complete = () => {
-    router.push({ pathname: '/verify-email', params: { email: step1.email } });
+  const handleStep3Complete = async () => {
+    setSubmitting(true);
+    setRegisterError('');
+    try {
+      await register({
+        name: step1.name.trim(),
+        email: step1.email.trim() || undefined,
+        phone: step1.phone.trim() || undefined,
+        password: step2.password,
+        bio: step3.bio.trim() || undefined,
+      });
+      router.push({ pathname: '/verify-email', params: { email: step1.email.trim() } });
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setRegisterError(err.message);
+      } else {
+        setRegisterError('Registration failed. Please try again.');
+      }
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -667,6 +696,8 @@ export default function RegisterScreen() {
               onChange={(d) => setStep3((s) => ({ ...s, ...d }))}
               onNext={handleStep3Complete}
               onBack={handleStep3Back}
+              isLoading={submitting}
+              serverError={registerError}
             />
           )}
         </Animated.View>
@@ -891,6 +922,13 @@ const styles = StyleSheet.create({
   },
   primaryBtnLoading: {
     backgroundColor: '#111111',
+  },
+  serverError: {
+    fontSize: 13,
+    fontFamily: 'Poppins_400Regular',
+    color: '#EF4444',
+    textAlign: 'center',
+    paddingHorizontal: 8,
   },
   btnLabel: {
     fontFamily: 'Poppins_600SemiBold',
