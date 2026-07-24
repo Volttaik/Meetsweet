@@ -10,8 +10,6 @@ servers:
 tags:
   - name: health
     description: Health operations
-  - name: explore
-    description: Creator discovery marketplace operations
 paths:
   /healthz:
     get:
@@ -26,19 +24,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
-  /explore:
-    get:
-      operationId: getExploreCatalog
-      tags: [explore]
-      summary: Get Explore marketplace catalog
-      description: Returns the categories, creators, previews, collections, and credit balance used by the Explore marketplace.
-      responses:
-        "200":
-          description: Explore catalog
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ExploreCatalog"
 components:
   schemas:
     HealthStatus:
@@ -48,120 +33,4 @@ components:
           type: string
       required:
         - status
-    ExploreCategory:
-      type: object
-      properties:
-        id:
-          type: string
-        label:
-          type: string
-        count:
-          type: integer
-      required: [id, label, count]
-    Creator:
-      type: object
-      properties:
-        id:
-          type: string
-        name:
-          type: string
-        handle:
-          type: string
-        initials:
-          type: string
-        bio:
-          type: string
-        category:
-          type: string
-        followers:
-          type: string
-        subscriberCount:
-          type: integer
-        monthlyCredits:
-          type: integer
-        isVerified:
-          type: boolean
-        isOnline:
-          type: boolean
-        gradient:
-          type: string
-      required:
-        [id, name, handle, initials, bio, category, followers, subscriberCount,
-         monthlyCredits, isVerified, isOnline, gradient]
-    ContentPreview:
-      type: object
-      properties:
-        id:
-          type: string
-        creatorId:
-          type: string
-        title:
-          type: string
-        category:
-          type: string
-        kind:
-          type: string
-        duration:
-          type: string
-        likes:
-          type: string
-        isPremium:
-          type: boolean
-        gradient:
-          type: string
-        lockedLabel:
-          type: string
-      required:
-        [id, creatorId, title, category, kind, duration, likes, isPremium, gradient,
-         lockedLabel]
-    TrendingCollection:
-      type: object
-      properties:
-        id:
-          type: string
-        title:
-          type: string
-        subtitle:
-          type: string
-        itemCount:
-          type: integer
-        gradient:
-          type: string
-      required: [id, title, subtitle, itemCount, gradient]
-    ExploreCatalog:
-      type: object
-      properties:
-        creditBalance:
-          type: integer
-        categories:
-          type: array
-          items:
-            $ref: "#/components/schemas/ExploreCategory"
-        trendingSearches:
-          type: array
-          items:
-            type: string
-        featuredCreatorIds:
-          type: array
-          items:
-            type: string
-        recommendedCreatorIds:
-          type: array
-          items:
-            type: string
-        creators:
-          type: array
-          items:
-            $ref: "#/components/schemas/Creator"
-        previews:
-          type: array
-          items:
-            $ref: "#/components/schemas/ContentPreview"
-        collections:
-          type: array
-          items:
-            $ref: "#/components/schemas/TrendingCollection"
-      required:
-        [creditBalance, categories, trendingSearches, featuredCreatorIds,
-         recommendedCreatorIds, creators, previews, collections]
 

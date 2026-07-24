@@ -1,18 +1,15 @@
-# MeetSweet
+# [Project name]
 
-MeetSweet is an Expo mobile app for connecting creators with their communities through exclusive content, messaging, and subscriptions.
+_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/meetsweet run dev` — run the Expo app
-- `pnpm --filter @workspace/api-server run dev` — run the API server (managed service port 8080)
-- `pnpm --filter @workspace/mockup-sandbox run dev` — run the component preview server
-- `pnpm --filter @workspace/meetsweet run typecheck` — typecheck the mobile app
+- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env for database-backed API routes: `DATABASE_URL` — Postgres connection string
+- Required env: `DATABASE_URL` — Postgres connection string
 
 ## Stack
 
@@ -25,33 +22,23 @@ MeetSweet is an Expo mobile app for connecting creators with their communities t
 
 ## Where things live
 
-- `artifacts/meetsweet/app/` — Expo Router screens and authenticated tab routes
-- `artifacts/meetsweet/components/` — shared mobile UI components and loading states
-- `artifacts/meetsweet/constants/theme.ts` — MeetSweet dark theme tokens and typography
-- `artifacts/api-server/src/` — Express API server
-- `artifacts/mockup-sandbox/` — isolated component preview app
+_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
 
 ## Architecture decisions
 
-- Expo Router owns navigation; the root stack contains auth, onboarding, tab, and push routes.
-- HeroUI Native is the shared source for buttons, inputs, spinners, skeletons, and provider behavior.
-- The app uses a dark-first token set in `constants/theme.ts`, with Poppins loaded before rendering.
-- Server state is reserved for React Query; the current Section 2 screens use local/static presentation data.
+_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
 
 ## Product
 
-- Onboarding and registration flows
-- Authenticated home feed, explore, messages, profile, notifications, and settings screens
-- Creator onboarding and dashboard entry points
+_Describe the high-level user-facing capabilities of this app once they exist._
 
 ## User preferences
 
-- Preserve the existing Expo, pnpm workspace, HeroUI Native, and dark-first architecture when extending the app.
+_Populate as you build — explicit user instructions worth remembering across sessions._
 
 ## Gotchas
 
-- Use the managed artifact workflows for Expo, the API server, and the mockup sandbox; they provide the required Replit environment.
-- The Expo preview can show a blank frame during the timed splash transition; `/welcome` is a stable route for visual checks.
+_Populate as you build — sharp edges, "always run X before Y" rules._
 
 ## Pointers
 
