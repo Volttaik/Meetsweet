@@ -1,14 +1,19 @@
 /**
  * Central API service.
  * All API calls from the Expo app go through this module.
+ *
+ * Backend: Next.js serverless API deployed on Vercel.
+ * Set EXPO_PUBLIC_API_URL to your Vercel deployment URL,
+ * e.g. https://meetsweet-server.vercel.app
+ *
+ * All service calls use paths like /auth/login, /posts, /users/me — this
+ * function appends /api so they resolve to the correct Vercel routes.
  */
-
-// Build the API base URL from the Expo public domain env var
 export function getApiBase(): string {
-  const domain = process.env.EXPO_PUBLIC_DOMAIN;
-  if (domain) return `https://${domain}/api`;
-  // Fallback for local/web development
-  return '/api';
+  const vercelUrl = process.env.EXPO_PUBLIC_API_URL;
+  if (vercelUrl) return `${vercelUrl.replace(/\/+$/, '')}/api`;
+  // Fallback for local Next.js dev (npm run dev inside /server)
+  return 'http://localhost:3000/api';
 }
 
 export class ApiError extends Error {
