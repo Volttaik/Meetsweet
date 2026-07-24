@@ -61,7 +61,7 @@ function TabBtn({
   }
 
   const iconColor = isActive ? T.TEXT : INACTIVE_COLOR;
-  const strokeWidth = isActive ? 2.2 : 1.8;
+  const strokeWidth = 2.2;
 
   return (
     <Pressable onPress={handlePress} style={styles.tabWrap}>

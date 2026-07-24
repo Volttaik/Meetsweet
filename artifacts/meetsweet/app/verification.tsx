@@ -1,12 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Platform,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Button, Spinner } from 'heroui-native';
+import { Button } from 'heroui-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
@@ -256,7 +257,7 @@ export default function VerificationScreen() {
             ]}
           >
             {loading ? (
-              <Spinner size="sm" color="#FFFFFF" />
+              <ActivityIndicator size="small" color="#FFFFFF" />
             ) : (
               <Button.Label style={[
                 styles.verifyBtnLabel,

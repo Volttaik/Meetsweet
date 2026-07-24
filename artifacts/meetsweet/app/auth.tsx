@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import {
+  ActivityIndicator,
   Image,
   Platform,
   ScrollView,
@@ -14,7 +15,6 @@ import {
   FieldError,
   Input,
   Label,
-  Spinner,
   TextField,
 } from 'heroui-native';
 import { router } from 'expo-router';
@@ -252,7 +252,7 @@ export default function AuthScreen() {
               style={[styles.submitBtn, loading && styles.submitBtnLoading]}
             >
               {loading ? (
-                <Spinner size="sm" color="#FFFFFF" />
+                <ActivityIndicator size="small" color="#FFFFFF" />
               ) : (
                 <Button.Label style={styles.submitBtnLabel}>Log In</Button.Label>
               )}
