@@ -12,28 +12,27 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle, Path, Defs, RadialGradient, Stop } from 'react-native-svg';
+
+// ─── Check icon ───────────────────────────────────────────────────────────────
 
 function SuccessIcon() {
   return (
     <Svg width={140} height={140} viewBox="0 0 140 140">
       <Defs>
         <RadialGradient id="glow" cx="50%" cy="50%" r="50%">
-          <Stop offset="0%" stopColor="#FF4473" stopOpacity="0.3" />
-          <Stop offset="100%" stopColor="#FF4473" stopOpacity="0" />
+          <Stop offset="0%" stopColor="#22C55E" stopOpacity="0.25" />
+          <Stop offset="100%" stopColor="#22C55E" stopOpacity="0" />
         </RadialGradient>
       </Defs>
       {/* Glow */}
       <Circle cx="70" cy="70" r="68" fill="url(#glow)" />
       {/* Ring */}
-      <Circle cx="70" cy="70" r="52" fill="#1A1628" stroke="#FF4473" strokeWidth="2" />
-      {/* Inner fill */}
-      <Circle cx="70" cy="70" r="44" fill="#FF447318" />
+      <Circle cx="70" cy="70" r="52" fill="#111111" stroke="rgba(255,255,255,0.12)" strokeWidth="1.5" />
       {/* Checkmark */}
       <Path
         d="M48 72 L62 86 L94 56"
-        stroke="#FF4473"
+        stroke="#22C55E"
         strokeWidth="5"
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -43,27 +42,34 @@ function SuccessIcon() {
   );
 }
 
-// Particle dot
+// ─── Particle ─────────────────────────────────────────────────────────────────
+
 function Particle({ angle, delay }: { angle: number; delay: number }) {
   const rad = (angle * Math.PI) / 180;
-  const tx = Math.cos(rad) * 80;
-  const ty = Math.sin(rad) * 80;
+  const tx = Math.cos(rad) * 76;
+  const ty = Math.sin(rad) * 76;
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
   const opacity = useSharedValue(0);
   const scale = useSharedValue(0);
 
   useEffect(() => {
-    opacity.value = withDelay(delay, withSequence(
-      withTiming(1, { duration: 200 }),
-      withDelay(300, withTiming(0, { duration: 400 })),
-    ));
-    translateX.value = withDelay(delay, withTiming(tx, { duration: 700, easing: Easing.out(Easing.cubic) }));
-    translateY.value = withDelay(delay, withTiming(ty, { duration: 700, easing: Easing.out(Easing.cubic) }));
-    scale.value = withDelay(delay, withSequence(
-      withTiming(1.2, { duration: 200 }),
-      withTiming(0.6, { duration: 500 }),
-    ));
+    opacity.value = withDelay(
+      delay,
+      withSequence(
+        withTiming(1, { duration: 180 }),
+        withDelay(280, withTiming(0, { duration: 380 })),
+      ),
+    );
+    translateX.value = withDelay(delay, withTiming(tx, { duration: 680, easing: Easing.out(Easing.cubic) }));
+    translateY.value = withDelay(delay, withTiming(ty, { duration: 680, easing: Easing.out(Easing.cubic) }));
+    scale.value = withDelay(
+      delay,
+      withSequence(
+        withTiming(1.2, { duration: 200 }),
+        withTiming(0.6, { duration: 480 }),
+      ),
+    );
   }, []);
 
   const style = useAnimatedStyle(() => ({
@@ -75,19 +81,18 @@ function Particle({ angle, delay }: { angle: number; delay: number }) {
     ],
   }));
 
-  const colors = ['#FF4473', '#C7155A', '#FF8FB3', '#9385B8'];
+  // White-spectrum particles only
+  const colors = ['#FFFFFF', 'rgba(255,255,255,0.7)', 'rgba(255,255,255,0.5)', '#22C55E'];
   const color = colors[Math.floor(angle / 90) % colors.length];
 
   return (
-    <Animated.View
-      style={[
-        styles.particle,
-        { backgroundColor: color },
-        style,
-      ]}
-    />
+    <Animated.View style={[styles.particle, { backgroundColor: color }, style]} />
   );
 }
+
+// ─── Main screen ──────────────────────────────────────────────────────────────
+
+const PARTICLE_ANGLES = [0, 40, 80, 130, 180, 220, 270, 320];
 
 export default function SuccessScreen() {
   const insets = useSafeAreaInsets();
@@ -101,23 +106,16 @@ export default function SuccessScreen() {
   const btnY = useSharedValue(20);
 
   useEffect(() => {
-    // Icon entrance
-    iconOpacity.value = withTiming(1, { duration: 300 });
+    iconOpacity.value = withTiming(1, { duration: 280 });
     iconScale.value = withSequence(
-      withSpring(1.15, { damping: 8, stiffness: 200 }),
+      withSpring(1.15, { damping: 7, stiffness: 200 }),
       withSpring(1, { damping: 12, stiffness: 300 }),
     );
-
-    // Title
-    titleOpacity.value = withDelay(400, withTiming(1, { duration: 400 }));
-    titleY.value = withDelay(400, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
-
-    // Subtitle
-    subtitleOpacity.value = withDelay(600, withTiming(1, { duration: 400 }));
-
-    // Button
-    btnOpacity.value = withDelay(800, withTiming(1, { duration: 400 }));
-    btnY.value = withDelay(800, withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) }));
+    titleOpacity.value = withDelay(380, withTiming(1, { duration: 380 }));
+    titleY.value = withDelay(380, withTiming(0, { duration: 380, easing: Easing.out(Easing.cubic) }));
+    subtitleOpacity.value = withDelay(560, withTiming(1, { duration: 380 }));
+    btnOpacity.value = withDelay(740, withTiming(1, { duration: 380 }));
+    btnY.value = withDelay(740, withTiming(0, { duration: 380, easing: Easing.out(Easing.cubic) }));
   }, []);
 
   const iconStyle = useAnimatedStyle(() => ({
@@ -136,14 +134,8 @@ export default function SuccessScreen() {
     transform: [{ translateY: btnY.value }],
   }));
 
-  const PARTICLE_ANGLES = [0, 40, 80, 130, 180, 220, 270, 320];
-
   return (
-    <LinearGradient
-      colors={['#16081E', '#0D0B1A', '#130A1C']}
-      locations={[0, 0.55, 1]}
-      style={styles.gradient}
-    >
+    <View style={styles.bg}>
       <View
         style={[
           styles.container,
@@ -155,13 +147,11 @@ export default function SuccessScreen() {
       >
         {/* Icon + particles */}
         <View style={styles.iconSection}>
-          {/* Particles burst from center */}
           <View style={styles.particleOrigin} pointerEvents="none">
             {PARTICLE_ANGLES.map((angle, i) => (
-              <Particle key={angle} angle={angle} delay={200 + i * 40} />
+              <Particle key={angle} angle={angle} delay={180 + i * 38} />
             ))}
           </View>
-
           <Animated.View style={iconStyle}>
             <SuccessIcon />
           </Animated.View>
@@ -170,10 +160,10 @@ export default function SuccessScreen() {
         {/* Text */}
         <View style={styles.textSection}>
           <Animated.Text style={[styles.title, titleStyle]}>
-            You're all set! 🎉
+            You're all set!
           </Animated.Text>
           <Animated.Text style={[styles.subtitle, subtitleStyle]}>
-            Welcome to MeetSweet. Your account is verified and ready. Discover amazing creators and exclusive communities waiting for you.
+            Welcome to MeetSweet. Your account is verified and ready. Discover creators and exclusive communities waiting for you.
           </Animated.Text>
         </View>
 
@@ -189,12 +179,14 @@ export default function SuccessScreen() {
           </Button>
         </Animated.View>
       </View>
-    </LinearGradient>
+    </View>
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
-  gradient: { flex: 1 },
+  bg: { flex: 1, backgroundColor: '#000000' },
   container: {
     flex: 1,
     paddingHorizontal: 32,
@@ -215,9 +207,9 @@ const styles = StyleSheet.create({
   },
   particle: {
     position: 'absolute',
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
   },
   textSection: {
     alignItems: 'center',
@@ -234,7 +226,7 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 15,
     fontFamily: 'Poppins_400Regular',
-    color: '#9385B8',
+    color: 'rgba(255,255,255,0.45)',
     textAlign: 'center',
     lineHeight: 24,
   },
@@ -242,13 +234,13 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   btn: {
-    backgroundColor: '#FF4473',
-    borderRadius: 16,
-    height: 56,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    height: 52,
   },
   btnLabel: {
     fontFamily: 'Poppins_600SemiBold',
-    fontSize: 16,
-    color: '#FFFFFF',
+    fontSize: 15,
+    color: '#000000',
   },
 });

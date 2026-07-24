@@ -14,14 +14,12 @@ import {
   FieldError,
   Input,
   Label,
-  PressableFeedback,
   Spinner,
   TextField,
 } from 'heroui-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import { ArrowLeft, Eye, EyeOff, Mail } from 'lucide-react-native';
+import { ArrowLeft, Eye, EyeOff, Lock, Mail } from 'lucide-react-native';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -29,8 +27,9 @@ const INPUT_BG = '#111111';
 const INPUT_BORDER = 'rgba(255,255,255,0.1)';
 const INPUT_BORDER_FOCUSED = 'rgba(255,255,255,0.35)';
 const INPUT_BORDER_ERROR = '#EF4444';
+const FORM_MAX_WIDTH = 340;
 
-// ─── Input row with focus state ───────────────────────────────────────────────
+// ─── Input row ────────────────────────────────────────────────────────────────
 
 function InputRow({
   icon,
@@ -58,7 +57,7 @@ function InputRow({
 
 // ─── Divider ─────────────────────────────────────────────────────────────────
 
-function Divider() {
+function OrDivider() {
   return (
     <View style={styles.divider}>
       <View style={styles.dividerLine} />
@@ -79,7 +78,7 @@ function SocialButton({ label, letter }: { label: string; letter: string }) {
   );
 }
 
-// ─── Login form ───────────────────────────────────────────────────────────────
+// ─── Login screen ─────────────────────────────────────────────────────────────
 
 export default function AuthScreen() {
   const insets = useSafeAreaInsets();
@@ -149,134 +148,137 @@ export default function AuthScreen() {
         </View>
 
         {/* Form */}
-        <View style={styles.form}>
-          {/* Email */}
-          <TextField isInvalid={!!errors.email}>
-            <Label style={styles.fieldLabel}>Email</Label>
-            <InputRow
-              icon={
-                <Mail
-                  size={20}
-                  color={
-                    focused.email
-                      ? 'rgba(255,255,255,0.6)'
-                      : 'rgba(255,255,255,0.3)'
-                  }
+        <View style={styles.formOuter}>
+          <View style={styles.form}>
+            {/* Email */}
+            <TextField isInvalid={!!errors.email}>
+              <Label style={styles.fieldLabel}>Email</Label>
+              <InputRow
+                icon={
+                  <Mail
+                    size={18}
+                    color={
+                      focused.email
+                        ? 'rgba(255,255,255,0.6)'
+                        : 'rgba(255,255,255,0.3)'
+                    }
+                    strokeWidth={1.8}
+                  />
+                }
+                isError={!!errors.email}
+                isFocused={focused.email}
+              >
+                <Input
+                  placeholder="your@email.com"
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  value={email}
+                  onChangeText={(v) => {
+                    setEmail(v);
+                    setErrors((e) => ({ ...e, email: '' }));
+                  }}
+                  onFocus={() => setFoc('email', true)}
+                  onBlur={() => setFoc('email', false)}
+                  style={styles.input}
+                  placeholderTextColor="rgba(255,255,255,0.18)"
                 />
-              }
-              isError={!!errors.email}
-              isFocused={focused.email}
-            >
-              <Input
-                placeholder="your@email.com"
-                keyboardType="email-address"
-                autoCapitalize="none"
-                value={email}
-                onChangeText={(v) => {
-                  setEmail(v);
-                  setErrors((e) => ({ ...e, email: '' }));
-                }}
-                onFocus={() => setFoc('email', true)}
-                onBlur={() => setFoc('email', false)}
-                style={styles.input}
-                placeholderTextColor="rgba(255,255,255,0.18)"
-              />
-            </InputRow>
-            {!!errors.email && (
-              <FieldError style={styles.fieldError}>{errors.email}</FieldError>
-            )}
-          </TextField>
+              </InputRow>
+              {!!errors.email && (
+                <FieldError style={styles.fieldError}>{errors.email}</FieldError>
+              )}
+            </TextField>
 
-          {/* Password */}
-          <TextField isInvalid={!!errors.password}>
-            <Label style={styles.fieldLabel}>Password</Label>
-            <InputRow
-              icon={
-                <Ionicons
-                  name="lock-closed"
-                  size={18}
-                  color={
-                    focused.password
-                      ? 'rgba(255,255,255,0.6)'
-                      : 'rgba(255,255,255,0.3)'
-                  }
+            {/* Password */}
+            <TextField isInvalid={!!errors.password}>
+              <Label style={styles.fieldLabel}>Password</Label>
+              <InputRow
+                icon={
+                  <Lock
+                    size={18}
+                    color={
+                      focused.password
+                        ? 'rgba(255,255,255,0.6)'
+                        : 'rgba(255,255,255,0.3)'
+                    }
+                    strokeWidth={1.8}
+                  />
+                }
+                isError={!!errors.password}
+                isFocused={focused.password}
+              >
+                <Input
+                  placeholder="••••••••"
+                  secureTextEntry={!showPw}
+                  value={password}
+                  onChangeText={(v) => {
+                    setPassword(v);
+                    setErrors((e) => ({ ...e, password: '' }));
+                  }}
+                  onFocus={() => setFoc('password', true)}
+                  onBlur={() => setFoc('password', false)}
+                  style={[styles.input, { flex: 1 }]}
+                  placeholderTextColor="rgba(255,255,255,0.18)"
                 />
-              }
-              isError={!!errors.password}
-              isFocused={focused.password}
-            >
-              <Input
-                placeholder="••••••••"
-                secureTextEntry={!showPw}
-                value={password}
-                onChangeText={(v) => {
-                  setPassword(v);
-                  setErrors((e) => ({ ...e, password: '' }));
-                }}
-                onFocus={() => setFoc('password', true)}
-                onBlur={() => setFoc('password', false)}
-                style={[styles.input, { flex: 1 }]}
-                placeholderTextColor="rgba(255,255,255,0.18)"
-              />
+                <TouchableOpacity
+                  onPress={() => setShowPw((v) => !v)}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  {showPw ? (
+                    <EyeOff size={18} color="rgba(255,255,255,0.35)" strokeWidth={1.8} />
+                  ) : (
+                    <Eye size={18} color="rgba(255,255,255,0.35)" strokeWidth={1.8} />
+                  )}
+                </TouchableOpacity>
+              </InputRow>
+              {!!errors.password && (
+                <FieldError style={styles.fieldError}>
+                  {errors.password}
+                </FieldError>
+              )}
+            </TextField>
+
+            {/* Remember me + Forgot */}
+            <View style={styles.loginMeta}>
               <TouchableOpacity
-                onPress={() => setShowPw((v) => !v)}
+                style={styles.checkRow}
+                onPress={() => setRememberMe((v) => !v)}
+                activeOpacity={0.7}
+              >
+                <Checkbox isSelected={rememberMe} onSelectedChange={setRememberMe} />
+                <Text style={styles.checkLabel}>Remember me</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => router.push('/forgot-password')}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
-                {showPw ? (
-                  <EyeOff size={20} color="rgba(255,255,255,0.35)" />
-                ) : (
-                  <Eye size={20} color="rgba(255,255,255,0.35)" />
-                )}
+                <Text style={styles.forgotText}>Forgot password?</Text>
               </TouchableOpacity>
-            </InputRow>
-            {!!errors.password && (
-              <FieldError style={styles.fieldError}>
-                {errors.password}
-              </FieldError>
-            )}
-          </TextField>
+            </View>
 
-          {/* Remember me + Forgot */}
-          <View style={styles.loginMeta}>
-            <TouchableOpacity
-              style={styles.checkRow}
-              onPress={() => setRememberMe((v) => !v)}
-              activeOpacity={0.7}
+            {/* Login button */}
+            <Button
+              variant="primary"
+              size="lg"
+              onPress={handleLogin}
+              isDisabled={loading}
+              style={styles.submitBtn}
             >
-              <Checkbox isSelected={rememberMe} onSelectedChange={setRememberMe} />
-              <Text style={styles.checkLabel}>Remember me</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => router.push('/forgot-password')}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <Text style={styles.forgotText}>Forgot password?</Text>
-            </TouchableOpacity>
-          </View>
+              {loading ? (
+                <Spinner size="sm" />
+              ) : (
+                <Button.Label style={styles.submitBtnLabel}>Log In</Button.Label>
+              )}
+            </Button>
 
-          {/* Login button */}
-          <Button
-            variant="primary"
-            size="lg"
-            onPress={handleLogin}
-            isDisabled={loading}
-            style={styles.submitBtn}
-          >
-            {loading ? (
-              <Spinner size="sm" />
-            ) : (
-              <Button.Label style={styles.submitBtnLabel}>Log In</Button.Label>
-            )}
-          </Button>
+            <OrDivider />
 
-          <Divider />
-
-          {/* Social */}
-          <View style={styles.socialGroup}>
-            <SocialButton label="Continue with Google" letter="G" />
-            {Platform.OS === 'ios' && (
-              <SocialButton label="Continue with Apple" letter="" />
-            )}
+            {/* Social */}
+            <View style={styles.socialGroup}>
+              <SocialButton label="Continue with Google" letter="G" />
+              {Platform.OS === 'ios' && (
+                <SocialButton label="Continue with Apple" letter="" />
+              )}
+            </View>
           </View>
         </View>
 
@@ -295,27 +297,27 @@ export default function AuthScreen() {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  bg: { flex: 1, backgroundColor: '#0A0A0A' },
-  scroll: { flex: 1, backgroundColor: '#0A0A0A' },
+  bg: { flex: 1, backgroundColor: '#000000' },
+  scroll: { flex: 1 },
   scrollContent: {
     paddingHorizontal: 24,
-    gap: 22,
+    gap: 24,
     flexGrow: 1,
-    backgroundColor: '#0A0A0A',
+    alignItems: 'center',
   },
 
   backBtn: {
     width: 42,
     height: 42,
     borderRadius: 13,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(255,255,255,0.07)',
     alignItems: 'center',
     justifyContent: 'center',
     alignSelf: 'flex-start',
   },
 
   header: { alignItems: 'center', gap: 10 },
-  logo: { width: 52, height: 52 },
+  logo: { width: 48, height: 48 },
   title: {
     fontSize: 26,
     fontFamily: 'Poppins_700Bold',
@@ -325,69 +327,73 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   subtitle: {
-    fontSize: 13,
+    fontSize: 14,
     fontFamily: 'Poppins_400Regular',
     color: 'rgba(255,255,255,0.4)',
     textAlign: 'center',
   },
 
-  form: { gap: 20 },
+  formOuter: {
+    width: '100%',
+    maxWidth: FORM_MAX_WIDTH,
+    alignSelf: 'center',
+  },
+  form: { gap: 18 },
 
   fieldLabel: {
     fontFamily: 'Poppins_500Medium',
-    fontSize: 15,
-    color: 'rgba(255,255,255,0.55)',
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.5)',
     marginBottom: 6,
   },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: INPUT_BG,
-    borderRadius: 14,
-    paddingHorizontal: 16,
+    borderRadius: 12,
+    paddingHorizontal: 14,
     borderWidth: 1,
     borderColor: INPUT_BORDER,
-    height: 50,
-    gap: 12,
+    height: 48,
+    gap: 10,
   },
   input: {
     flex: 1,
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: 15,
     fontFamily: 'Poppins_400Regular',
     height: '100%',
     backgroundColor: 'transparent',
   },
   fieldError: {
     fontFamily: 'Poppins_400Regular',
-    fontSize: 13,
+    fontSize: 12,
     color: '#EF4444',
-    marginTop: 5,
+    marginTop: 4,
   },
 
   loginMeta: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: -4,
+    marginTop: -2,
   },
-  checkRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  checkRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   checkLabel: {
-    fontSize: 14,
+    fontSize: 13,
     fontFamily: 'Poppins_400Regular',
-    color: 'rgba(255,255,255,0.5)',
+    color: 'rgba(255,255,255,0.45)',
   },
   forgotText: {
-    fontSize: 14,
+    fontSize: 13,
     fontFamily: 'Poppins_500Medium',
     color: '#FFFFFF',
   },
 
   submitBtn: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    height: 50,
-    marginTop: 4,
+    borderRadius: 12,
+    height: 48,
   },
   submitBtnLabel: {
     fontFamily: 'Poppins_600SemiBold',
@@ -402,32 +408,32 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.07)',
   },
   dividerText: {
-    fontSize: 13,
+    fontSize: 12,
     fontFamily: 'Poppins_400Regular',
-    color: 'rgba(255,255,255,0.25)',
+    color: 'rgba(255,255,255,0.22)',
   },
 
-  socialGroup: { gap: 12 },
+  socialGroup: { gap: 10 },
   socialBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
-    borderRadius: 14,
-    height: 48,
+    borderRadius: 12,
+    height: 46,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
+    borderColor: 'rgba(255,255,255,0.1)',
     backgroundColor: '#111111',
   },
   socialLetter: {
-    fontSize: 17,
+    fontSize: 16,
     fontFamily: 'Poppins_700Bold',
     color: '#FFFFFF',
     width: 20,
     textAlign: 'center',
   },
   socialLabel: {
-    fontSize: 15,
+    fontSize: 14,
     fontFamily: 'Poppins_500Medium',
     color: '#FFFFFF',
   },
@@ -436,7 +442,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingTop: 4,
   },
   createText: {
     fontSize: 14,

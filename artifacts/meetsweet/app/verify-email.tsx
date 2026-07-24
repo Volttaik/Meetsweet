@@ -7,73 +7,88 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Button, InputOTP, Spinner } from 'heroui-native';
+import { Button, Spinner } from 'heroui-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   Easing,
   useAnimatedStyle,
   useSharedValue,
+  withDelay,
   withSequence,
+  withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import { LinearGradient } from 'expo-linear-gradient';
-import { ArrowLeft, Info, Mail } from 'lucide-react-native';
-import Svg, { Circle, Path } from 'react-native-svg';
+import { ArrowLeft, CheckCircle, Mail } from 'lucide-react-native';
+import OTPInput, { OTPInputRef } from '@/components/OTPInput';
 
 const DEMO_CODE = '123456';
+const RESEND_DURATION = 60;
 
-// Envelope illustration
-function EmailIllustration() {
+// ─── Success state ─────────────────────────────────────────────────────────────
+
+function SuccessState() {
+  const scale = useSharedValue(0.5);
+  const opacity = useSharedValue(0);
+
+  useEffect(() => {
+    opacity.value = withTiming(1, { duration: 260 });
+    scale.value = withSequence(
+      withSpring(1.12, { damping: 7, stiffness: 260 }),
+      withSpring(1, { damping: 14, stiffness: 400 }),
+    );
+  }, []);
+
+  const style = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+    transform: [{ scale: scale.value }],
+  }));
+
   return (
-    <Svg width={120} height={120} viewBox="0 0 120 120">
-      {/* Envelope background */}
-      <Circle cx="60" cy="60" r="55" fill="#FF447312" />
-      <Circle cx="60" cy="60" r="42" fill="#FF44730C" />
-      {/* Envelope body */}
-      <Path
-        d="M24 44 C24 40 28 36 32 36 L88 36 C92 36 96 40 96 44 L96 80 C96 84 92 88 88 88 L32 88 C28 88 24 84 24 80 Z"
-        fill="#1A1628"
-        stroke="#2E2850"
-        strokeWidth="1.5"
-      />
-      {/* Envelope flap */}
-      <Path d="M24 44 L60 66 L96 44" stroke="#FF4473" strokeWidth="2" fill="none" strokeLinecap="round" />
-      {/* Stars */}
-      <Circle cx="22" cy="28" r="3" fill="#FF4473" opacity="0.5" />
-      <Circle cx="98" cy="88" r="2.5" fill="#FF4473" opacity="0.4" />
-      <Circle cx="104" cy="36" r="2" fill="#9385B8" opacity="0.5" />
-    </Svg>
+    <Animated.View style={[styles.successState, style]}>
+      <CheckCircle size={56} color="#22C55E" strokeWidth={1.6} />
+      <Text style={styles.successTitle}>Email Verified</Text>
+      <Text style={styles.successSubtitle}>Your account is ready.</Text>
+    </Animated.View>
   );
 }
+
+// ─── Main screen ──────────────────────────────────────────────────────────────
 
 export default function VerifyEmailScreen() {
   const insets = useSafeAreaInsets();
   const { email } = useLocalSearchParams<{ email?: string }>();
   const displayEmail = email ?? 'your email';
 
-  const [completed, setCompleted] = useState(false);
-  const [enteredCode, setEnteredCode] = useState('');
+  const [otp, setOtp] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [countdown, setCountdown] = useState(60);
+  const [completed, setCompleted] = useState(false);
+  const [countdown, setCountdown] = useState(RESEND_DURATION);
   const [canResend, setCanResend] = useState(false);
+  const [verified, setVerified] = useState(false);
+
+  const otpRef = useRef<OTPInputRef>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const shakeX = useSharedValue(0);
-  const iconScale = useSharedValue(1);
+  // Entrance animations
+  const contentOpacity = useSharedValue(0);
+  const contentY = useSharedValue(24);
 
-  // Entrance pulse on icon
   useEffect(() => {
-    iconScale.value = withSequence(
-      withTiming(1.12, { duration: 400, easing: Easing.out(Easing.cubic) }),
-      withTiming(1, { duration: 300, easing: Easing.inOut(Easing.cubic) }),
-    );
+    contentOpacity.value = withDelay(80, withTiming(1, { duration: 420, easing: Easing.out(Easing.cubic) }));
+    contentY.value = withDelay(80, withTiming(0, { duration: 420, easing: Easing.out(Easing.cubic) }));
   }, []);
 
+  const contentStyle = useAnimatedStyle(() => ({
+    opacity: contentOpacity.value,
+    transform: [{ translateY: contentY.value }],
+  }));
+
   const startTimer = () => {
-    setCountdown(60);
+    setCountdown(RESEND_DURATION);
     setCanResend(false);
+    if (timerRef.current) clearInterval(timerRef.current);
     timerRef.current = setInterval(() => {
       setCountdown((prev) => {
         if (prev <= 1) {
@@ -91,45 +106,53 @@ export default function VerifyEmailScreen() {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, []);
 
-  const shake = () => {
-    shakeX.value = withSequence(
-      withTiming(-10, { duration: 55 }), withTiming(10, { duration: 55 }),
-      withTiming(-8, { duration: 55 }), withTiming(8, { duration: 55 }),
-      withTiming(-4, { duration: 55 }), withTiming(0, { duration: 55 }),
-    );
-  };
-
   const handleVerify = async () => {
-    if (!completed) { setError('Please enter all 6 digits'); return; }
-    if (enteredCode !== DEMO_CODE) {
-      setError(`Incorrect code. Use ${DEMO_CODE} for demo.`);
-      shake();
+    if (!completed) {
+      setError('Enter all 6 digits');
+      otpRef.current?.shake();
+      return;
+    }
+    if (otp !== DEMO_CODE) {
+      setError(`Incorrect code — use ${DEMO_CODE} for demo`);
+      otpRef.current?.shake();
       return;
     }
     setError('');
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 800));
+    await new Promise((r) => setTimeout(r, 700));
     setLoading(false);
-    router.replace('/success');
+    setVerified(true);
+    setTimeout(() => router.replace('/success'), 900);
+  };
+
+  const handleComplete = (code: string) => {
+    setCompleted(true);
+    setOtp(code);
+    setError('');
+    if (code === DEMO_CODE) {
+      setTimeout(() => handleVerify(), 300);
+    }
   };
 
   const handleResend = () => {
     if (!canResend) return;
-    setEnteredCode('');
+    setOtp('');
     setCompleted(false);
     setError('');
+    otpRef.current?.clear();
     startTimer();
   };
 
-  const iconStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: iconScale.value }],
-  }));
-  const shakeStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: shakeX.value }],
-  }));
+  if (verified) {
+    return (
+      <View style={styles.bg}>
+        <SuccessState />
+      </View>
+    );
+  }
 
   return (
-    <LinearGradient colors={['#16081E', '#0D0B1A']} style={styles.gradient}>
+    <View style={styles.bg}>
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={[
@@ -145,113 +168,125 @@ export default function VerifyEmailScreen() {
         {/* Back */}
         <TouchableOpacity
           onPress={() => router.back()}
-          style={styles.backRow}
+          style={styles.backBtn}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
         >
-          <ArrowLeft size={22} color="#9385B8" />
-          <Text style={styles.backText}>Back</Text>
+          <ArrowLeft size={22} color="#FFFFFF" strokeWidth={2} />
         </TouchableOpacity>
 
-        {/* Illustration */}
-        <View style={styles.illustrationWrap}>
-          <Animated.View style={iconStyle}>
-            <EmailIllustration />
-          </Animated.View>
-        </View>
+        <Animated.View style={[styles.inner, contentStyle]}>
+          {/* Icon */}
+          <View style={styles.iconCircle}>
+            <Mail size={32} color="#FFFFFF" strokeWidth={1.8} />
+          </View>
 
-        {/* Header text */}
-        <View style={styles.headerText}>
-          <Text style={styles.title}>Verify Your Email</Text>
-          <Text style={styles.subtitle}>
-            We sent a 6-digit verification code to{'\n'}
-            <Text style={styles.emailHighlight}>{displayEmail}</Text>
-          </Text>
-        </View>
-
-        {/* Demo hint */}
-        <View style={styles.demoHint}>
-          <Info size={14} color="#9385B8" />
-          <Text style={styles.demoHintText}>Demo code: {DEMO_CODE}</Text>
-        </View>
-
-        {/* OTP input */}
-        <Animated.View style={[styles.otpWrap, shakeStyle]}>
-          <InputOTP
-            maxLength={6}
-            onComplete={(code) => { setEnteredCode(code); setCompleted(true); setError(''); }}
-            isInvalid={!!error}
-            style={styles.otp}
-          >
-            <InputOTP.Group style={styles.otpGroup}>
-              <InputOTP.Slot index={0} style={styles.otpSlot} />
-              <InputOTP.Slot index={1} style={styles.otpSlot} />
-              <InputOTP.Slot index={2} style={styles.otpSlot} />
-            </InputOTP.Group>
-            <InputOTP.Separator style={styles.otpSep} />
-            <InputOTP.Group style={styles.otpGroup}>
-              <InputOTP.Slot index={3} style={styles.otpSlot} />
-              <InputOTP.Slot index={4} style={styles.otpSlot} />
-              <InputOTP.Slot index={5} style={styles.otpSlot} />
-            </InputOTP.Group>
-          </InputOTP>
-        </Animated.View>
-
-        {/* Error */}
-        {!!error && (
-          <Text style={styles.errorText}>{error}</Text>
-        )}
-
-        {/* Verify button */}
-        <Button
-          variant="primary"
-          size="lg"
-          onPress={handleVerify}
-          isDisabled={loading || !completed}
-          style={styles.verifyBtn}
-        >
-          {loading ? (
-            <Spinner size="sm" color="default" />
-          ) : (
-            <Button.Label style={styles.verifyBtnLabel}>Verify Email</Button.Label>
-          )}
-        </Button>
-
-        {/* Resend */}
-        <View style={styles.resendSection}>
-          <Text style={styles.resendPrompt}>Didn't receive the code?</Text>
-          <TouchableOpacity onPress={handleResend} disabled={!canResend}>
-            <Text style={[styles.resendBtn, !canResend && styles.resendDisabled]}>
-              {canResend ? 'Resend code' : `Resend in ${countdown}s`}
+          {/* Text */}
+          <View style={styles.headerText}>
+            <Text style={styles.title}>Verify Your Email</Text>
+            <Text style={styles.subtitle}>
+              We sent a 6-digit code to{'\n'}
+              <Text style={styles.emailHighlight}>{displayEmail}</Text>
             </Text>
-          </TouchableOpacity>
-        </View>
+          </View>
+
+          {/* Demo hint */}
+          <View style={styles.demoHint}>
+            <Text style={styles.demoHintText}>
+              Demo code: <Text style={styles.demoCode}>{DEMO_CODE}</Text>
+            </Text>
+          </View>
+
+          {/* OTP */}
+          <OTPInput
+            ref={otpRef}
+            length={6}
+            value={otp}
+            onChange={(v) => {
+              setOtp(v);
+              setError('');
+              setCompleted(false);
+            }}
+            onComplete={handleComplete}
+            hasError={!!error}
+            autoFocus
+          />
+
+          {!!error && (
+            <Text style={styles.errorText}>{error}</Text>
+          )}
+
+          {/* Verify button */}
+          <Button
+            variant="primary"
+            size="lg"
+            onPress={handleVerify}
+            isDisabled={loading || !completed}
+            style={[
+              styles.verifyBtn,
+              (!completed || loading) && styles.verifyBtnDisabled,
+            ]}
+          >
+            {loading ? (
+              <Spinner size="sm" />
+            ) : (
+              <Button.Label style={[
+                styles.verifyBtnLabel,
+                (!completed || loading) && styles.verifyBtnLabelDisabled,
+              ]}>
+                Verify Email
+              </Button.Label>
+            )}
+          </Button>
+
+          {/* Resend */}
+          <View style={styles.resendSection}>
+            <Text style={styles.resendPrompt}>Didn't receive the code?</Text>
+            <TouchableOpacity onPress={handleResend} disabled={!canResend}>
+              <Text style={[styles.resendBtn, !canResend && styles.resendDisabled]}>
+                {canResend
+                  ? 'Resend Code'
+                  : `Resend in 0:${countdown.toString().padStart(2, '0')}`}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </Animated.View>
       </ScrollView>
-    </LinearGradient>
+    </View>
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
-  gradient: { flex: 1 },
+  bg: { flex: 1, backgroundColor: '#000000' },
   scroll: { flex: 1 },
   content: {
-    paddingHorizontal: 24,
-    gap: 28,
-    alignItems: 'center',
+    paddingHorizontal: 28,
+    flexGrow: 1,
   },
-  backRow: {
-    flexDirection: 'row',
+  backBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 13,
+    backgroundColor: 'rgba(255,255,255,0.07)',
     alignItems: 'center',
-    gap: 6,
+    justifyContent: 'center',
     alignSelf: 'flex-start',
+    marginBottom: 32,
   },
-  backText: {
-    fontSize: 15,
-    fontFamily: 'Poppins_500Medium',
-    color: '#9385B8',
-  },
-  illustrationWrap: {
+  inner: {
     alignItems: 'center',
-    marginTop: 8,
+    gap: 28,
+  },
+  iconCircle: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headerText: {
     alignItems: 'center',
@@ -267,56 +302,32 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 15,
     fontFamily: 'Poppins_400Regular',
-    color: '#9385B8',
+    color: 'rgba(255,255,255,0.45)',
     textAlign: 'center',
     lineHeight: 24,
   },
   emailHighlight: {
-    color: '#FF4473',
+    color: '#FFFFFF',
     fontFamily: 'Poppins_500Medium',
   },
   demoHint: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#1A1628',
+    backgroundColor: '#111111',
     borderRadius: 10,
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingVertical: 8,
     borderWidth: 1,
-    borderColor: '#2E2850',
+    borderColor: 'rgba(255,255,255,0.08)',
   },
   demoHintText: {
-    fontSize: 12,
+    fontSize: 13,
     fontFamily: 'Poppins_400Regular',
-    color: '#9385B8',
+    color: 'rgba(255,255,255,0.35)',
+    textAlign: 'center',
   },
-  otpWrap: {
-    alignItems: 'center',
-  },
-  otp: {
-    alignItems: 'center',
-  },
-  otpGroup: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  otpSlot: {
-    width: 52,
-    height: 60,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    borderColor: '#2E2850',
-    backgroundColor: '#1A1628',
-    fontSize: 22,
-    fontFamily: 'Poppins_700Bold',
-    color: '#FFFFFF',
-  },
-  otpSep: {
-    marginHorizontal: 8,
-    backgroundColor: '#2E2850',
-    width: 16,
-    height: 2,
+  demoCode: {
+    color: 'rgba(255,255,255,0.7)',
+    fontFamily: 'Poppins_600SemiBold',
+    letterSpacing: 2,
   },
   errorText: {
     fontSize: 13,
@@ -325,15 +336,21 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   verifyBtn: {
-    backgroundColor: '#FF4473',
-    borderRadius: 16,
-    height: 56,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    height: 52,
     width: '100%',
+  },
+  verifyBtnDisabled: {
+    backgroundColor: 'rgba(255,255,255,0.1)',
   },
   verifyBtnLabel: {
     fontFamily: 'Poppins_600SemiBold',
-    fontSize: 16,
-    color: '#FFFFFF',
+    fontSize: 15,
+    color: '#000000',
+  },
+  verifyBtnLabelDisabled: {
+    color: 'rgba(255,255,255,0.25)',
   },
   resendSection: {
     alignItems: 'center',
@@ -342,15 +359,34 @@ const styles = StyleSheet.create({
   resendPrompt: {
     fontSize: 13,
     fontFamily: 'Poppins_400Regular',
-    color: '#7A6EA0',
+    color: 'rgba(255,255,255,0.3)',
   },
   resendBtn: {
     fontSize: 14,
     fontFamily: 'Poppins_600SemiBold',
-    color: '#FF4473',
+    color: '#FFFFFF',
     paddingVertical: 4,
   },
   resendDisabled: {
-    color: '#4A3F72',
+    color: 'rgba(255,255,255,0.25)',
+  },
+  // Success state
+  successState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 16,
+    backgroundColor: '#000000',
+  },
+  successTitle: {
+    fontSize: 24,
+    fontFamily: 'Poppins_700Bold',
+    color: '#FFFFFF',
+    letterSpacing: -0.4,
+  },
+  successSubtitle: {
+    fontSize: 15,
+    fontFamily: 'Poppins_400Regular',
+    color: 'rgba(255,255,255,0.4)',
   },
 });

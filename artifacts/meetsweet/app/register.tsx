@@ -27,16 +27,16 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
-import { Ionicons } from '@expo/vector-icons';
 import {
   ArrowLeft,
+  Camera,
+  Calendar,
   Eye,
   EyeOff,
+  Lock,
   Mail,
   Phone,
   User,
-  Calendar,
-  Camera,
 } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 
@@ -360,7 +360,7 @@ function Step2({
         <TextField isInvalid={!!errors.password}>
           <Label style={styles.fieldLabel}>Password</Label>
           <InputRow
-            icon={<Ionicons name="lock-closed" size={18} color={focused.password ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.3)'} />}
+            icon={<Lock size={18} color={focused.password ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.3)'} strokeWidth={1.8} />}
             isError={!!errors.password}
             isFocused={focused.password}
           >
@@ -401,7 +401,7 @@ function Step2({
         <TextField isInvalid={!!errors.confirm}>
           <Label style={styles.fieldLabel}>Confirm Password</Label>
           <InputRow
-            icon={<Ionicons name="lock-closed" size={18} color={focused.confirm ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.3)'} />}
+            icon={<Lock size={18} color={focused.confirm ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.3)'} strokeWidth={1.8} />}
             isError={!!errors.confirm}
             isFocused={focused.confirm}
           >
@@ -650,7 +650,7 @@ export default function RegisterScreen() {
         <StepBar current={step} />
 
         {/* Animated step content */}
-        <Animated.View style={[contentStyle, { backgroundColor: '#0A0A0A', width: '100%' }]}>
+        <Animated.View style={[contentStyle, { backgroundColor: '#000000', width: '100%' }]}>
           {step === 1 && (
             <Step1
               data={step1}
@@ -694,13 +694,12 @@ export default function RegisterScreen() {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  bg: { flex: 1, backgroundColor: '#0A0A0A' },
-  scroll: { flex: 1, backgroundColor: '#0A0A0A' },
+  bg: { flex: 1, backgroundColor: '#000000' },
+  scroll: { flex: 1 },
   scrollContent: {
     paddingHorizontal: 24,
     gap: 20,
     flexGrow: 1,
-    backgroundColor: '#0A0A0A',
   },
 
   backBtn: {
@@ -857,7 +856,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
-    borderColor: '#0A0A0A',
+    borderColor: '#000000',
   },
   avatarHint: {
     fontSize: 13,
