@@ -16,43 +16,13 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withDelay,
-  withSequence,
-  withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import { ArrowLeft, CheckCircle, Mail } from 'lucide-react-native';
+import { ArrowLeft, Mail } from 'lucide-react-native';
 import OTPInput, { OTPInputRef } from '@/components/OTPInput';
 
 const DEMO_CODE = '123456';
 const RESEND_DURATION = 60;
-
-// ─── Success state ─────────────────────────────────────────────────────────────
-
-function SuccessState() {
-  const scale = useSharedValue(0.5);
-  const opacity = useSharedValue(0);
-
-  useEffect(() => {
-    opacity.value = withTiming(1, { duration: 260 });
-    scale.value = withSequence(
-      withSpring(1.12, { damping: 7, stiffness: 260 }),
-      withSpring(1, { damping: 14, stiffness: 400 }),
-    );
-  }, []);
-
-  const style = useAnimatedStyle(() => ({
-    opacity: opacity.value,
-    transform: [{ scale: scale.value }],
-  }));
-
-  return (
-    <Animated.View style={[styles.successState, style]}>
-      <CheckCircle size={56} color="#22C55E" strokeWidth={1.6} />
-      <Text style={styles.successTitle}>Email Verified</Text>
-      <Text style={styles.successSubtitle}>Your account is ready.</Text>
-    </Animated.View>
-  );
-}
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
@@ -67,8 +37,6 @@ export default function VerifyEmailScreen() {
   const [completed, setCompleted] = useState(false);
   const [countdown, setCountdown] = useState(RESEND_DURATION);
   const [canResend, setCanResend] = useState(false);
-  const [verified, setVerified] = useState(false);
-
   const otpRef = useRef<OTPInputRef>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -122,8 +90,7 @@ export default function VerifyEmailScreen() {
     setLoading(true);
     await new Promise((r) => setTimeout(r, 700));
     setLoading(false);
-    setVerified(true);
-    setTimeout(() => router.replace('/success'), 900);
+    router.replace('/success');
   };
 
   const handleComplete = (code: string) => {
@@ -143,14 +110,6 @@ export default function VerifyEmailScreen() {
     otpRef.current?.clear();
     startTimer();
   };
-
-  if (verified) {
-    return (
-      <View style={styles.bg}>
-        <SuccessState />
-      </View>
-    );
-  }
 
   return (
     <View style={styles.bg}>

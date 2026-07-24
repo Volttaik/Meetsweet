@@ -59,12 +59,6 @@ function OtpBox({
   const prevDigit = useRef('');
 
   useEffect(() => {
-    if (digit && digit !== prevDigit.current) {
-      scale.value = withSequence(
-        withSpring(1.18, { damping: 6, stiffness: 400 }),
-        withSpring(1, { damping: 14, stiffness: 500 }),
-      );
-    }
     prevDigit.current = digit;
   }, [digit]);
 
