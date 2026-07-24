@@ -1,15 +1,26 @@
 import React, { useEffect } from 'react';
-import { Image, Platform, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Dimensions,
+  Image,
+  Platform,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { Button } from 'heroui-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   Easing,
+  runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withDelay,
   withTiming,
 } from 'react-native-reanimated';
+
+const { width: SCREEN_W } = Dimensions.get('window');
 
 const HIGHLIGHTS = [
   { text: 'Exclusive creator content & communities' },
@@ -22,8 +33,14 @@ function FadeUp({ children, delay = 0 }: { children: React.ReactNode; delay?: nu
   const translateY = useSharedValue(28);
 
   useEffect(() => {
-    opacity.value = withDelay(delay, withTiming(1, { duration: 520, easing: Easing.out(Easing.cubic) }));
-    translateY.value = withDelay(delay, withTiming(0, { duration: 520, easing: Easing.out(Easing.cubic) }));
+    opacity.value = withDelay(
+      delay,
+      withTiming(1, { duration: 520, easing: Easing.out(Easing.cubic) }),
+    );
+    translateY.value = withDelay(
+      delay,
+      withTiming(0, { duration: 520, easing: Easing.out(Easing.cubic) }),
+    );
   }, []);
 
   const style = useAnimatedStyle(() => ({
@@ -36,16 +53,35 @@ function FadeUp({ children, delay = 0 }: { children: React.ReactNode; delay?: nu
 
 export default function WelcomeScreen() {
   const insets = useSafeAreaInsets();
+  const slideX = useSharedValue(0);
+  const slideOpacity = useSharedValue(1);
+
+  const handleGetStarted = () => {
+    slideX.value = withTiming(
+      -SCREEN_W,
+      { duration: 260, easing: Easing.in(Easing.cubic) },
+      () => {
+        runOnJS(router.push)('/onboarding');
+      },
+    );
+    slideOpacity.value = withTiming(0, { duration: 200, easing: Easing.in(Easing.cubic) });
+  };
+
+  const slideStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: slideX.value }],
+    opacity: slideOpacity.value,
+  }));
 
   return (
     <View style={styles.bg}>
-      <View
+      <Animated.View
         style={[
           styles.container,
           {
             paddingTop: insets.top + (Platform.OS === 'web' ? 72 : 32),
             paddingBottom: insets.bottom + (Platform.OS === 'web' ? 40 : 36),
           },
+          slideStyle,
         ]}
       >
         {/* Logo */}
@@ -66,7 +102,8 @@ export default function WelcomeScreen() {
           <View style={styles.hero}>
             <Text style={styles.headline}>Where creators{'\n'}meet their community</Text>
             <Text style={styles.description}>
-              The premium platform connecting fans and creators through exclusive content, private chats, and meaningful subscriptions.
+              The premium platform connecting fans and creators through exclusive content, private
+              chats, and meaningful subscriptions.
             </Text>
 
             <View style={styles.highlights}>
@@ -86,7 +123,7 @@ export default function WelcomeScreen() {
             <Button
               variant="primary"
               size="lg"
-              onPress={() => router.push('/onboarding')}
+              onPress={handleGetStarted}
               style={styles.primaryBtn}
             >
               <Button.Label style={styles.primaryBtnLabel}>Get Started</Button.Label>
@@ -113,7 +150,7 @@ export default function WelcomeScreen() {
             </Text>
           </FadeUp>
         </View>
-      </View>
+      </Animated.View>
     </View>
   );
 }
@@ -121,7 +158,8 @@ export default function WelcomeScreen() {
 const styles = StyleSheet.create({
   bg: {
     flex: 1,
-    backgroundColor: '#0A0A0A',
+    backgroundColor: '#000000',
+    overflow: 'hidden',
   },
   container: {
     flex: 1,

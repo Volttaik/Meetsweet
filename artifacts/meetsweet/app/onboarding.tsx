@@ -101,10 +101,10 @@ function IllustrationSubscribe() {
         );
       })}
 
-      {/* Unlock badge */}
+      {/* Lock badge (closed/locked) */}
       <Circle cx="165" cy="165" r="22" fill="#111111" />
       <Rect x="155" y="163" width="20" height="14" rx="4" fill="#FFFFFF" />
-      <Path d="M160 163 C160 155 175 155 175 163" stroke="#FFFFFF" strokeWidth="3" fill="none" />
+      <Path d="M159 163 C159 153 171 153 171 163" stroke="#FFFFFF" strokeWidth="3" fill="none" strokeLinecap="round" />
       <Circle cx="165" cy="170" r="2" fill="#111111" />
 
       <Circle cx="45" cy="70" r="4" fill="rgba(255,255,255,0.35)" />
@@ -257,7 +257,7 @@ export default function OnboardingScreen() {
 }
 
 const styles = StyleSheet.create({
-  bg: { flex: 1, backgroundColor: '#0A0A0A' },
+  bg: { flex: 1, backgroundColor: '#000000' },
   container: { flex: 1, paddingHorizontal: H_PAD, gap: 28 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   skipText: { fontSize: 16, fontFamily: 'Poppins_500Medium', color: 'rgba(255,255,255,0.45)' },

@@ -15,9 +15,9 @@ import {
   Input,
   Label,
   PressableFeedback,
-  Spinner,
   TextField,
 } from 'heroui-native';
+import { ActivityIndicator } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
@@ -561,7 +561,7 @@ function Step3({
         style={styles.primaryBtn}
       >
         {loading ? (
-          <Spinner size="sm" />
+          <ActivityIndicator size="small" color="#000000" />
         ) : (
           <Button.Label style={styles.btnLabel}>Complete</Button.Label>
         )}
