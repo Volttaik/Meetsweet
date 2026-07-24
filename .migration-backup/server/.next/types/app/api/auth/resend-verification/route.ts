@@ -1,4 +1,4 @@
-// File: /home/runner/workspace/server/app/api/auth/resend-verification/route.ts
+// File: /home/runner/workspace/.migration-backup/server/app/api/auth/resend-verification/route.ts
 import * as entry from '../../../../../../app/api/auth/resend-verification/route.js'
 import type { NextRequest } from 'next/server.js'
 

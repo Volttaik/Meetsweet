@@ -86,3 +86,13 @@ messages, message_reads, creator_settings, creator_statistics, reports, recent_s
 
 ## Current Project Status — COMPLETE
 Migration is done. The server is deployed-ready. Mobile app updated to use EXPO_PUBLIC_API_URL.
+
+## Validation checkpoint — July 24, 2026
+- `npm install` completed successfully in `/server`.
+- `npm run build` completed successfully; all 62 App Router API routes compile and are dynamic.
+- `npx tsc --noEmit` completed with zero TypeScript errors.
+- Built server started successfully and `GET /api/healthz` returned `{ ok: true }`.
+- Database initialization is lazy in `server/lib/db/index.ts`, so Vercel builds do not require runtime Turso variables during route collection.
+- JWT accepts `JWT_SECRET` with `SESSION_SECRET` fallback; no signing secret is stored in tracked config.
+- Required Vercel variables remain provider-owned: `DATABASE_URL`, `TURSO_AUTH_TOKEN`, `BLOB_READ_WRITE_TOKEN`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `PAYSTACK_SECRET_KEY`, `JWT_SECRET` or `SESSION_SECRET`, `APP_URL`, `CLIENT_APP_ID`, and `CRON_SECRET`.
+- Remaining deployment prerequisite: configure the listed provider variables in the Vercel project before exercising database, storage, email, payment, or cron routes.

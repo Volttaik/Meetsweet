@@ -1,4 +1,4 @@
-// File: /home/runner/workspace/server/app/api/notifications/[notificationId]/route.ts
+// File: /home/runner/workspace/.migration-backup/server/app/api/notifications/[notificationId]/route.ts
 import * as entry from '../../../../../../app/api/notifications/[notificationId]/route.js'
 import type { NextRequest } from 'next/server.js'
 

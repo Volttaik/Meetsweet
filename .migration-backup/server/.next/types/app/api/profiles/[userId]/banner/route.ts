@@ -1,4 +1,4 @@
-// File: /home/runner/workspace/server/app/api/profiles/[userId]/banner/route.ts
+// File: /home/runner/workspace/.migration-backup/server/app/api/profiles/[userId]/banner/route.ts
 import * as entry from '../../../../../../../app/api/profiles/[userId]/banner/route.js'
 import type { NextRequest } from 'next/server.js'
 

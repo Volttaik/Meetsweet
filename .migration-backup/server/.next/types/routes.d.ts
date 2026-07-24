@@ -4,7 +4,7 @@
 type AppRoutes = "/"
 type AppRouteHandlerRoutes = "/api/archive" | "/api/auth/delete-account" | "/api/auth/forgot-password" | "/api/auth/login" | "/api/auth/logout" | "/api/auth/refresh" | "/api/auth/register" | "/api/auth/resend-verification" | "/api/auth/reset-password" | "/api/auth/update-email" | "/api/auth/update-password" | "/api/auth/username-availability" | "/api/auth/verify-email" | "/api/comments/[commentId]" | "/api/comments/[commentId]/like" | "/api/comments/[commentId]/pin" | "/api/comments/[commentId]/replies" | "/api/creator/analytics" | "/api/creator/become" | "/api/creator/verification" | "/api/cron/expire-posts" | "/api/cron/expire-subscriptions" | "/api/healthz" | "/api/messages/[messageId]" | "/api/messages/[messageId]/react" | "/api/messages/[messageId]/recall" | "/api/messages/conversations" | "/api/messages/conversations/[conversationId]" | "/api/messages/conversations/[conversationId]/messages" | "/api/messages/conversations/[conversationId]/mute" | "/api/messages/conversations/[conversationId]/pin" | "/api/messages/conversations/[conversationId]/read" | "/api/notifications" | "/api/notifications/[notificationId]" | "/api/notifications/read-all" | "/api/payments/initialize" | "/api/payments/verify" | "/api/payments/webhook" | "/api/posts" | "/api/posts/[postId]" | "/api/posts/[postId]/archive" | "/api/posts/[postId]/comments" | "/api/posts/[postId]/hide" | "/api/posts/[postId]/like" | "/api/posts/[postId]/pin" | "/api/posts/[postId]/publish" | "/api/posts/[postId]/report" | "/api/posts/[postId]/restore" | "/api/posts/[postId]/save" | "/api/profiles/[userId]" | "/api/profiles/[userId]/avatar" | "/api/profiles/[userId]/banner" | "/api/profiles/[userId]/creator-settings" | "/api/search" | "/api/search/recent" | "/api/subscriptions" | "/api/subscriptions/[subscriptionId]/cancel" | "/api/uploads" | "/api/users/block" | "/api/users/me" | "/api/users/mute" | "/api/wallet"
 type PageRoutes = never
-type LayoutRoutes = "/"
+type LayoutRoutes = "/" | "/api"
 type RedirectRoutes = never
 type RewriteRoutes = never
 type Routes = AppRoutes | PageRoutes | LayoutRoutes | RedirectRoutes | RewriteRoutes | AppRouteHandlerRoutes
@@ -12,6 +12,7 @@ type Routes = AppRoutes | PageRoutes | LayoutRoutes | RedirectRoutes | RewriteRo
 
 interface ParamMap {
   "/": {}
+  "/api": {}
   "/api/archive": {}
   "/api/auth/delete-account": {}
   "/api/auth/forgot-password": {}
@@ -81,6 +82,7 @@ export type ParamsOf<Route extends Routes> = ParamMap[Route]
 
 interface LayoutSlotMap {
   "/": never
+  "/api": never
 }
 
 

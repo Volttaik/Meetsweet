@@ -1,4 +1,4 @@
-// File: /home/runner/workspace/server/app/api/messages/conversations/[conversationId]/mute/route.ts
+// File: /home/runner/workspace/.migration-backup/server/app/api/messages/conversations/[conversationId]/mute/route.ts
 import * as entry from '../../../../../../../../app/api/messages/conversations/[conversationId]/mute/route.js'
 import type { NextRequest } from 'next/server.js'
 

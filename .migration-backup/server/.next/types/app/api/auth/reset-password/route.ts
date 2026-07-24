@@ -1,4 +1,4 @@
-// File: /home/runner/workspace/server/app/api/auth/reset-password/route.ts
+// File: /home/runner/workspace/.migration-backup/server/app/api/auth/reset-password/route.ts
 import * as entry from '../../../../../../app/api/auth/reset-password/route.js'
 import type { NextRequest } from 'next/server.js'
 

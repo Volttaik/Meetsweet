@@ -1,4 +1,4 @@
-// File: /home/runner/workspace/server/app/api/auth/update-password/route.ts
+// File: /home/runner/workspace/.migration-backup/server/app/api/auth/update-password/route.ts
 import * as entry from '../../../../../../app/api/auth/update-password/route.js'
 import type { NextRequest } from 'next/server.js'
 

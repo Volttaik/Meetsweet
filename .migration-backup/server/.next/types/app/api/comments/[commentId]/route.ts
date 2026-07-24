@@ -1,4 +1,4 @@
-// File: /home/runner/workspace/server/app/api/comments/[commentId]/route.ts
+// File: /home/runner/workspace/.migration-backup/server/app/api/comments/[commentId]/route.ts
 import * as entry from '../../../../../../app/api/comments/[commentId]/route.js'
 import type { NextRequest } from 'next/server.js'
 

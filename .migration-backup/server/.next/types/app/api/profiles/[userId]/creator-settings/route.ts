@@ -1,4 +1,4 @@
-// File: /home/runner/workspace/server/app/api/profiles/[userId]/creator-settings/route.ts
+// File: /home/runner/workspace/.migration-backup/server/app/api/profiles/[userId]/creator-settings/route.ts
 import * as entry from '../../../../../../../app/api/profiles/[userId]/creator-settings/route.js'
 import type { NextRequest } from 'next/server.js'
 

@@ -2,14 +2,33 @@ import { createClient } from "@libsql/client";
 import { drizzle } from "drizzle-orm/libsql";
 import * as schema from "./schema";
 
-if (!process.env.DATABASE_URL) {
-  throw new Error("DATABASE_URL environment variable is required");
+function createDb() {
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) {
+    throw new Error("DATABASE_URL environment variable is required");
+  }
+
+  const client = createClient({
+    url: databaseUrl,
+    authToken: process.env.TURSO_AUTH_TOKEN,
+  });
+
+  return drizzle(client, { schema });
 }
 
-const client = createClient({
-  url: process.env.DATABASE_URL,
-  authToken: process.env.TURSO_AUTH_TOKEN,
-});
+export type DB = ReturnType<typeof createDb>;
 
-export const db = drizzle(client, { schema });
-export type DB = typeof db;
+let dbInstance: DB | undefined;
+
+function getDb(): DB {
+  dbInstance ??= createDb();
+  return dbInstance;
+}
+
+// Route modules are imported during `next build`. Keep database initialization
+// request-scoped so a build never requires production-only database settings.
+export const db = new Proxy({} as DB, {
+  get(_target, property, receiver) {
+    return Reflect.get(getDb(), property, receiver);
+  },
+});

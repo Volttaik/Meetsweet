@@ -1,8 +1,8 @@
 import { SignJWT, jwtVerify, type JWTPayload } from "jose";
 
 const secret = () => {
-  const s = process.env.JWT_SECRET;
-  if (!s) throw new Error("JWT_SECRET is required");
+  const s = process.env.JWT_SECRET ?? process.env.SESSION_SECRET;
+  if (!s) throw new Error("JWT_SECRET or SESSION_SECRET is required");
   return new TextEncoder().encode(s);
 };
 

@@ -1,4 +1,4 @@
-// File: /home/runner/workspace/server/app/api/auth/verify-email/route.ts
+// File: /home/runner/workspace/.migration-backup/server/app/api/auth/verify-email/route.ts
 import * as entry from '../../../../../../app/api/auth/verify-email/route.js'
 import type { NextRequest } from 'next/server.js'
 
