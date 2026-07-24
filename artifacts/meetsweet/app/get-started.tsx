@@ -85,7 +85,11 @@ export default function GetStartedScreen() {
             </LinearGradient>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.secondaryBtn} activeOpacity={0.8}>
+          <TouchableOpacity
+            style={styles.secondaryBtn}
+            activeOpacity={0.8}
+            onPress={() => router.push('/auth')}
+          >
             <Text style={styles.secondaryBtnText}>Sign In</Text>
           </TouchableOpacity>
 
@@ -167,7 +171,7 @@ const styles = StyleSheet.create({
   dividerText: {
     fontSize: 13,
     fontFamily: 'Poppins_400Regular',
-    color: '#4A3F72',
+    color: '#7A6EA0',
   },
   actions: { gap: 14 },
   primaryWrap: { borderRadius: 16, overflow: 'hidden' },
@@ -198,7 +202,7 @@ const styles = StyleSheet.create({
   terms: {
     fontSize: 12,
     fontFamily: 'Poppins_400Regular',
-    color: '#4A3F72',
+    color: '#7A6EA0',
     textAlign: 'center',
     lineHeight: 18,
     marginTop: 4,

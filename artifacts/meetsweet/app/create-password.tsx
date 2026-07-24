@@ -279,9 +279,9 @@ const styles = StyleSheet.create({
   reqText: {
     fontSize: 13,
     fontFamily: 'Poppins_400Regular',
-    color: '#4A3F72',
+    color: '#7A6EA0',
   },
-  reqTextMet: { color: '#9385B8' },
+  reqTextMet: { color: '#B8ACDC' },
   primaryWrap: { borderRadius: 16, overflow: 'hidden' },
   primaryBtn: {
     height: 56,

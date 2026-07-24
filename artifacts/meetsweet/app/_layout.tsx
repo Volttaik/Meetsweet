@@ -5,6 +5,12 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { HeroUINativeProvider } from 'heroui-native';
+import { Uniwind } from 'uniwind';
+
+// MeetSweet is a dark-first app — force dark theme so all HeroUI Native
+// components (Button, Input, Label, Checkbox, InputOTP…) use the dark palette
+// rather than defaulting to the system light theme on web.
+Uniwind.setTheme('dark');
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import {
   Poppins_400Regular,

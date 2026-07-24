@@ -780,6 +780,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: 'Poppins_400Regular',
     height: '100%',
+    backgroundColor: 'transparent',
   },
   fieldError: {
     fontFamily: 'Poppins_400Regular',

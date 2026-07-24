@@ -170,7 +170,7 @@ function StepCode({ email, onNext }: { email: string; onNext: () => void }) {
   return (
     <View style={step.container}>
       <View style={step.iconWrap}>
-        <Text style={step.iconEmoji}>📧</Text>
+        <Ionicons name="mail" size={36} color="#FFFFFF" />
       </View>
       <Text style={step.title}>Check Your Email</Text>
       <Text style={step.subtitle}>
@@ -324,8 +324,19 @@ function StepNewPassword({ onNext }: { onNext: () => void }) {
 function StepDone() {
   return (
     <View style={[step.container, { alignItems: 'center' }]}>
-      <View style={[step.iconWrap, { width: 96, height: 96, borderRadius: 48 }]}>
-        <Text style={{ fontSize: 42 }}>✓</Text>
+      <View
+        style={[
+          step.iconWrap,
+          {
+            width: 96,
+            height: 96,
+            borderRadius: 48,
+            backgroundColor: '#FF44731A',
+            borderColor: '#FF447340',
+          },
+        ]}
+      >
+        <Ionicons name="checkmark-circle" size={52} color="#FF4473" />
       </View>
       <Text style={[step.title, { textAlign: 'center' }]}>Password Reset!</Text>
       <Text style={[step.subtitle, { textAlign: 'center' }]}>
@@ -480,6 +491,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: 'Poppins_400Regular',
     height: '100%',
+    backgroundColor: 'transparent',
   },
   fieldError: {
     fontFamily: 'Poppins_400Regular',

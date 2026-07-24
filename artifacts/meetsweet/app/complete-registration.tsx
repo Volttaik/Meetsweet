@@ -242,7 +242,7 @@ const styles = StyleSheet.create({
   fieldLabel: {
     fontSize: 11,
     fontFamily: 'Poppins_400Regular',
-    color: '#4A3F72',
+    color: '#7A6EA0',
     marginBottom: 1,
   },
   fieldValue: {
@@ -255,7 +255,7 @@ const styles = StyleSheet.create({
   terms: {
     fontSize: 12,
     fontFamily: 'Poppins_400Regular',
-    color: '#4A3F72',
+    color: '#7A6EA0',
     textAlign: 'center',
     lineHeight: 18,
     marginBottom: 24,

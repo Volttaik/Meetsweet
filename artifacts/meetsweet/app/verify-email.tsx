@@ -18,7 +18,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ArrowLeft, Mail } from 'lucide-react-native';
+import { ArrowLeft, Info, Mail } from 'lucide-react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
 
 const DEMO_CODE = '123456';
@@ -170,6 +170,7 @@ export default function VerifyEmailScreen() {
 
         {/* Demo hint */}
         <View style={styles.demoHint}>
+          <Info size={14} color="#9385B8" />
           <Text style={styles.demoHintText}>Demo code: {DEMO_CODE}</Text>
         </View>
 
@@ -275,9 +276,12 @@ const styles = StyleSheet.create({
     fontFamily: 'Poppins_500Medium',
   },
   demoHint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     backgroundColor: '#1A1628',
     borderRadius: 10,
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingVertical: 10,
     borderWidth: 1,
     borderColor: '#2E2850',
@@ -286,7 +290,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: 'Poppins_400Regular',
     color: '#9385B8',
-    textAlign: 'center',
   },
   otpWrap: {
     alignItems: 'center',
@@ -339,7 +342,7 @@ const styles = StyleSheet.create({
   resendPrompt: {
     fontSize: 13,
     fontFamily: 'Poppins_400Regular',
-    color: '#4A3F72',
+    color: '#7A6EA0',
   },
   resendBtn: {
     fontSize: 14,

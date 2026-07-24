@@ -38,7 +38,7 @@ export default function MsInput({
       >
         <TextInput
           style={[styles.input, style]}
-          placeholderTextColor="#4A3F72"
+          placeholderTextColor="#6B5F8A"
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
           secureTextEntry={secureTextEntry && !showPassword}
