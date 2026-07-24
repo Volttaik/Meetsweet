@@ -23,22 +23,30 @@ export default function ExploreScreen() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const query = useGetExploreCatalog();
   const catalog = query.data;
+  const creators = catalog?.creators ?? [];
+  const categories = catalog?.categories ?? [];
+  const previewsData = catalog?.previews ?? [];
+  const featuredCreatorIds = catalog?.featuredCreatorIds ?? [];
+  const recommendedCreatorIds = catalog?.recommendedCreatorIds ?? [];
+  const trendingSearches = catalog?.trendingSearches ?? ['slow living', 'new creators', 'exclusive'];
+  const creditBalance = Number(catalog?.creditBalance ?? 0);
 
   const visibleCreators = useMemo(() => {
-    if (!catalog) return [];
+     if (!catalog) return [];
     const needle = search.trim().toLowerCase();
-    return catalog.creators.filter((creator) => {
-      const categoryMatch = activeCategory === 'all' || creator.category.toLowerCase() === activeCategory;
-      const searchMatch = !needle || `${creator.name} ${creator.handle} ${creator.bio} ${creator.category}`.toLowerCase().includes(needle);
+     return creators.filter((creator) => {
+       const category = String(creator.category ?? '');
+       const categoryMatch = activeCategory === 'all' || category.toLowerCase() === activeCategory;
+       const searchMatch = !needle || `${creator.name ?? ''} ${creator.handle ?? ''} ${creator.bio ?? ''} ${category}`.toLowerCase().includes(needle);
       return categoryMatch && searchMatch;
     });
-  }, [activeCategory, catalog, search]);
+   }, [activeCategory, catalog, creators, search]);
 
-  const featured = catalog?.featuredCreatorIds.map((id) => findCreator(catalog.creators, id)).filter(Boolean) as Creator[] | undefined;
-  const recommended = catalog?.recommendedCreatorIds.map((id) => findCreator(catalog.creators, id)).filter(Boolean) as Creator[] | undefined;
-  const previews = catalog?.previews.filter((preview) => {
-    const creator = findCreator(catalog.creators, preview.creatorId);
-    return creator && (activeCategory === 'all' || creator.category.toLowerCase() === activeCategory);
+  const featured = featuredCreatorIds.map((id) => findCreator(creators, id)).filter(Boolean) as Creator[];
+  const recommended = recommendedCreatorIds.map((id) => findCreator(creators, id)).filter(Boolean) as Creator[];
+  const previews = previewsData.filter((preview) => {
+    const creator = findCreator(creators, preview.creatorId);
+    return creator && (activeCategory === 'all' || String(creator.category ?? '').toLowerCase() === activeCategory);
   });
 
   const openCreator = (creator: Creator) => router.push(`/creator/${creator.id}`);
@@ -48,8 +56,11 @@ export default function ExploreScreen() {
   };
   const refresh = async () => {
     setRefreshing(true);
-    await query.refetch();
-    setRefreshing(false);
+    try {
+      await query.refetch();
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   return (
@@ -66,7 +77,7 @@ export default function ExploreScreen() {
           </Pressable>
           <Pressable style={styles.walletButton} onPress={() => router.push('/wallet')}>
             <WalletCards size={16} color={T.TEXT} strokeWidth={1.7} />
-            <Text style={styles.walletButtonText}>{catalog?.creditBalance.toLocaleString() ?? '—'}</Text>
+            <Text style={styles.walletButtonText}>{creditBalance.toLocaleString()}</Text>
           </Pressable>
         </View>
       </View>
@@ -93,7 +104,7 @@ export default function ExploreScreen() {
         </View>
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.trendingRow}>
-          {(catalog?.trendingSearches ?? ['slow living', 'new creators', 'exclusive']).map((tag) => (
+           {trendingSearches.map((tag) => (
             <Chip key={tag} variant="soft" color="default" size="sm" onPress={() => setSearch(tag)} style={styles.trendChip}>
               <Chip.Label style={styles.trendLabel}>#{tag.replaceAll(' ', '')}</Chip.Label>
             </Chip>
@@ -110,7 +121,7 @@ export default function ExploreScreen() {
               <View style={styles.creditIcon}><CreditCard size={18} color={T.BG} strokeWidth={1.8} /></View>
               <View style={styles.creditCopy}>
                 <Text style={styles.creditEyebrow}>YOUR CREATOR WALLET</Text>
-                <Text style={styles.creditBalance}>{catalog.creditBalance.toLocaleString()} <Text style={styles.creditUnit}>credits</Text></Text>
+                <Text style={styles.creditBalance}>{creditBalance.toLocaleString()} <Text style={styles.creditUnit}>credits</Text></Text>
               </View>
               <View style={styles.creditAction}><Text style={styles.creditActionText}>Top up</Text><ChevronRight size={15} color={T.TEXT} /></View>
             </Pressable>
@@ -120,7 +131,7 @@ export default function ExploreScreen() {
                   <SearchIcon size={15} color={T.TEXT_3} strokeWidth={1.6} />
             </View>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryRow}>
-              {catalog.categories.map((category) => {
+              {categories.map((category) => {
                 const active = category.id === activeCategory;
                 return (
                   <Chip key={category.id} variant={active ? 'primary' : 'soft'} color="default" size="sm" onPress={() => setActiveCategory(category.id)} style={[styles.categoryChip, active && styles.categoryChipActive]}>
@@ -160,7 +171,7 @@ export default function ExploreScreen() {
 
             <MsSectionHeader title="Trending collections" actionLabel="Explore all" style={styles.sectionHeader} />
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.collectionRow}>
-              {catalog.collections.map((collection) => <MsCollectionCard key={collection.id} collection={collection} onPress={() => setSearch(collection.title)} />)}
+              {(catalog.collections ?? []).map((collection) => <MsCollectionCard key={collection.id} collection={collection} onPress={() => setSearch(collection.title)} />)}
             </ScrollView>
 
             <MsSectionHeader title="Recently joined" actionLabel="Meet the newest" style={styles.sectionHeader} />
@@ -194,7 +205,7 @@ export default function ExploreScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: T.BG },
-  header: { minHeight: 72, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: T.BORDER },
+  header: { minHeight: 72, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   eyebrow: { color: T.TEXT_3, fontFamily: T.FONT.semibold, fontSize: 9, letterSpacing: 1.5 },
   title: { color: T.TEXT, fontFamily: T.FONT.bold, fontSize: 28, letterSpacing: -0.8, marginTop: 2 },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
@@ -203,11 +214,11 @@ const styles = StyleSheet.create({
   walletButton: { height: 38, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 11, borderRadius: 19, backgroundColor: T.TEXT },
   walletButtonText: { color: T.BG, fontFamily: T.FONT.semibold, fontSize: 11 },
   scrollContent: { paddingTop: 16 },
-  searchField: { marginHorizontal: 20, height: 46, borderRadius: T.RADIUS.md, borderWidth: 1, borderColor: T.BORDER_2, backgroundColor: T.SURFACE, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 13, gap: 9 },
+  searchField: { marginHorizontal: 20, height: 46, borderRadius: T.RADIUS.full, backgroundColor: T.SURFACE, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 15, gap: 9 },
   searchInput: { flex: 1, color: T.TEXT, fontFamily: T.FONT.regular, fontSize: 13, height: 44, paddingHorizontal: 0 },
   clearSearch: { color: T.TEXT_2, fontFamily: T.FONT.regular, fontSize: 22, lineHeight: 22 },
   trendingRow: { gap: 8, paddingHorizontal: 20, paddingVertical: 13 },
-  trendChip: { borderWidth: 1, borderColor: T.BORDER, backgroundColor: T.SURFACE },
+  trendChip: { backgroundColor: T.SURFACE },
   trendLabel: { color: T.TEXT_2, fontFamily: T.FONT.medium, fontSize: 11 },
   creditBanner: { marginHorizontal: 20, backgroundColor: T.TEXT, minHeight: 78, borderRadius: T.RADIUS.lg, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 11 },
   creditIcon: { width: 38, height: 38, borderRadius: 19, backgroundColor: T.BG, alignItems: 'center', justifyContent: 'center' },
@@ -220,8 +231,8 @@ const styles = StyleSheet.create({
   categoryHeader: { paddingHorizontal: 20, paddingTop: 25, paddingBottom: 3, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   sectionTitle: { color: T.TEXT, fontFamily: T.FONT.semibold, fontSize: 15 },
   categoryRow: { paddingHorizontal: 20, gap: 7, paddingVertical: 11 },
-  categoryChip: { backgroundColor: T.SURFACE, borderWidth: 1, borderColor: T.BORDER },
-  categoryChipActive: { backgroundColor: T.TEXT, borderColor: T.TEXT },
+  categoryChip: { backgroundColor: T.SURFACE },
+  categoryChipActive: { backgroundColor: T.TEXT },
   categoryLabel: { color: T.TEXT_2, fontFamily: T.FONT.medium, fontSize: 11 },
   categoryLabelActive: { color: T.BG },
   categoryCount: { color: T.TEXT_3, fontSize: 10 },

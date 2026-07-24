@@ -1,0 +1,1 @@
+- [Expo web color compatibility](expo-web-color-compatibility.md) — use hex color literals in shared NativeWind/Uniwind theme tokens; some preview runtimes reject OKLCH values.

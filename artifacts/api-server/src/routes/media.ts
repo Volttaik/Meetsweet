@@ -4,6 +4,7 @@ import path from "node:path";
 import { mkdir } from "node:fs/promises";
 import { v4 as uuidv4 } from "uuid";
 import { requireAuth, type AuthRequest } from "../middlewares/requireAuth.js";
+import { query } from "../lib/db.js";
 
 const router: IRouter = Router();
 
@@ -76,10 +77,30 @@ router.post(
       }
 
       const mediaType = ALLOWED_MIME[file.mimetype] ?? "image";
-      // Build absolute URL: prefer API_BASE_URL, fall back to Replit dev domain
-      const domain = process.env.API_BASE_URL
+      // Build a URL that works from both the Expo device and the proxied preview.
+      const configuredOrigin = process.env.API_BASE_URL
+        ?.replace(/\/api\/?$/, "")
+        .replace(/\/$/, "");
+      const origin = configuredOrigin
         ?? (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : "");
-      const fileUrl = `${domain}/api/media/${file.filename}`;
+      const fileUrl = `${origin}/api/media/${file.filename}`;
+
+      await query(
+        `INSERT INTO media
+          (id, user_id, url, thumbnail_url, media_type, filename, original_name, mime_type, file_size)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [
+          uuidv4(),
+          req.user!.sub,
+          fileUrl,
+          mediaType === "image" ? fileUrl : null,
+          mediaType,
+          file.filename,
+          file.originalname,
+          file.mimetype,
+          file.size,
+        ],
+      );
 
       res.json({
         url: fileUrl,

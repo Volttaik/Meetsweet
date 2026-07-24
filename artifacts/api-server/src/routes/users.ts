@@ -104,7 +104,7 @@ router.put("/users/me", requireAuth, async (req: AuthRequest, res) => {
 
 router.get("/users/:username", optionalAuth, async (req: AuthRequest, res) => {
   try {
-    const { username } = req.params;
+    const username = String(req.params.username);
 
     const user = await queryOne<Record<string, unknown>>(
       `SELECT * FROM users WHERE username = $1`,
@@ -145,7 +145,7 @@ router.get("/users/:username", optionalAuth, async (req: AuthRequest, res) => {
 
 router.post("/users/:username/follow", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const { username } = req.params;
+    const username = String(req.params.username);
     const target = await queryOne<Record<string, unknown>>(
       `SELECT id FROM users WHERE username = $1`,
       [username.toLowerCase()],
@@ -181,7 +181,7 @@ router.post("/users/:username/follow", requireAuth, async (req: AuthRequest, res
 
 router.delete("/users/:username/follow", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const { username } = req.params;
+    const username = String(req.params.username);
     const target = await queryOne<Record<string, unknown>>(
       `SELECT id FROM users WHERE username = $1`,
       [username.toLowerCase()],

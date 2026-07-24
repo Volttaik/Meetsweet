@@ -1,9 +1,9 @@
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Sparkles } from 'lucide-react-native';
 import { T } from '@/constants/theme';
 
 interface MsEmptyStateProps {
-  emoji?: string;
   title: string;
   message?: string;
   actionLabel?: string;
@@ -11,7 +11,6 @@ interface MsEmptyStateProps {
 }
 
 export function MsEmptyState({
-  emoji = '✦',
   title,
   message,
   actionLabel,
@@ -19,7 +18,9 @@ export function MsEmptyState({
 }: MsEmptyStateProps) {
   return (
     <View style={styles.wrap}>
-      <Text style={styles.emoji}>{emoji}</Text>
+      <View style={styles.iconCircle}>
+        <Sparkles size={24} color={T.TEXT_2} strokeWidth={2} />
+      </View>
       <Text style={styles.title}>{title}</Text>
       {message && <Text style={styles.message}>{message}</Text>}
       {actionLabel && onAction && (
@@ -39,7 +40,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 40,
     gap: 12,
   },
-  emoji: { fontSize: 44, marginBottom: 4 },
+  iconCircle: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: T.SURFACE,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
   title: {
     fontSize: 18,
     fontFamily: T.FONT.bold,
@@ -57,8 +66,8 @@ const styles = StyleSheet.create({
   btn: {
     marginTop: 8,
     paddingHorizontal: 28,
-    height: 44,
-    borderRadius: T.RADIUS.md,
+    height: 40,
+    borderRadius: T.RADIUS.full,
     backgroundColor: T.TEXT,
     alignItems: 'center',
     justifyContent: 'center',

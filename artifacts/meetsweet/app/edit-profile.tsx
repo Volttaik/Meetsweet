@@ -78,9 +78,9 @@ export default function EditProfileScreen() {
 
       if (updated?.user) {
         updateUser(updated.user);
-      } else {
+      } else if (user) {
         // Patch local state optimistically
-        updateUser({ ...user, name: name.trim(), bio: bio.trim() || null } as typeof user);
+        updateUser({ ...user, name: name.trim(), bio: bio.trim() || null });
       }
 
       router.back();

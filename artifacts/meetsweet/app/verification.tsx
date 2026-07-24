@@ -1,13 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Platform,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Button } from 'heroui-native';
+import { Button, Spinner } from 'heroui-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
@@ -19,12 +18,11 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import { ArrowLeft, CheckCircle } from 'lucide-react-native';
+import { ArrowLeft, CheckCircle, Lock } from 'lucide-react-native';
 import OTPInput, { OTPInputRef } from '@/components/OTPInput';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const DEMO_CODE = '5274';
 const RESEND_DURATION = 60;
 
 // ─── Success overlay ──────────────────────────────────────────────────────────
@@ -129,28 +127,13 @@ export default function VerificationScreen() {
     : '+1 (***) ***-**78';
 
   const handleVerify = async () => {
-    if (otp.length < 4) {
-      setError('Enter all 4 digits');
-      otpRef.current?.shake();
-      return;
-    }
-    if (otp !== DEMO_CODE) {
-      setError('Incorrect code — try ' + DEMO_CODE + ' for demo');
-      otpRef.current?.shake();
-      return;
-    }
-    setError('');
-    setLoading(true);
-    await new Promise((r) => setTimeout(r, 600));
-    setLoading(false);
-    setSuccess(true);
-    setTimeout(() => router.replace('/home'), 900);
+    setError('Phone verification is unavailable. Please use email verification.');
+    otpRef.current?.shake();
   };
 
   const handleOtpComplete = (code: string) => {
-    if (code === DEMO_CODE) {
-      handleVerify();
-    }
+    setOtp(code);
+    setError('');
   };
 
   const handleResend = () => {
@@ -189,7 +172,7 @@ export default function VerificationScreen() {
           <Animated.View style={[styles.header, headerStyle]}>
             {/* Lock icon circle */}
             <View style={styles.iconCircle}>
-              <Text style={styles.iconEmoji}>🔒</Text>
+              <Lock size={34} color="#FFFFFF" strokeWidth={1.8} />
             </View>
 
             <Text style={styles.title}>Verify Your Number</Text>
@@ -198,12 +181,6 @@ export default function VerificationScreen() {
               <Text style={styles.phoneHighlight}>{maskedPhone}</Text>
             </Text>
 
-            {/* Demo hint */}
-            <View style={styles.demoHint}>
-              <Text style={styles.demoHintText}>
-                Demo code: <Text style={styles.demoCode}>{DEMO_CODE}</Text>
-              </Text>
-            </View>
           </Animated.View>
 
           {/* OTP inputs */}
@@ -257,7 +234,7 @@ export default function VerificationScreen() {
             ]}
           >
             {loading ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
+              <Spinner size="sm" color="#FFFFFF" />
             ) : (
               <Button.Label style={[
                 styles.verifyBtnLabel,
@@ -317,9 +294,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 4,
   },
-  iconEmoji: {
-    fontSize: 34,
-  },
   title: {
     fontSize: 30,
     fontFamily: 'Poppins_700Bold',
@@ -337,26 +311,6 @@ const styles = StyleSheet.create({
   phoneHighlight: {
     color: '#FFFFFF',
     fontFamily: 'Poppins_600SemiBold',
-  },
-  demoHint: {
-    backgroundColor: '#111111',
-    borderRadius: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    marginTop: 4,
-  },
-  demoHintText: {
-    fontSize: 13,
-    fontFamily: 'Poppins_400Regular',
-    color: 'rgba(255,255,255,0.35)',
-    textAlign: 'center',
-  },
-  demoCode: {
-    color: 'rgba(255,255,255,0.7)',
-    fontFamily: 'Poppins_600SemiBold',
-    letterSpacing: 2,
   },
 
   otpSection: {

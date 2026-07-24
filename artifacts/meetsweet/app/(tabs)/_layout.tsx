@@ -1,5 +1,5 @@
 import React, { useCallback } from 'react';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Tabs, router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
@@ -8,11 +8,11 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
-import { Home, Search, Plus, MessageCircle, User } from 'lucide-react-native';
+import { Home, Search, MessageCircle, User } from 'lucide-react-native';
 import { T } from '@/constants/theme';
 
 const TAB_HEIGHT = 60;
-const INACTIVE_COLOR = '#777777'; // single consistent inactive gray
+const INACTIVE_COLOR = '#777777';
 
 type VisualTab = {
   label: string;
@@ -23,7 +23,7 @@ type VisualTab = {
 const VISUAL_TABS: VisualTab[] = [
   { label: 'Home',     Icon: Home,          routeName: 'index' },
   { label: 'Explore',  Icon: Search,        routeName: 'explore' },
-  { label: 'Create',   Icon: Plus            },
+  { label: 'Create',   Icon: MessageCircle  },
   { label: 'Messages', Icon: MessageCircle,  routeName: 'messages' },
   { label: 'Profile',  Icon: User,           routeName: 'profile' },
 ];
@@ -54,7 +54,12 @@ function TabBtn({
     return (
       <Pressable onPress={handlePress} style={styles.centerWrap}>
         <Animated.View style={[styles.centerBtn, scaleStyle]}>
-          <tab.Icon size={20} color="#000000" strokeWidth={2.5} />
+          <Image
+            source={require('../../assets/images/logo.png')}
+            style={styles.centerLogo}
+            resizeMode="contain"
+            accessibilityLabel="MeetSweet"
+          />
         </Animated.View>
       </Pressable>
     );
@@ -136,8 +141,6 @@ const styles = StyleSheet.create({
   bar: {
     flexDirection: 'row',
     backgroundColor: T.BG,
-    borderTopWidth: 1,
-    borderTopColor: T.BORDER_2,
     paddingTop: 8,
   },
   tabWrap: {
@@ -168,5 +171,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 4,
+  },
+  centerLogo: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
   },
 });

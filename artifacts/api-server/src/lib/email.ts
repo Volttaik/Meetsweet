@@ -1,12 +1,11 @@
 import { Resend } from "resend";
 
-// Initialize Resend lazily to handle missing key gracefully
+// Initialize Resend lazily so the module can be imported by health checks.
 let resend: Resend | null = null;
 
-function getResend(): Resend | null {
+function getResend(): Resend {
   if (!process.env.RESEND_API_KEY) {
-    console.warn("[EmailService] RESEND_API_KEY not set — emails will be logged but not sent");
-    return null;
+    throw new Error("RESEND_API_KEY must be set to send email");
   }
   if (!resend) {
     resend = new Resend(process.env.RESEND_API_KEY);
@@ -14,7 +13,13 @@ function getResend(): Resend | null {
   return resend;
 }
 
-const FROM = "MeetSweet <onboarding@resend.dev>";
+const configuredSender = process.env.RESEND_FROM_EMAIL;
+if (!configuredSender) {
+  throw new Error("RESEND_FROM_EMAIL must be set to a verified sender address");
+}
+const FROM = configuredSender.includes("<")
+  ? configuredSender
+  : `MeetSweet <${configuredSender}>`;
 const BRAND = "MeetSweet";
 const SUPPORT_EMAIL = "support@meetsweet.app";
 
@@ -189,10 +194,7 @@ export async function sendVerificationEmail(
   username: string,
   code: string,
 ): Promise<void> {
-  console.log(`[EmailService] Verification code for ${to}: ${code}`);
-
   const client = getResend();
-  if (!client) return;
 
   const html = buildHtml(
     "Verify your email",
@@ -228,10 +230,7 @@ export async function sendPasswordResetEmail(
   username: string,
   code: string,
 ): Promise<void> {
-  console.log(`[EmailService] Password reset code for ${to}: ${code}`);
-
   const client = getResend();
-  if (!client) return;
 
   const html = buildHtml(
     "Reset your password",
@@ -266,10 +265,7 @@ export async function sendWelcomeEmail(
   to: string,
   username: string,
 ): Promise<void> {
-  console.log(`[EmailService] Welcome email for ${to} (@${username})`);
-
   const client = getResend();
-  if (!client) return;
 
   const html = buildHtml(
     "Welcome to MeetSweet",
@@ -306,10 +302,7 @@ export async function sendPasswordChangedEmail(
   to: string,
   username: string,
 ): Promise<void> {
-  console.log(`[EmailService] Password changed notification for ${to}`);
-
   const client = getResend();
-  if (!client) return;
 
   const html = buildHtml(
     "Your password has been changed",

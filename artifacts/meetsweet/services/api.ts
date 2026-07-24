@@ -27,7 +27,7 @@ export class ApiError extends Error {
  */
 export async function apiFetch<T = unknown>(
   path: string,
-  options: RequestInit & { headers?: Record<string, string> } = {},
+  options: Omit<RequestInit, 'headers'> & { headers?: Record<string, string> } = {},
 ): Promise<T> {
   const base = getApiBase();
   const url = `${base}${path.startsWith('/') ? path : `/${path}`}`;
@@ -69,7 +69,7 @@ export async function apiFetch<T = unknown>(
 export async function authFetch<T = unknown>(
   path: string,
   token: string,
-  options: RequestInit & { headers?: Record<string, string> } = {},
+  options: Omit<RequestInit, 'headers'> & { headers?: Record<string, string> } = {},
 ): Promise<T> {
   return apiFetch<T>(path, {
     ...options,

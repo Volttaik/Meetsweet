@@ -96,7 +96,7 @@ export default function HomeScreen() {
           />
         </TouchableOpacity>
         <View style={styles.greetingWrap}>
-          <Text style={styles.greeting}>{greetingText()} 👋</Text>
+          <Text style={styles.greeting}>{greetingText()}</Text>
           <Text style={styles.handle}>@{user?.username ?? 'username'}</Text>
         </View>
         <View style={styles.topActions}>
@@ -150,8 +150,7 @@ export default function HomeScreen() {
             <MsSectionHeader title="Latest Posts" />
           }
           ListEmptyComponent={
-            <MsEmptyState
-              emoji="✨"
+             <MsEmptyState
               title="No posts yet"
               message="Be the first to share something. Tap + to create your first post."
               actionLabel="Create post"
@@ -182,8 +181,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 10,
     gap: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: T.BORDER,
   },
   greetingWrap: { flex: 1 },
   greeting: { fontSize: 14, fontFamily: T.FONT.semibold, color: T.TEXT, letterSpacing: -0.1 },
@@ -192,7 +189,7 @@ const styles = StyleSheet.create({
   iconBtn: {
     width: 38,
     height: 38,
-    borderRadius: T.RADIUS.md,
+    borderRadius: T.RADIUS.full,
     backgroundColor: T.SURFACE,
     alignItems: 'center',
     justifyContent: 'center',

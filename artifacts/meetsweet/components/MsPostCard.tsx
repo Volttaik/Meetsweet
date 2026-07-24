@@ -11,7 +11,7 @@ import {
   View,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
-import { Heart, MessageCircle, Bookmark, MoreHorizontal, BadgeCheck, Share2 } from 'lucide-react-native';
+import { Heart, MessageCircle, Bookmark, MoreHorizontal, BadgeCheck, Share2, Play } from 'lucide-react-native';
 import { T } from '@/constants/theme';
 import { MsAvatar } from '@/components/MsAvatar';
 import type { Post } from '@/services/posts';
@@ -203,7 +203,7 @@ export function MsPostCard({
             onPress={handleMore}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <MoreHorizontal size={18} color={T.TEXT_2} strokeWidth={1.8} />
+            <MoreHorizontal size={18} color={T.TEXT_2} strokeWidth={2} />
           </TouchableOpacity>
         </View>
       </View>
@@ -227,7 +227,7 @@ export function MsPostCard({
         <TouchableOpacity onPress={onPress} style={styles.videoPlaceholder} activeOpacity={0.85}>
           <View style={styles.videoOverlay}>
             <View style={styles.playBtn}>
-              <Text style={styles.playIcon}>▶</Text>
+               <Play size={20} color={T.TEXT} fill={T.TEXT} strokeWidth={2} />
             </View>
             {post.durationSecs != null && (
               <Text style={styles.duration}>
@@ -244,9 +244,9 @@ export function MsPostCard({
         {/* Like */}
         <TouchableOpacity style={styles.actionBtn} onPress={handleLike} activeOpacity={0.7}>
           <Heart
-            size={20}
+            size={18}
             color={liked ? '#EF4444' : T.TEXT_2}
-            strokeWidth={1.8}
+            strokeWidth={2}
             fill={liked ? '#EF4444' : 'transparent'}
           />
           {likeCount > 0 && (
@@ -258,7 +258,7 @@ export function MsPostCard({
 
         {/* Comment */}
         <TouchableOpacity style={styles.actionBtn} onPress={onPress} activeOpacity={0.7}>
-          <MessageCircle size={20} color={T.TEXT_2} strokeWidth={1.8} />
+          <MessageCircle size={18} color={T.TEXT_2} strokeWidth={2} />
           {post.commentCount > 0 && (
             <Text style={styles.actionCount}>{formatCount(post.commentCount)}</Text>
           )}
@@ -266,7 +266,7 @@ export function MsPostCard({
 
         {/* Share */}
         <TouchableOpacity style={styles.actionBtn} onPress={handleShare} activeOpacity={0.7}>
-          <Share2 size={20} color={T.TEXT_2} strokeWidth={1.8} />
+          <Share2 size={18} color={T.TEXT_2} strokeWidth={2} />
         </TouchableOpacity>
 
         <View style={{ flex: 1 }} />
@@ -274,9 +274,9 @@ export function MsPostCard({
         {/* Bookmark */}
         <TouchableOpacity style={styles.actionBtn} onPress={handleBookmark} activeOpacity={0.7}>
           <Bookmark
-            size={20}
+            size={18}
             color={bookmarked ? T.TEXT : T.TEXT_2}
-            strokeWidth={1.8}
+            strokeWidth={2}
             fill={bookmarked ? T.TEXT : 'transparent'}
           />
         </TouchableOpacity>
@@ -323,8 +323,6 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     borderRadius: T.RADIUS.xs,
     backgroundColor: T.SURFACE_2,
-    borderWidth: 1,
-    borderColor: T.BORDER_2,
   },
   premiumText: {
     fontSize: 9,
@@ -335,6 +333,8 @@ const styles = StyleSheet.create({
   moreBtn: {
     width: 30,
     height: 30,
+    borderRadius: 15,
+    backgroundColor: T.SURFACE,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -363,12 +363,9 @@ const styles = StyleSheet.create({
     height: 56,
     borderRadius: 28,
     backgroundColor: 'rgba(255,255,255,0.15)',
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.4)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  playIcon: { fontSize: 20, color: '#FFFFFF', marginLeft: 4 },
   duration: { fontSize: 12, fontFamily: T.FONT.medium, color: 'rgba(255,255,255,0.7)' },
 
   actions: {
@@ -379,11 +376,13 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   actionBtn: {
-    flexDirection: 'row',
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: T.SURFACE,
     alignItems: 'center',
     gap: 5,
-    paddingHorizontal: 4,
-    paddingVertical: 4,
+    justifyContent: 'center',
   },
   actionCount: { fontSize: 13, fontFamily: T.FONT.medium, color: T.TEXT_2 },
   actionCountLiked: { color: '#EF4444' },

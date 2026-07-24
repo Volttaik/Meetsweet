@@ -7,16 +7,16 @@
 @layer theme {
   :root {
     @variant light {
-      --background:       oklch(0.99 0 0);
-      --foreground:       oklch(0 0 0);
-      --surface:          oklch(1 0 0);
-      --surface-foreground: oklch(0 0 0);
-      --accent:           oklch(0 0 0);
-      --accent-foreground: oklch(1 0 0);
-      --border:           oklch(0.88 0 0);
-      --muted:            oklch(0.45 0 0);
-      --default:          oklch(0.95 0 0);
-      --default-foreground: oklch(0 0 0);
+       --background:       #FCFCFC;
+       --foreground:       #000000;
+       --surface:          #FFFFFF;
+       --surface-foreground: #000000;
+       --accent:           #000000;
+       --accent-foreground: #FFFFFF;
+       --border:           #D9D9D9;
+       --muted:            #666666;
+       --default:          #F2F2F2;
+       --default-foreground: #000000;
 
       --font-normal:   'Poppins_400Regular';
       --font-medium:   'Poppins_500Medium';
@@ -26,16 +26,16 @@
     }
 
     @variant dark {
-      --background:       oklch(0.065 0 0);
-      --foreground:       oklch(1 0 0);
-      --surface:          oklch(0.12 0 0);
-      --surface-foreground: oklch(1 0 0);
-      --accent:           oklch(1 0 0);
-      --accent-foreground: oklch(0 0 0);
-      --border:           oklch(0.22 0 0);
-      --muted:            oklch(0.55 0 0);
-      --default:          oklch(0.16 0 0);
-      --default-foreground: oklch(1 0 0);
+       --background:       #111111;
+       --foreground:       #FFFFFF;
+       --surface:          #1F1F1F;
+       --surface-foreground: #FFFFFF;
+       --accent:           #FFFFFF;
+       --accent-foreground: #000000;
+       --border:           #383838;
+       --muted:            #858585;
+       --default:          #292929;
+       --default-foreground: #FFFFFF;
 
       --font-normal:   'Poppins_400Regular';
       --font-medium:   'Poppins_500Medium';

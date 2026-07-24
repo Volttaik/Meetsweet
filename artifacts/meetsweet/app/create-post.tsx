@@ -15,17 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import { Button, Chip, Spinner } from 'heroui-native';
-import {
-  ArrowLeft,
-  Camera,
-  Check,
-  Film,
-  Globe,
-  Image as ImageIcon,
-  Lock,
-  Plus,
-  X,
-} from 'lucide-react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { T } from '@/constants/theme';
 import { uploadMedia } from '@/services/media';
 import { createPost } from '@/services/posts';
@@ -43,19 +33,19 @@ const VISIBILITY_OPTIONS = [
     value: 'public' as const,
     label: 'Public Preview',
     description: 'Visible to everyone',
-    Icon: Globe,
+    icon: 'globe-outline' as const,
   },
   {
     value: 'subscribers' as const,
     label: 'Subscribers Only',
     description: 'Locked until subscription',
-    Icon: Lock,
+    icon: 'lock-closed-outline' as const,
   },
   {
     value: 'draft' as const,
     label: 'Draft',
     description: 'Only you can see this',
-    Icon: ImageIcon,
+    icon: 'image-outline' as const,
   },
 ];
 
@@ -98,9 +88,9 @@ export default function CreatePostScreen() {
 
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: type === 'image' ? ['images'] : ['videos'],
-      allowsEditing: true,
+      allowsEditing: type === 'image',
       aspect: type === 'image' ? [1, 1] : undefined,
-      quality: 0.85,
+      quality: type === 'image' ? 0.85 : undefined,
       videoMaxDuration: 300,
     });
 
@@ -108,10 +98,10 @@ export default function CreatePostScreen() {
       const asset = result.assets[0];
       setMediaUri(asset.uri);
       setMediaType(type);
-      const mime = type === 'image' ? 'image/jpeg' : 'video/mp4';
-      const ext = type === 'image' ? 'jpg' : 'mp4';
+      const mime = asset.mimeType ?? (type === 'image' ? 'image/jpeg' : 'video/mp4');
+      const ext = asset.fileName?.split('.').pop() ?? (type === 'image' ? 'jpg' : 'mp4');
       setMediaMime(mime);
-      setMediaName(`media-${Date.now()}.${ext}`);
+      setMediaName(asset.fileName ?? `media-${Date.now()}.${ext}`);
     }
   }, []);
 
@@ -150,6 +140,7 @@ export default function CreatePostScreen() {
 
     setError('');
     setStep('uploading');
+    setUploadProgress(0);
 
     try {
       let uploadedMediaUrl: string | undefined;
@@ -282,7 +273,7 @@ export default function CreatePostScreen() {
                 onPress={() => pickMedia('image')}
                 activeOpacity={0.8}
               >
-                <Camera size={24} color={T.TEXT_2} strokeWidth={1.8} />
+                 <Ionicons name="camera-outline" size={24} color={T.TEXT_2} />
                 <Text style={styles.mediaPickerLabel}>Photo</Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -290,7 +281,7 @@ export default function CreatePostScreen() {
                 onPress={() => pickMedia('video')}
                 activeOpacity={0.8}
               >
-                <Film size={24} color={T.TEXT_2} strokeWidth={1.8} />
+                 <Ionicons name="videocam-outline" size={24} color={T.TEXT_2} />
                 <Text style={styles.mediaPickerLabel}>Video</Text>
               </TouchableOpacity>
             </View>
@@ -301,12 +292,12 @@ export default function CreatePostScreen() {
               )}
               {mediaType === 'video' && (
                 <View style={styles.videoThumb}>
-                  <Film size={40} color={T.TEXT_2} strokeWidth={1.4} />
+                   <Ionicons name="videocam-outline" size={40} color={T.TEXT_2} />
                   <Text style={styles.videoLabel}>Video selected</Text>
                 </View>
               )}
               <TouchableOpacity style={styles.removeMedia} onPress={removeMedia}>
-                <X size={16} color={T.BG} strokeWidth={2.5} />
+                 <Ionicons name="close" size={17} color={T.BG} />
               </TouchableOpacity>
             </View>
           )}
@@ -344,10 +335,10 @@ export default function CreatePostScreen() {
                   onPress={() => setVisibility(opt.value)}
                   activeOpacity={0.75}
                 >
-                  <opt.Icon
+                   <Ionicons
+                     name={opt.icon}
                     size={18}
                     color={isActive ? T.BG : T.TEXT_2}
-                    strokeWidth={1.8}
                   />
                   <View style={styles.visibilityText}>
                     <Text style={[styles.visibilityLabel, isActive && styles.visibilityLabelActive]}>
@@ -358,7 +349,7 @@ export default function CreatePostScreen() {
                     </Text>
                   </View>
                   {isActive && (
-                    <Check size={16} color={T.BG} strokeWidth={2.5} />
+                     <Ionicons name="checkmark" size={17} color={T.BG} />
                   )}
                 </TouchableOpacity>
               );
@@ -367,7 +358,7 @@ export default function CreatePostScreen() {
 
           {visibility === 'subscribers' && (
             <View style={styles.premiumNote}>
-              <Lock size={14} color={T.TEXT_2} strokeWidth={1.8} />
+               <Ionicons name="lock-closed-outline" size={14} color={T.TEXT_2} />
               <Text style={styles.premiumNoteText}>
                 Subscribers will see a locked preview with a PREMIUM badge.
               </Text>
@@ -418,7 +409,7 @@ export default function CreatePostScreen() {
               onPress={addTag}
               activeOpacity={0.75}
             >
-              <Plus size={16} color={T.BG} strokeWidth={2.5} />
+               <Ionicons name="add" size={19} color={T.BG} />
             </TouchableOpacity>
           </View>
           {tags.length > 0 && (
@@ -431,7 +422,7 @@ export default function CreatePostScreen() {
                   activeOpacity={0.75}
                 >
                   <Text style={styles.tagChipLabel}>#{tag}</Text>
-                  <X size={12} color={T.TEXT_2} strokeWidth={2} />
+                   <Ionicons name="close" size={13} color={T.TEXT_2} />
                 </TouchableOpacity>
               ))}
             </View>
@@ -446,9 +437,9 @@ export default function CreatePostScreen() {
         )}
 
         {/* ─── Publish button ────────────────────────────────────────────────── */}
-        <Button
+         <Button
           variant="primary"
-          size="lg"
+           size="md"
           onPress={handlePublish}
           isDisabled={!caption.trim() && !mediaUri}
           style={styles.publishFooterBtn}
@@ -475,13 +466,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 20,
     height: 56,
-    borderBottomWidth: 1,
-    borderBottomColor: T.BORDER,
   },
   headerBtn: {
     width: 36,
     height: 36,
-    borderRadius: T.RADIUS.md,
+    borderRadius: T.RADIUS.full,
     backgroundColor: T.SURFACE,
     alignItems: 'center',
     justifyContent: 'center',
@@ -533,8 +522,6 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 90,
     borderRadius: T.RADIUS.lg,
-    borderWidth: 1,
-    borderColor: T.BORDER_2,
     borderStyle: 'dashed',
     backgroundColor: T.SURFACE,
     alignItems: 'center',
@@ -585,8 +572,6 @@ const styles = StyleSheet.create({
   captionWrap: {
     backgroundColor: T.SURFACE,
     borderRadius: T.RADIUS.md,
-    borderWidth: 1,
-    borderColor: T.BORDER_2,
     padding: 14,
     minHeight: 120,
   },
@@ -611,14 +596,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 14,
     borderRadius: T.RADIUS.md,
-    borderWidth: 1,
-    borderColor: T.BORDER,
     backgroundColor: T.SURFACE,
     gap: 12,
   },
   visibilityOptionActive: {
     backgroundColor: T.TEXT,
-    borderColor: T.TEXT,
   },
   visibilityText: { flex: 1 },
   visibilityLabel: {
@@ -641,8 +623,6 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: T.RADIUS.sm,
     backgroundColor: T.SURFACE_2,
-    borderWidth: 1,
-    borderColor: T.BORDER_2,
   },
   premiumNoteText: {
     flex: 1,
@@ -658,8 +638,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: T.RADIUS.full,
-    borderWidth: 1,
-    borderColor: T.BORDER_2,
     backgroundColor: T.SURFACE,
   },
   categoryChipActive: { backgroundColor: T.TEXT, borderColor: T.TEXT },
@@ -681,8 +659,6 @@ const styles = StyleSheet.create({
     height: 44,
     backgroundColor: T.SURFACE,
     borderRadius: T.RADIUS.md,
-    borderWidth: 1,
-    borderColor: T.BORDER_2,
     paddingHorizontal: 14,
     fontSize: 14,
     fontFamily: T.FONT.regular,
@@ -691,7 +667,7 @@ const styles = StyleSheet.create({
   tagAddBtn: {
     width: 44,
     height: 44,
-    borderRadius: T.RADIUS.md,
+    borderRadius: T.RADIUS.full,
     backgroundColor: T.TEXT,
     alignItems: 'center',
     justifyContent: 'center',
@@ -703,8 +679,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: T.RADIUS.full,
-    borderWidth: 1,
-    borderColor: T.BORDER_2,
     backgroundColor: T.SURFACE,
   },
   tagChipLabel: {
@@ -720,8 +694,6 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: T.RADIUS.md,
     backgroundColor: 'rgba(239,68,68,0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(239,68,68,0.3)',
   },
   errorText: {
     fontSize: 13,
@@ -733,7 +705,7 @@ const styles = StyleSheet.create({
   // Publish button
   publishFooterBtn: {
     marginHorizontal: 20,
-    marginTop: 24,
+     marginTop: 20,
   },
   publishFooterBtnLabel: {
     fontFamily: T.FONT.semibold,

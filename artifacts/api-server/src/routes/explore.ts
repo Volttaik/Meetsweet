@@ -41,7 +41,7 @@ router.get("/explore", optionalAuth, async (req: AuthRequest, res) => {
     // Fetch all data in parallel
     const [categoriesRaw, creatorsRaw, postsRaw, userRow] = await Promise.all([
       query<Record<string, unknown>>(
-        `SELECT id, name, slug, post_count FROM categories ORDER BY name`,
+        `SELECT id, name, post_count FROM categories ORDER BY name`,
       ),
       query<Record<string, unknown>>(
         `SELECT id, name, username, bio, avatar_url, is_verified, is_creator,
@@ -71,7 +71,7 @@ router.get("/explore", optionalAuth, async (req: AuthRequest, res) => {
     const categories = [
       { id: "all", label: "All", count: categoriesRaw.reduce((s, c) => s + Number(c.post_count ?? 0), 0) },
       ...categoriesRaw.map((c) => ({
-        id: String(c.slug),
+        id: String(c.name ?? '').trim().toLowerCase().replace(/\s+/g, "-"),
         label: String(c.name),
         count: Number(c.post_count ?? 0),
       })),

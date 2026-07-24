@@ -225,12 +225,12 @@ const recommendedStyles = StyleSheet.create({
   meta: { alignItems: 'flex-end', marginLeft: 'auto', marginRight: 4 },
   category: { color: T.TEXT_3, fontFamily: T.FONT.semibold, fontSize: 9, letterSpacing: 1 },
   followers: { color: T.TEXT_2, fontFamily: T.FONT.regular, fontSize: 10, marginTop: 3 },
-  followButton: { borderWidth: 1, borderColor: T.BORDER_2, borderRadius: T.RADIUS.sm, paddingHorizontal: 12, height: 31, alignItems: 'center', justifyContent: 'center' },
+  followButton: { borderRadius: T.RADIUS.full, paddingHorizontal: 12, height: 31, backgroundColor: T.SURFACE, alignItems: 'center', justifyContent: 'center' },
   followLabel: { color: T.TEXT, fontFamily: T.FONT.semibold, fontSize: 11 },
 });
 
 const previewStyles = StyleSheet.create({
-  card: { width: 164, backgroundColor: T.SURFACE, borderRadius: T.RADIUS.lg, borderWidth: 1, borderColor: T.BORDER, overflow: 'hidden' },
+  card: { width: 164, backgroundColor: T.SURFACE, borderRadius: T.RADIUS.lg, overflow: 'hidden' },
   art: { height: 126, padding: 12, justifyContent: 'space-between' },
   artLines: { gap: 7, marginTop: 30 },
   lineWide: { height: 5, width: '70%', backgroundColor: 'rgba(255,255,255,0.23)', borderRadius: 3 },

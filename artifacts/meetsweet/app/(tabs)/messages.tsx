@@ -70,7 +70,7 @@ function ConversationRow({ item }: { item: Conversation }) {
           style={[styles.convoMsg, isUnread && styles.convoMsgUnread]}
           numberOfLines={1}
         >
-          {item.lastMessageBody ?? 'Say hello 👋'}
+          {item.lastMessageBody ?? 'Say hello'}
         </Text>
       </View>
       <View style={styles.convoRight}>
@@ -173,7 +173,7 @@ function NewMessageModal({
             )}
           />
         ) : q.length >= 2 ? (
-          <MsEmptyState emoji="🔍" title="No users found" message={`No one matches "${q}"`} />
+          <MsEmptyState title="No users found" message={`No one matches "${q}"`} />
         ) : (
           <Text style={styles.modalHint}>Type at least 2 characters to search</Text>
         )}
@@ -287,7 +287,6 @@ export default function MessagesScreen() {
           refreshing={refreshing}
           ListEmptyComponent={
             <MsEmptyState
-              emoji="💬"
               title={
                 activeTab === 'Archived'
                   ? 'No archived conversations'
@@ -339,7 +338,7 @@ const styles = StyleSheet.create({
   iconBtn: {
     width: 38,
     height: 38,
-    borderRadius: T.RADIUS.md,
+    borderRadius: 19,
     backgroundColor: T.SURFACE,
     alignItems: 'center',
     justifyContent: 'center',
@@ -352,8 +351,7 @@ const styles = StyleSheet.create({
     marginVertical: 12,
     backgroundColor: T.SURFACE,
     borderRadius: T.RADIUS.md,
-    borderWidth: 1,
-    borderColor: T.BORDER_2,
+    borderWidth: 0,
     paddingHorizontal: 14,
     height: 42,
     gap: 10,
@@ -372,8 +370,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 7,
     borderRadius: T.RADIUS.full,
-    borderWidth: 1,
-    borderColor: T.BORDER_2,
     backgroundColor: T.SURFACE,
   },
   tabChipActive: { backgroundColor: T.TEXT, borderColor: T.TEXT },

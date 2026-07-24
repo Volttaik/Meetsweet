@@ -6,7 +6,10 @@ const router: IRouter = Router();
 router.get("/categories", async (_req, res) => {
   try {
     const categories = await query<Record<string, unknown>>(
-      `SELECT id, name, slug, post_count as "postCount" FROM categories ORDER BY name ASC`,
+      `SELECT id, name, lower(regexp_replace(trim(name), '\s+', '-', 'g')) as slug,
+              post_count as "postCount"
+       FROM categories
+       ORDER BY name ASC`,
     );
     res.json({ categories });
   } catch (err) {

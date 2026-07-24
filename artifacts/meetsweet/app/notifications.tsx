@@ -196,7 +196,6 @@ export default function NotificationsScreen() {
         </View>
       ) : notifications.length === 0 ? (
         <MsEmptyState
-          emoji="🔔"
           title="No notifications yet"
           message="When someone likes your post, follows you, or sends a message, you'll see it here."
         />

@@ -10,7 +10,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Settings, Share2 } from 'lucide-react-native';
+import { Camera, FileText, Film, Image as ImageIcon, Settings, Share2 } from 'lucide-react-native';
 import { router } from 'expo-router';
 import { T } from '@/constants/theme';
 import { MsAvatar } from '@/components/MsAvatar';
@@ -114,7 +114,6 @@ export default function ProfileScreen() {
       if (posts.length === 0) {
         return (
           <MsEmptyState
-            emoji="📸"
             title="No posts yet"
             message="Tap the + button to share your first post with the world."
             actionLabel="Create post"
@@ -134,7 +133,7 @@ export default function ProfileScreen() {
                 // Show media preview (image thumbnail)
                 <View style={{ flex: 1, backgroundColor: T.SURFACE_2, alignItems: 'center', justifyContent: 'center' }}>
                   <Text style={{ color: T.TEXT_3, fontSize: 11, fontFamily: T.FONT.medium }}>
-                    {p.mediaType === 'video' ? '▶' : '📷'}
+                    {p.mediaType === 'video' ? <Film size={18} color={T.TEXT_3} /> : <ImageIcon size={18} color={T.TEXT_3} />}
                   </Text>
                 </View>
               )}
@@ -154,7 +153,6 @@ export default function ProfileScreen() {
       if (mediaPosts.length === 0) {
         return (
           <MsEmptyState
-            emoji="🖼️"
             title="No media yet"
             message="Post photos or videos to see them here."
           />
@@ -168,7 +166,7 @@ export default function ProfileScreen() {
               style={{ width: gridItemSize, height: gridItemSize, backgroundColor: T.SURFACE_2, alignItems: 'center', justifyContent: 'center' }}
             >
               <Text style={{ color: T.TEXT_3, fontSize: 11 }}>
-                {p.mediaType === 'video' ? '▶' : '📷'}
+                {p.mediaType === 'video' ? <Film size={18} color={T.TEXT_3} /> : <ImageIcon size={18} color={T.TEXT_3} />}
               </Text>
             </View>
           ))}
@@ -188,7 +186,6 @@ export default function ProfileScreen() {
     if (savedPosts.length === 0) {
       return (
         <MsEmptyState
-          emoji="🔖"
           title="No saved posts"
           message="Posts you bookmark will appear here."
         />
@@ -202,7 +199,7 @@ export default function ProfileScreen() {
             style={{ width: gridItemSize, height: gridItemSize, backgroundColor: T.SURFACE_2, alignItems: 'center', justifyContent: 'center' }}
           >
             <Text style={{ color: T.TEXT_3, fontSize: 11 }}>
-              {p.mediaType === 'video' ? '▶' : p.mediaUrl ? '📷' : '📝'}
+                {p.mediaType === 'video' ? <Film size={18} color={T.TEXT_3} /> : p.mediaUrl ? <Camera size={18} color={T.TEXT_3} /> : <FileText size={18} color={T.TEXT_3} />}
             </Text>
           </View>
         ))}
@@ -314,7 +311,7 @@ const styles = StyleSheet.create({
   iconBtn: {
     width: 36,
     height: 36,
-    borderRadius: T.RADIUS.md,
+    borderRadius: T.RADIUS.full,
     backgroundColor: T.SURFACE,
     alignItems: 'center',
     justifyContent: 'center',
@@ -339,9 +336,7 @@ const styles = StyleSheet.create({
   editBtn: {
     paddingHorizontal: 20,
     height: 34,
-    borderRadius: T.RADIUS.md,
-    borderWidth: 1,
-    borderColor: T.BORDER_2,
+    borderRadius: T.RADIUS.full,
     backgroundColor: T.SURFACE,
     alignItems: 'center',
     justifyContent: 'center',

@@ -78,10 +78,11 @@ router.post("/auth/register", async (req, res) => {
       res.status(400).json({ error: "Email or phone is required" });
       return;
     }
+    const normalizedEmail = email?.trim().toLowerCase();
 
     // Check unique email
-    if (email) {
-      const existing = await queryOne("SELECT id FROM users WHERE email = $1", [email]);
+    if (normalizedEmail) {
+      const existing = await queryOne("SELECT id FROM users WHERE email = $1", [normalizedEmail]);
       if (existing) {
         res.status(409).json({ error: "Email is already registered" });
         return;
@@ -115,7 +116,7 @@ router.post("/auth/register", async (req, res) => {
       `INSERT INTO users (id, name, username, email, phone, password_hash, bio, avatar_url)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING *`,
-      [userId, name.trim(), finalUsername, email ?? null, phone ?? null, passwordHash, bio ?? null, avatarUrl ?? null],
+      [userId, name.trim(), finalUsername, normalizedEmail ?? null, phone ?? null, passwordHash, bio ?? null, avatarUrl ?? null],
     );
 
     // Create tokens
@@ -141,17 +142,18 @@ router.post("/auth/register", async (req, res) => {
     );
     user.credits = 500;
 
-    // Send welcome email + verification code (fire-and-forget)
-    if (email) {
+    // Persist the code before responding so verification is available immediately.
+    if (normalizedEmail) {
       const code = generateCode();
-      queryRaw(
+      await queryRaw(
         `INSERT INTO email_verifications (user_id, email, code, type, expires_at)
          VALUES ($1, $2, $3, 'verify', NOW() + INTERVAL '15 minutes')`,
-        [userId, email, code],
-      ).then(() => {
-        emailService.sendWelcomeEmail(email, finalUsername).catch(() => {});
-        emailService.sendVerificationEmail(email, finalUsername, code).catch(() => {});
-      }).catch(() => {});
+        [userId, normalizedEmail, code],
+      );
+      await Promise.all([
+        emailService.sendWelcomeEmail(normalizedEmail, finalUsername),
+        emailService.sendVerificationEmail(normalizedEmail, finalUsername, code),
+      ]);
     }
 
     res.status(201).json({
@@ -380,7 +382,7 @@ router.post("/auth/resend-verification", async (req, res) => {
       [user.id, email.toLowerCase(), code],
     );
 
-    emailService.sendVerificationEmail(email, user.username, code).catch(() => {});
+    await emailService.sendVerificationEmail(email, user.username, code);
 
     res.json({ success: true });
   } catch (err) {
@@ -418,7 +420,7 @@ router.post("/auth/forgot-password", async (req, res) => {
       [user.id, email.toLowerCase(), code],
     );
 
-    emailService.sendPasswordResetEmail(email, user.username, code).catch(() => {});
+    await emailService.sendPasswordResetEmail(email, user.username, code);
 
     res.json({ success: true });
   } catch (err) {
@@ -470,9 +472,9 @@ router.post("/auth/reset-password", async (req, res) => {
     queryOne<{ email: string; username: string }>(
       `SELECT email, username FROM users WHERE id = $1`,
       [record.user_id],
-    ).then((u) => {
+    ).then(async (u) => {
       if (u?.email) {
-        emailService.sendPasswordChangedEmail(u.email, u.username).catch(() => {});
+        await emailService.sendPasswordChangedEmail(u.email, u.username);
       }
     }).catch(() => {});
 
@@ -526,7 +528,7 @@ router.put("/auth/password", requireAuth, async (req: AuthRequest, res) => {
 
     // Send password changed email
     if (user.email) {
-      emailService.sendPasswordChangedEmail(user.email, user.username).catch(() => {});
+      await emailService.sendPasswordChangedEmail(user.email, user.username);
     }
 
     res.json({ success: true });

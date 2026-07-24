@@ -181,7 +181,7 @@ export default function SettingsScreen() {
         {/* Security */}
         <SectionHeader title="Security" />
         <View style={styles.section}>
-          <SettingsRow Icon={Lock}    label="Change Password"          onPress={() => router.push('/change-password')} />
+          <SettingsRow Icon={Lock}    label="Change Password"          onPress={() => {}} />
           <View style={styles.rowDivider} />
           <SettingsRow Icon={Shield}  label="Two-Factor Authentication" onPress={() => {}} badge="Off" />
           <View style={styles.rowDivider} />
