@@ -1,1 +1,3 @@
 - [Expo web color compatibility](expo-web-color-compatibility.md) — use hex color literals in shared NativeWind/Uniwind theme tokens; some preview runtimes reject OKLCH values.
+- [MeetSweet Database Schema](meetsweet-db-schema.md) — 16-table PostgreSQL schema; API uses raw pg (not Drizzle); schema.sql is idempotent and lives in artifacts/api-server/src/db/schema.sql.
+- [MeetSweet Icon System](meetsweet-icons.md) — all screens use phosphor-react-native (not lucide-react-native); use weight prop not strokeWidth; icon name mapping documented there.
