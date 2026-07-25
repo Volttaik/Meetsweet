@@ -11,8 +11,8 @@ import { generateId } from "@/lib/auth/codes";
 export async function GET(req: NextRequest) {
   const parsed = parseQuery(req.nextUrl.searchParams, postQuerySchema);
   if (!parsed.success) return parsed.response;
-  const page = parsed.data.page ?? 1;
-  const limit = parsed.data.limit ?? 20;
+  const page = Number(parsed.data.page ?? 1);
+  const limit = Number(parsed.data.limit ?? 20);
   const offset = (page - 1) * limit;
   const bookmarked = parsed.data.bookmarked;
 
