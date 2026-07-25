@@ -1,29 +1,34 @@
 {
   "pages": {
-    "/api/healthz/route": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/api/healthz/route.js"
-    ],
     "/api/auth/login/route": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
       "static/chunks/app/api/auth/login/route.js"
     ],
-    "/api/messages/conversations/[conversationId]/messages/route": [
+    "/api/posts/route": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/api/messages/conversations/[conversationId]/messages/route.js"
+      "static/chunks/app/api/posts/route.js"
     ],
-    "/api/messages/[messageId]/route": [
+    "/api/categories/route": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/api/messages/[messageId]/route.js"
+      "static/chunks/app/api/categories/route.js"
     ],
-    "/api/profiles/[userId]/creator-settings/route": [
+    "/api/media/upload/route": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/api/profiles/[userId]/creator-settings/route.js"
+      "static/chunks/app/api/media/upload/route.js"
+    ],
+    "/api/posts/[postId]/bookmark/route": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/api/posts/[postId]/bookmark/route.js"
+    ],
+    "/api/posts/[postId]/archive/route": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/api/posts/[postId]/archive/route.js"
     ]
   }
 }

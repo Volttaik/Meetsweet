@@ -6,6 +6,14 @@ import { requireAuth } from "@/middleware/auth";
 import { ok, forbidden, notFound } from "@/lib/api/response";
 import { generateId } from "@/lib/auth/codes";
 
+// Mobile app sends PUT — accept both
+export async function PUT(
+  req: NextRequest,
+  { params }: { params: Promise<{ postId: string }> }
+) {
+  return POST(req, { params });
+}
+
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ postId: string }> }

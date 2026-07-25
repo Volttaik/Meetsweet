@@ -5,6 +5,14 @@ import { posts } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
 import { ok, forbidden, notFound, err } from "@/lib/api/response";
 
+// Mobile app sends PUT — accept both
+export async function PUT(
+  req: NextRequest,
+  { params }: { params: Promise<{ postId: string }> }
+) {
+  return POST(req, { params });
+}
+
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ postId: string }> }

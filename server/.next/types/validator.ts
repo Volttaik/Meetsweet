@@ -173,6 +173,15 @@ type RouteHandlerConfig<Route extends AppRouteHandlerRoutes = AppRouteHandlerRou
   type __Unused = __Check
 }
 
+// Validate ../../app/api/categories/route.ts
+{
+  type __IsExpected<Specific extends RouteHandlerConfig<"/api/categories">> = Specific
+  const handler = {} as typeof import("../../app/api/categories/route.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
 // Validate ../../app/api/comments/[commentId]/like/route.ts
 {
   type __IsExpected<Specific extends RouteHandlerConfig<"/api/comments/[commentId]/like">> = Specific
@@ -258,6 +267,15 @@ type RouteHandlerConfig<Route extends AppRouteHandlerRoutes = AppRouteHandlerRou
 {
   type __IsExpected<Specific extends RouteHandlerConfig<"/api/healthz">> = Specific
   const handler = {} as typeof import("../../app/api/healthz/route.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
+// Validate ../../app/api/media/upload/route.ts
+{
+  type __IsExpected<Specific extends RouteHandlerConfig<"/api/media/upload">> = Specific
+  const handler = {} as typeof import("../../app/api/media/upload/route.js")
   type __Check = __IsExpected<typeof handler>
   // @ts-ignore
   type __Unused = __Check
@@ -402,6 +420,15 @@ type RouteHandlerConfig<Route extends AppRouteHandlerRoutes = AppRouteHandlerRou
 {
   type __IsExpected<Specific extends RouteHandlerConfig<"/api/posts/[postId]/archive">> = Specific
   const handler = {} as typeof import("../../app/api/posts/[postId]/archive/route.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
+// Validate ../../app/api/posts/[postId]/bookmark/route.ts
+{
+  type __IsExpected<Specific extends RouteHandlerConfig<"/api/posts/[postId]/bookmark">> = Specific
+  const handler = {} as typeof import("../../app/api/posts/[postId]/bookmark/route.js")
   type __Check = __IsExpected<typeof handler>
   // @ts-ignore
   type __Unused = __Check
