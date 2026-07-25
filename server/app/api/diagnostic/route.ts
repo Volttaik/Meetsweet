@@ -9,7 +9,10 @@ const ENV_VARS = [
   { key: "TURSO_AUTH_TOKEN", label: "Turso Auth Token", critical: true },
   { key: "JWT_SECRET", label: "JWT Secret", critical: true },
   { key: "SESSION_SECRET", label: "Session Secret (JWT fallback)", critical: false },
-  { key: "BLOB_READ_WRITE_TOKEN", label: "Vercel Blob Token", critical: false },
+  { key: "R2_ACCOUNT_ID", label: "Cloudflare R2 Account ID", critical: false },
+  { key: "R2_ACCESS_KEY_ID", label: "Cloudflare R2 Access Key ID", critical: false },
+  { key: "R2_SECRET_ACCESS_KEY", label: "Cloudflare R2 Secret Access Key", critical: false },
+  { key: "R2_BUCKET_NAME", label: "Cloudflare R2 Bucket Name", critical: false },
   { key: "RESEND_API_KEY", label: "Resend API Key", critical: false },
   { key: "RESEND_FROM_EMAIL", label: "Resend From Email", critical: false },
   { key: "PAYSTACK_SECRET_KEY", label: "Paystack Secret Key", critical: false },
@@ -163,10 +166,10 @@ export async function GET() {
       database: dbResult,
       jwt: jwtResult,
       blob: {
-        ok: !!process.env.BLOB_READ_WRITE_TOKEN,
-        note: !process.env.BLOB_READ_WRITE_TOKEN
-          ? "BLOB_READ_WRITE_TOKEN not set — media uploads will fail"
-          : "Token present. Note: @vercel/blob requires a Vercel deployment or Blob API access.",
+        ok: !!(process.env.R2_ACCOUNT_ID && process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY && process.env.R2_BUCKET_NAME),
+        note: !(process.env.R2_ACCOUNT_ID && process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY && process.env.R2_BUCKET_NAME)
+          ? `R2 credentials incomplete — set R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME`
+          : "Cloudflare R2 credentials present",
       },
       email: {
         ok: !!process.env.RESEND_API_KEY,
