@@ -17,8 +17,8 @@ export const updatePostSchema = z.object({
 });
 
 export const postQuerySchema = z.object({
-  page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().min(1).max(50).default(20),
+  page: z.coerce.number().int().positive().catch(1),
+  limit: z.coerce.number().int().min(1).max(50).catch(20),
   status: z.enum(["draft", "published", "archived"]).optional().catch(undefined),
   bookmarked: z.coerce.boolean().optional().catch(undefined),
   // Extra params the mobile app may send — accepted and ignored
