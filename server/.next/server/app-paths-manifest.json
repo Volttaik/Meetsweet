@@ -1,8 +1,1 @@
-{
-  "/api/auth/login/route": "app/api/auth/login/route.js",
-  "/api/posts/route": "app/api/posts/route.js",
-  "/api/categories/route": "app/api/categories/route.js",
-  "/api/media/upload/route": "app/api/media/upload/route.js",
-  "/api/posts/[postId]/bookmark/route": "app/api/posts/[postId]/bookmark/route.js",
-  "/api/posts/[postId]/archive/route": "app/api/posts/[postId]/archive/route.js"
-}
+{}
