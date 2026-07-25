@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const sendMessageSchema = z.object({
-  conversation_id: z.string().uuid(),
+  conversation_id: z.string().uuid().optional(),
   body: z.string().max(4000).optional(),
   type: z.enum(["text", "image", "video", "audio", "file"]).default("text"),
   media_url: z.string().url().optional(),

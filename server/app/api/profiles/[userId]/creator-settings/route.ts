@@ -27,6 +27,13 @@ export async function GET(
   return ok(settings ?? null);
 }
 
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ userId: string }> }
+) {
+  return PUT(req, { params });
+}
+
 export async function PUT(
   req: NextRequest,
   { params }: { params: Promise<{ userId: string }> }

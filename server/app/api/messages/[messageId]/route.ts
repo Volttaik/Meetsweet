@@ -7,6 +7,20 @@ import { parseBody } from "@/lib/api/validate";
 import { ok, forbidden, notFound } from "@/lib/api/response";
 import { editMessageSchema } from "@/schemas/message";
 
+export async function GET(
+  req: NextRequest,
+  { params }: { params: Promise<{ messageId: string }> }
+) {
+  const auth = await requireAuth(req);
+  if ("response" in auth) return auth.response;
+  const { messageId } = await params;
+
+  const [msg] = await db.select().from(messages).where(and(eq(messages.id, messageId), isNull(messages.deleted_at))).limit(1);
+  if (!msg) return notFound();
+
+  return ok(msg);
+}
+
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ messageId: string }> }
