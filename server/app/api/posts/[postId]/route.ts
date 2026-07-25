@@ -1,12 +1,13 @@
 import { NextRequest } from "next/server";
 import { eq, and, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { posts, media, post_views, users, profiles, post_likes, saved_posts } from "@/lib/db/schema";
+import { posts, media, post_views, users, profiles, post_likes, saved_posts, content_purchases } from "@/lib/db/schema";
 import { requireAuth, optionalAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err, forbidden, notFound } from "@/lib/api/response";
 import { updatePostSchema } from "@/schemas/post";
 import { generateId } from "@/lib/auth/codes";
+import { resolveUrl } from "@/lib/services/r2";
 
 export async function GET(
   req: NextRequest,
@@ -26,6 +27,7 @@ export async function GET(
       caption: posts.caption,
       visibility: posts.visibility,
       status: posts.status,
+      unlock_price: posts.unlock_price,
       like_count: posts.like_count,
       comment_count: posts.comment_count,
       save_count: posts.save_count,
@@ -46,9 +48,9 @@ export async function GET(
 
   const postMedia = await db
     .select({
+      id: media.id,
       url: media.url,
       type: media.type,
-      thumbnail_url: media.url, // no separate thumbnail field; reuse url
       duration_secs: media.duration_seconds,
       file_size: media.size_bytes,
       width: media.width,
@@ -58,8 +60,14 @@ export async function GET(
     .where(eq(media.post_id, postId))
     .orderBy(media.sort_order);
 
+  // Sign media URLs
+  const signedMedia = await Promise.all(
+    postMedia.map(async (m) => ({ ...m, url: (await resolveUrl(m.url)) ?? m.url }))
+  );
+
   let liked_by_me = false;
   let bookmarked_by_me = false;
+  let purchased_by_me = false;
 
   if (auth) {
     const [like] = await db
@@ -76,12 +84,22 @@ export async function GET(
       .limit(1);
     bookmarked_by_me = !!saved;
 
-    // Record view
-    await db.insert(post_views).values({
-      id: generateId(),
-      user_id: auth.userId,
-      post_id: postId,
-    }).onConflictDoNothing();
+    const [purchase] = await db
+      .select({ id: content_purchases.id })
+      .from(content_purchases)
+      .where(
+        and(
+          eq(content_purchases.post_id, postId),
+          eq(content_purchases.user_id, auth.userId)
+        )
+      )
+      .limit(1);
+    purchased_by_me = !!purchase || auth.userId === row.creator_id;
+
+    await db
+      .insert(post_views)
+      .values({ id: generateId(), user_id: auth.userId, post_id: postId })
+      .onConflictDoNothing();
 
     await db
       .update(posts)
@@ -89,7 +107,14 @@ export async function GET(
       .where(eq(posts.id, postId));
   }
 
-  return ok({ ...row, liked_by_me, bookmarked_by_me, media: postMedia });
+  return ok({
+    ...row,
+    creator_avatar: await resolveUrl(row.creator_avatar),
+    liked_by_me,
+    bookmarked_by_me,
+    purchased_by_me,
+    media: signedMedia,
+  });
 }
 
 export async function PATCH(
@@ -120,7 +145,6 @@ export async function PATCH(
   if (body.expires_at !== undefined) update.expires_at = body.expires_at;
 
   await db.update(posts).set(update).where(eq(posts.id, postId));
-
   return ok(null, "Post updated");
 }
 

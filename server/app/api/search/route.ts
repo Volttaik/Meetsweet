@@ -2,11 +2,12 @@ import { NextRequest } from "next/server";
 import { like, eq, and, desc } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users, profiles, posts, recent_searches } from "@/lib/db/schema";
-import { requireAuth, optionalAuth } from "@/middleware/auth";
+import { optionalAuth } from "@/middleware/auth";
 import { parseQuery } from "@/lib/api/validate";
 import { ok } from "@/lib/api/response";
 import { z } from "zod";
 import { generateId } from "@/lib/auth/codes";
+import { resolveUrl } from "@/lib/services/r2";
 
 const schema = z.object({
   q: z.string().min(1).max(200),
@@ -51,7 +52,9 @@ export async function GET(req: NextRequest) {
       .limit(limit)
       .offset(offset);
 
-    result.users = userRows;
+    result.users = await Promise.all(
+      userRows.map(async (u) => ({ ...u, avatar_url: await resolveUrl(u.avatar_url) }))
+    );
   }
 
   if (type === "all" || type === "posts") {
@@ -65,12 +68,7 @@ export async function GET(req: NextRequest) {
         creator_id: posts.creator_id,
       })
       .from(posts)
-      .where(
-        and(
-          like(posts.caption, pattern),
-          eq(posts.status, "published")
-        )
-      )
+      .where(and(like(posts.caption, pattern), eq(posts.status, "published")))
       .orderBy(desc(posts.published_at))
       .limit(limit)
       .offset(offset);
@@ -78,7 +76,6 @@ export async function GET(req: NextRequest) {
     result.posts = postRows;
   }
 
-  // Save recent search
   if (auth) {
     await db.insert(recent_searches).values({
       id: generateId(),

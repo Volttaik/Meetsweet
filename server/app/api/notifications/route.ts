@@ -1,9 +1,10 @@
 import { NextRequest } from "next/server";
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { notifications, users, profiles } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
 import { ok } from "@/lib/api/response";
+import { signNotificationRow } from "@/lib/api/media";
 
 export async function GET(req: NextRequest) {
   const auth = await requireAuth(req);
@@ -29,7 +30,8 @@ export async function GET(req: NextRequest) {
     .orderBy(desc(notifications.created_at))
     .limit(50);
 
+  const signed = await Promise.all(rows.map(signNotificationRow));
   const unread = rows.filter((n) => !n.is_read).length;
 
-  return ok({ notifications: rows, unread_count: unread });
+  return ok({ notifications: signed, unread_count: unread });
 }

@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { users, profiles, follows, posts } from "@/lib/db/schema";
 import { optionalAuth } from "@/middleware/auth";
 import { ok, notFound } from "@/lib/api/response";
+import { resolveUrl } from "@/lib/services/r2";
 
 export async function GET(
   req: NextRequest,
@@ -20,6 +21,7 @@ export async function GET(
       bio: profiles.bio,
       avatar_url: profiles.avatar_url,
       banner_url: profiles.banner_url,
+      website: profiles.website,
       is_verified: profiles.is_verified_creator,
       is_creator: users.is_creator,
       created_at: users.created_at,
@@ -59,6 +61,8 @@ export async function GET(
   return ok({
     user: {
       ...row,
+      avatar_url: await resolveUrl(row.avatar_url),
+      banner_url: await resolveUrl(row.banner_url),
       follower_count: followerResult?.count ?? 0,
       following_count: followingResult?.count ?? 0,
       post_count: postResult?.count ?? 0,

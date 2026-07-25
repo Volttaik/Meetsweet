@@ -178,6 +178,7 @@ export const posts = sqliteTable(
     preview_duration: integer("preview_duration"),
     expires_at: text("expires_at"),
     published_at: text("published_at"),
+    unlock_price: real("unlock_price").default(0),
     view_count: integer("view_count").notNull().default(0),
     like_count: integer("like_count").notNull().default(0),
     comment_count: integer("comment_count").notNull().default(0),
@@ -566,6 +567,9 @@ export const messages = sqliteTable(
     is_recalled: integer("is_recalled", { mode: "boolean" })
       .notNull()
       .default(false),
+    is_pinned: integer("is_pinned", { mode: "boolean" })
+      .notNull()
+      .default(false),
     created_at: now(),
     updated_at: updatedAt(),
     deleted_at: deletedAt(),
@@ -730,4 +734,131 @@ export const hidden_posts = sqliteTable(
     created_at: now(),
   },
   (t) => [uniqueIndex("hidden_posts_unique_idx").on(t.user_id, t.post_id)]
+);
+
+// ─── user_settings ───────────────────────────────────────────────────────────
+
+export const user_settings = sqliteTable("user_settings", {
+  id: id(),
+  user_id: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  // Appearance
+  theme: text("theme", { enum: ["light", "dark", "system"] })
+    .notNull()
+    .default("system"),
+  language: text("language").notNull().default("en"),
+  // Notification toggles
+  notif_likes: integer("notif_likes", { mode: "boolean" })
+    .notNull()
+    .default(true),
+  notif_comments: integer("notif_comments", { mode: "boolean" })
+    .notNull()
+    .default(true),
+  notif_follows: integer("notif_follows", { mode: "boolean" })
+    .notNull()
+    .default(true),
+  notif_messages: integer("notif_messages", { mode: "boolean" })
+    .notNull()
+    .default(true),
+  notif_subscriptions: integer("notif_subscriptions", { mode: "boolean" })
+    .notNull()
+    .default(true),
+  // Privacy
+  private_account: integer("private_account", { mode: "boolean" })
+    .notNull()
+    .default(false),
+  show_online_status: integer("show_online_status", { mode: "boolean" })
+    .notNull()
+    .default(true),
+  show_read_receipts: integer("show_read_receipts", { mode: "boolean" })
+    .notNull()
+    .default(true),
+  typing_indicator: integer("typing_indicator", { mode: "boolean" })
+    .notNull()
+    .default(true),
+  sensitive_content: integer("sensitive_content", { mode: "boolean" })
+    .notNull()
+    .default(false),
+  // App preferences
+  data_saver: integer("data_saver", { mode: "boolean" })
+    .notNull()
+    .default(false),
+  autoplay_media: integer("autoplay_media", { mode: "boolean" })
+    .notNull()
+    .default(true),
+  biometric_login: integer("biometric_login", { mode: "boolean" })
+    .notNull()
+    .default(false),
+  created_at: now(),
+  updated_at: updatedAt(),
+});
+
+// ─── login_history ───────────────────────────────────────────────────────────
+
+export const login_history = sqliteTable(
+  "login_history",
+  {
+    id: id(),
+    user_id: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    ip_address: text("ip_address"),
+    user_agent: text("user_agent"),
+    device_id: text("device_id"),
+    status: text("status", { enum: ["success", "failed"] })
+      .notNull()
+      .default("success"),
+    created_at: now(),
+  },
+  (t) => [index("login_history_user_idx").on(t.user_id)]
+);
+
+// ─── withdrawals ─────────────────────────────────────────────────────────────
+
+export const withdrawals = sqliteTable(
+  "withdrawals",
+  {
+    id: id(),
+    creator_id: text("creator_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    amount: real("amount").notNull(),
+    currency: text("currency").notNull().default("NGN"),
+    bank_code: text("bank_code"),
+    account_number: text("account_number"),
+    account_name: text("account_name"),
+    status: text("status", {
+      enum: ["pending", "processing", "completed", "failed"],
+    })
+      .notNull()
+      .default("pending"),
+    reference: text("reference"),
+    note: text("note"),
+    created_at: now(),
+    updated_at: updatedAt(),
+  },
+  (t) => [index("withdrawals_creator_idx").on(t.creator_id)]
+);
+
+// ─── content_purchases ───────────────────────────────────────────────────────
+
+export const content_purchases = sqliteTable(
+  "content_purchases",
+  {
+    id: id(),
+    user_id: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    post_id: text("post_id")
+      .notNull()
+      .references(() => posts.id, { onDelete: "cascade" }),
+    amount: real("amount").notNull(),
+    currency: text("currency").notNull().default("NGN"),
+    purchased_at: now(),
+  },
+  (t) => [
+    uniqueIndex("content_purchases_unique_idx").on(t.user_id, t.post_id),
+    index("content_purchases_user_idx").on(t.user_id),
+  ]
 );

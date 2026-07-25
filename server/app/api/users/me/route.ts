@@ -3,8 +3,9 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users, profiles } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
-import { ok, notFound, err } from "@/lib/api/response";
+import { ok, notFound } from "@/lib/api/response";
 import { parseBody } from "@/lib/api/validate";
+import { resolveUrl } from "@/lib/services/r2";
 import { z } from "zod";
 
 export async function GET(req: NextRequest) {
@@ -37,14 +38,19 @@ export async function GET(req: NextRequest) {
     .limit(1);
 
   if (!row) return notFound();
-  return ok(row);
+
+  return ok({
+    ...row,
+    avatar_url: await resolveUrl(row.avatar_url),
+    banner_url: await resolveUrl(row.banner_url),
+  });
 }
 
 const patchMeSchema = z.object({
   name: z.string().min(2).optional(),
   bio: z.string().max(160).nullable().optional(),
-  avatar_url: z.string().url().nullable().optional(),
-  banner_url: z.string().url().nullable().optional(),
+  website: z.string().url().nullable().optional(),
+  location: z.string().max(100).nullable().optional(),
 });
 
 export async function PATCH(req: NextRequest) {
@@ -57,7 +63,6 @@ export async function PATCH(req: NextRequest) {
 
   const now = new Date().toISOString();
 
-  // Update users table if name changed
   if (body.name !== undefined) {
     await db
       .update(users)
@@ -65,18 +70,16 @@ export async function PATCH(req: NextRequest) {
       .where(eq(users.id, auth.user.userId));
   }
 
-  // Update profiles table
   const profileUpdate: Record<string, unknown> = { updated_at: now };
   if (body.bio !== undefined) profileUpdate.bio = body.bio;
-  if (body.avatar_url !== undefined) profileUpdate.avatar_url = body.avatar_url;
-  if (body.banner_url !== undefined) profileUpdate.banner_url = body.banner_url;
+  if (body.website !== undefined) profileUpdate.website = body.website;
+  if (body.location !== undefined) profileUpdate.location = body.location;
 
   await db
     .update(profiles)
     .set(profileUpdate)
     .where(eq(profiles.user_id, auth.user.userId));
 
-  // Return updated user
   const [row] = await db
     .select({
       id: users.id,
@@ -103,5 +106,11 @@ export async function PATCH(req: NextRequest) {
     .limit(1);
 
   if (!row) return notFound();
-  return ok({ user: row });
+  return ok({
+    user: {
+      ...row,
+      avatar_url: await resolveUrl(row.avatar_url),
+      banner_url: await resolveUrl(row.banner_url),
+    },
+  });
 }

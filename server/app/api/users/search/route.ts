@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { users, profiles } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
 import { ok, err } from "@/lib/api/response";
+import { resolveUrl } from "@/lib/services/r2";
 
 export async function GET(req: NextRequest) {
   const auth = await requireAuth(req);
@@ -33,5 +34,9 @@ export async function GET(req: NextRequest) {
     )
     .limit(20);
 
-  return ok({ users: rows });
+  const signed = await Promise.all(
+    rows.map(async (u) => ({ ...u, avatarUrl: await resolveUrl(u.avatarUrl) }))
+  );
+
+  return ok({ users: signed });
 }

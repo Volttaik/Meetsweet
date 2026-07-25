@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { profiles } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
 import { ok, err, forbidden } from "@/lib/api/response";
-import { uploadBlob, deleteBlob, getMediaType, getMaxBytes } from "@/lib/services/blob";
+import { uploadBlob, deleteBlob, getMediaType, getMaxBytes, resolveUrl } from "@/lib/services/blob";
 
 export async function PUT(
   req: NextRequest,
@@ -27,14 +27,25 @@ export async function PUT(
   const max = getMaxBytes(mimeType);
   if (blob.size > max) return err(`File too large (max ${max / 1024 / 1024}MB)`, 413);
 
+  // Delete old banner if present
+  const [profile] = await db
+    .select({ banner_url: profiles.banner_url })
+    .from(profiles)
+    .where(eq(profiles.user_id, userId))
+    .limit(1);
+
+  if (profile?.banner_url) {
+    await deleteBlob(profile.banner_url);
+  }
+
   const uploaded = await uploadBlob(blob, mimeType, `banners/${userId}`);
 
   await db
     .update(profiles)
-    .set({ banner_url: uploaded.url, updated_at: new Date().toISOString() })
+    .set({ banner_url: uploaded.blob_path, updated_at: new Date().toISOString() })
     .where(eq(profiles.user_id, userId));
 
-  return ok({ banner_url: uploaded.url });
+  return ok({ banner_url: await resolveUrl(uploaded.blob_path) });
 }
 
 export async function DELETE(
@@ -54,8 +65,7 @@ export async function DELETE(
     .limit(1);
 
   if (profile?.banner_url) {
-    const path = new URL(profile.banner_url).pathname.slice(1);
-    await deleteBlob(path);
+    await deleteBlob(profile.banner_url);
   }
 
   await db

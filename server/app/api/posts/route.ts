@@ -4,9 +4,10 @@ import { db } from "@/lib/db";
 import { posts, users, profiles, media, saved_posts } from "@/lib/db/schema";
 import { requireAuth, optionalAuth } from "@/middleware/auth";
 import { parseBody, parseQuery } from "@/lib/api/validate";
-import { ok, created, unauthorized } from "@/lib/api/response";
+import { ok, created } from "@/lib/api/response";
 import { createPostSchema, postQuerySchema } from "@/schemas/post";
 import { generateId } from "@/lib/auth/codes";
+import { signPostRows } from "@/lib/api/media";
 
 export async function GET(req: NextRequest) {
   const parsed = parseQuery(req.nextUrl.searchParams, postQuerySchema);
@@ -16,7 +17,6 @@ export async function GET(req: NextRequest) {
   const offset = (page - 1) * limit;
   const bookmarked = parsed.data.bookmarked;
 
-  // Bookmarked feed requires authentication
   if (bookmarked) {
     const auth = await requireAuth(req);
     if ("response" in auth) return auth.response;
@@ -37,6 +37,7 @@ export async function GET(req: NextRequest) {
         visibility: posts.visibility,
         status: posts.status,
         is_pinned: posts.is_pinned,
+        unlock_price: posts.unlock_price,
         preview_duration: posts.preview_duration,
         expires_at: posts.expires_at,
         published_at: posts.published_at,
@@ -59,7 +60,7 @@ export async function GET(req: NextRequest) {
       .limit(limit)
       .offset(offset);
 
-    return ok({ posts: rows, page, limit });
+    return ok({ posts: await signPostRows(rows), page, limit });
   }
 
   await optionalAuth(req);
@@ -71,6 +72,7 @@ export async function GET(req: NextRequest) {
       visibility: posts.visibility,
       status: posts.status,
       is_pinned: posts.is_pinned,
+      unlock_price: posts.unlock_price,
       preview_duration: posts.preview_duration,
       expires_at: posts.expires_at,
       published_at: posts.published_at,
@@ -93,7 +95,7 @@ export async function GET(req: NextRequest) {
     .limit(limit)
     .offset(offset);
 
-  return ok({ posts: rows, page, limit });
+  return ok({ posts: await signPostRows(rows), page, limit });
 }
 
 export async function POST(req: NextRequest) {
@@ -118,7 +120,6 @@ export async function POST(req: NextRequest) {
     published_at: body.status === "published" ? now : null,
   });
 
-  // Attach only the explicitly requested media IDs owned by this user
   if (body.media_ids?.length) {
     await db
       .update(media)

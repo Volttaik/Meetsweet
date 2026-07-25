@@ -1,5 +1,4 @@
 import { NextRequest } from "next/server";
-import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { media } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
@@ -9,6 +8,7 @@ import {
   getMediaType,
   getMaxBytes,
   getAllowedTypes,
+  resolveUrl,
 } from "@/lib/services/blob";
 import { generateId } from "@/lib/auth/codes";
 
@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
   await db.insert(media).values({
     id: mediaId,
     uploader_id: auth.user.userId,
-    url: uploaded.url,
+    url: uploaded.blob_path,      // Store R2 key
     blob_path: uploaded.blob_path,
     type: mediaType,
     mime_type: uploaded.mime_type,
@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
 
   return ok({
     id: mediaId,
-    url: uploaded.url,
+    url: await resolveUrl(uploaded.blob_path), // Return signed URL to client
     type: mediaType,
     mime_type: uploaded.mime_type,
     size_bytes: uploaded.size_bytes,

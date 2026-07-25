@@ -7,6 +7,7 @@ import { parseBody, parseQuery } from "@/lib/api/validate";
 import { ok, created, forbidden, notFound } from "@/lib/api/response";
 import { sendMessageSchema, messageQuerySchema } from "@/schemas/message";
 import { generateId } from "@/lib/auth/codes";
+import { signMessageRow } from "@/lib/api/media";
 
 export async function GET(
   req: NextRequest,
@@ -16,7 +17,16 @@ export async function GET(
   if ("response" in auth) return auth.response;
   const { conversationId } = await params;
 
-  const [member] = await db.select().from(conversation_members).where(and(eq(conversation_members.conversation_id, conversationId), eq(conversation_members.user_id, auth.user.userId))).limit(1);
+  const [member] = await db
+    .select()
+    .from(conversation_members)
+    .where(
+      and(
+        eq(conversation_members.conversation_id, conversationId),
+        eq(conversation_members.user_id, auth.user.userId)
+      )
+    )
+    .limit(1);
   if (!member) return forbidden();
 
   const parsed = parseQuery(req.nextUrl.searchParams, messageQuerySchema);
@@ -25,7 +35,11 @@ export async function GET(
   const limit = parsed.data.limit ?? 50;
 
   const where = cursor
-    ? and(eq(messages.conversation_id, conversationId), isNull(messages.deleted_at), lt(messages.created_at, cursor))
+    ? and(
+        eq(messages.conversation_id, conversationId),
+        isNull(messages.deleted_at),
+        lt(messages.created_at, cursor)
+      )
     : and(eq(messages.conversation_id, conversationId), isNull(messages.deleted_at));
 
   const rows = await db
@@ -37,6 +51,7 @@ export async function GET(
       reactions: messages.reactions,
       is_edited: messages.is_edited,
       is_recalled: messages.is_recalled,
+      is_pinned: messages.is_pinned,
       reply_to_id: messages.reply_to_id,
       created_at: messages.created_at,
       updated_at: messages.updated_at,
@@ -51,9 +66,10 @@ export async function GET(
     .orderBy(desc(messages.created_at))
     .limit(limit);
 
+  const signed = await Promise.all(rows.map(signMessageRow));
   const nextCursor = rows.length === limit ? rows[rows.length - 1].created_at : null;
 
-  return ok({ messages: rows, next_cursor: nextCursor });
+  return ok({ messages: signed, next_cursor: nextCursor });
 }
 
 export async function POST(
@@ -64,7 +80,16 @@ export async function POST(
   if ("response" in auth) return auth.response;
   const { conversationId } = await params;
 
-  const [member] = await db.select().from(conversation_members).where(and(eq(conversation_members.conversation_id, conversationId), eq(conversation_members.user_id, auth.user.userId))).limit(1);
+  const [member] = await db
+    .select()
+    .from(conversation_members)
+    .where(
+      and(
+        eq(conversation_members.conversation_id, conversationId),
+        eq(conversation_members.user_id, auth.user.userId)
+      )
+    )
+    .limit(1);
   if (!member) return forbidden();
 
   const parsed = await parseBody(req, sendMessageSchema);
@@ -85,7 +110,10 @@ export async function POST(
     reply_to_id: body.reply_to_id,
   });
 
-  await db.update(conversations).set({ last_message_at: now }).where(eq(conversations.id, conversationId));
+  await db
+    .update(conversations)
+    .set({ last_message_at: now })
+    .where(eq(conversations.id, conversationId));
 
   return created({ id: msgId }, "Message sent");
 }

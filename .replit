@@ -42,3 +42,10 @@ timeoutMs = 20000
 
 [nix]
 channel = "stable-25_05"
+
+[userenv]
+
+[userenv.shared]
+CLIENT_APP_ID = "meetsweet-mobile"
+R2_ACCOUNT_ID = "e72d5cb6f9f658585db827cb12790c89"
+R2_BUCKET_NAME = "meetsweet-media"

@@ -7,6 +7,7 @@ import { parseBody, parseQuery } from "@/lib/api/validate";
 import { ok, created, notFound } from "@/lib/api/response";
 import { createReplySchema, commentQuerySchema } from "@/schemas/comment";
 import { generateId } from "@/lib/auth/codes";
+import { signCommentRow } from "@/lib/api/media";
 
 export async function GET(
   req: NextRequest,
@@ -38,7 +39,8 @@ export async function GET(
     .limit(limit)
     .offset(offset);
 
-  return ok({ replies: rows, page, limit });
+  const signed = await Promise.all(rows.map(signCommentRow));
+  return ok({ replies: signed, page, limit });
 }
 
 export async function POST(
@@ -49,7 +51,11 @@ export async function POST(
   if ("response" in auth) return auth.response;
   const { commentId } = await params;
 
-  const [comment] = await db.select({ id: comments.id, reply_count: comments.reply_count }).from(comments).where(eq(comments.id, commentId)).limit(1);
+  const [comment] = await db
+    .select({ id: comments.id, reply_count: comments.reply_count })
+    .from(comments)
+    .where(eq(comments.id, commentId))
+    .limit(1);
   if (!comment) return notFound("Comment not found");
 
   const parsed = await parseBody(req, createReplySchema);

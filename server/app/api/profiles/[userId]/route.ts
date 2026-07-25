@@ -5,6 +5,7 @@ import { users, profiles } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err, notFound } from "@/lib/api/response";
+import { resolveUrl } from "@/lib/services/r2";
 import { updateProfileSchema } from "@/schemas/profile";
 
 export async function GET(
@@ -37,7 +38,11 @@ export async function GET(
 
   if (!row) return notFound("User not found");
 
-  return ok(row);
+  return ok({
+    ...row,
+    avatar_url: await resolveUrl(row.avatar_url),
+    banner_url: await resolveUrl(row.banner_url),
+  });
 }
 
 export async function PATCH(
@@ -54,7 +59,6 @@ export async function PATCH(
   if (!parsed.success) return parsed.response;
   const body = parsed.data;
 
-  // Check username uniqueness if changing
   if (body.username) {
     const [existing] = await db
       .select({ id: users.id })
