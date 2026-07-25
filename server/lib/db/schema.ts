@@ -680,6 +680,41 @@ export const recent_searches = sqliteTable(
   (t) => [index("recent_searches_user_idx").on(t.user_id)]
 );
 
+// ─── follows ─────────────────────────────────────────────────────────────────
+
+export const follows = sqliteTable(
+  "follows",
+  {
+    id: id(),
+    follower_id: text("follower_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    following_id: text("following_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    created_at: now(),
+  },
+  (t) => [
+    uniqueIndex("follows_unique_idx").on(t.follower_id, t.following_id),
+    index("follows_follower_idx").on(t.follower_id),
+    index("follows_following_idx").on(t.following_id),
+  ]
+);
+
+// ─── categories ──────────────────────────────────────────────────────────────
+
+export const categories = sqliteTable(
+  "categories",
+  {
+    id: id(),
+    name: text("name").notNull(),
+    slug: text("slug").notNull(),
+    post_count: integer("post_count").notNull().default(0),
+    created_at: now(),
+  },
+  (t) => [uniqueIndex("categories_slug_idx").on(t.slug)]
+);
+
 // ─── hidden_posts ────────────────────────────────────────────────────────────
 
 export const hidden_posts = sqliteTable(

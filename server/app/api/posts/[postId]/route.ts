@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { eq, and, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { posts, media, post_views } from "@/lib/db/schema";
+import { posts, media, post_views, users, profiles, post_likes, saved_posts } from "@/lib/db/schema";
 import { requireAuth, optionalAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err, forbidden, notFound } from "@/lib/api/response";
@@ -15,21 +15,68 @@ export async function GET(
   const auth = await optionalAuth(req);
   const { postId } = await params;
 
-  const [post] = await db
-    .select()
+  const [row] = await db
+    .select({
+      id: posts.id,
+      creator_id: posts.creator_id,
+      creator_username: users.username,
+      creator_display_name: profiles.display_name,
+      creator_avatar: profiles.avatar_url,
+      creator_is_verified: profiles.is_verified_creator,
+      caption: posts.caption,
+      visibility: posts.visibility,
+      status: posts.status,
+      like_count: posts.like_count,
+      comment_count: posts.comment_count,
+      save_count: posts.save_count,
+      view_count: posts.view_count,
+      is_pinned: posts.is_pinned,
+      preview_duration: posts.preview_duration,
+      published_at: posts.published_at,
+      created_at: posts.created_at,
+      updated_at: posts.updated_at,
+    })
     .from(posts)
+    .leftJoin(users, eq(users.id, posts.creator_id))
+    .leftJoin(profiles, eq(profiles.user_id, posts.creator_id))
     .where(and(eq(posts.id, postId), isNull(posts.deleted_at)))
     .limit(1);
 
-  if (!post) return notFound("Post not found");
+  if (!row) return notFound("Post not found");
 
   const postMedia = await db
-    .select()
+    .select({
+      url: media.url,
+      type: media.type,
+      thumbnail_url: media.url, // no separate thumbnail field; reuse url
+      duration_secs: media.duration_seconds,
+      file_size: media.size_bytes,
+      width: media.width,
+      height: media.height,
+    })
     .from(media)
-    .where(eq(media.post_id, postId));
+    .where(eq(media.post_id, postId))
+    .orderBy(media.sort_order);
 
-  // Record view
+  let liked_by_me = false;
+  let bookmarked_by_me = false;
+
   if (auth) {
+    const [like] = await db
+      .select({ id: post_likes.id })
+      .from(post_likes)
+      .where(and(eq(post_likes.post_id, postId), eq(post_likes.user_id, auth.userId)))
+      .limit(1);
+    liked_by_me = !!like;
+
+    const [saved] = await db
+      .select({ id: saved_posts.id })
+      .from(saved_posts)
+      .where(and(eq(saved_posts.post_id, postId), eq(saved_posts.user_id, auth.userId)))
+      .limit(1);
+    bookmarked_by_me = !!saved;
+
+    // Record view
     await db.insert(post_views).values({
       id: generateId(),
       user_id: auth.userId,
@@ -38,11 +85,11 @@ export async function GET(
 
     await db
       .update(posts)
-      .set({ view_count: post.view_count + 1 })
+      .set({ view_count: row.view_count + 1 })
       .where(eq(posts.id, postId));
   }
 
-  return ok({ ...post, media: postMedia });
+  return ok({ ...row, liked_by_me, bookmarked_by_me, media: postMedia });
 }
 
 export async function PATCH(
