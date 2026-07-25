@@ -400,10 +400,10 @@ function UploadTester() {
       {uploadState.status === "error" && (
         <div style={styles.errorBox}>
           <p style={{ margin: "0 0 8px", fontWeight: 600, color: "#f87171" }}>❌ {uploadState.message}</p>
-          {uploadState.response && (
+          {uploadState.response != null && (
             <details>
               <summary style={{ fontSize: 12, color: "#94a3b8", cursor: "pointer" }}>Raw response</summary>
-              <pre style={styles.pre}>{JSON.stringify(uploadState.response, null, 2)}</pre>
+              <pre style={styles.pre}>{JSON.stringify(uploadState.response as Record<string, unknown>, null, 2)}</pre>
             </details>
           )}
         </div>
