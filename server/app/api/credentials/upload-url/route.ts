@@ -72,6 +72,10 @@ function getClient(): S3Client {
     region: "auto",
     endpoint,
     credentials: { accessKeyId, secretAccessKey },
+    // Disable automatic checksum injection — R2 rejects presigned URLs that
+    // include an x-amz-checksum-* query param with a placeholder value.
+    requestChecksumCalculation: "when_required",
+    responseChecksumValidation: "when_required",
   });
 }
 
