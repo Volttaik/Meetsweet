@@ -25,6 +25,10 @@ export const config = {
     apiKey: () => firstSet("RESEND_API_KEY"),
     sender: () => firstSet("VERIFIED_SENDER_EMAIL", "RESEND_FROM_EMAIL"),
   },
+  paystack: {
+    secretKey: () => firstSet("PAYSTACK_SECRET_KEY"),
+    publicKey: () => firstSet("PAYSTACK_PUBLIC_KEY"),
+  },
   auth: {
     jwtSecret: () => firstSet("JWT_SECRET", "SESSION_SECRET"),
   },
