@@ -15,6 +15,7 @@ export const config = {
     token: () => firstSet("TURSO_AUTH_TOKEN"),
   },
   r2: {
+    endpoint: () => firstSet("R2_ENDPOINT"),
     accountId: () => firstSet("CLOUDFLARE_ACCOUNT_ID", "R2_ACCOUNT_ID"),
     accessKeyId: () => firstSet("R2_ACCESS_KEY_ID"),
     secretAccessKey: () => firstSet("R2_SECRET_ACCESS_KEY"),
@@ -46,7 +47,7 @@ export function serviceConfigured(service: BrokerService): boolean {
       return Boolean(config.turso.url() && config.turso.token());
     case "cloudflare":
       return Boolean(
-        config.r2.accountId() &&
+        (config.r2.endpoint() || config.r2.accountId()) &&
           config.r2.accessKeyId() &&
           config.r2.secretAccessKey() &&
           config.r2.bucket(),

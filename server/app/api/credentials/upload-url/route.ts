@@ -55,36 +55,43 @@ function getCategory(mime: string): "image" | "video" | "audio" | "document" | n
 }
 
 function getClient(): S3Client {
-  const accountId = config.r2.accountId();
   const accessKeyId = config.r2.accessKeyId();
   const secretAccessKey = config.r2.secretAccessKey();
-  if (!accountId || !accessKeyId || !secretAccessKey || !config.r2.bucket()) {
+  if (!accessKeyId || !secretAccessKey || !config.r2.bucket()) {
     throw new Error("Cloudflare R2 credentials are not configured");
   }
+  // Prefer explicit R2_ENDPOINT; fall back to constructing from account ID.
+  const endpoint =
+    config.r2.endpoint() ??
+    (() => {
+      const accountId = config.r2.accountId();
+      if (!accountId) throw new Error("R2_ENDPOINT or CLOUDFLARE_ACCOUNT_ID must be set");
+      return `https://${accountId}.r2.cloudflarestorage.com`;
+    })();
   return new S3Client({
     region: "auto",
-    endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+    endpoint,
     credentials: { accessKeyId, secretAccessKey },
   });
 }
 
 /**
- * GET /api/credentials/upload-url?mime_type=image/jpeg&folder=avatars
+ * GET /api/credentials/upload-url?mime_type=image/jpeg&extension=jpg&folder=posts
  *
  * Returns a presigned R2 PUT URL valid for 15 minutes.
  * The client uploads directly to R2 using this URL — the raw R2 secret never leaves this server.
  *
  * Query params:
  *   mime_type  (required) — MIME type of the file to upload
- *   folder     (optional) — logical folder prefix, e.g. "avatars", "posts", "banners"
- *                           defaults to "uploads"
+ *   extension  (optional) — file extension override; derived from mime_type when omitted
+ *   folder     (optional) — logical folder prefix: "avatars" | "posts" | "documents" | "uploads"
  *   size_bytes (optional) — declared file size for validation (integer)
  *
- * Response:
- *   upload_url  — presigned PUT URL (expires in 15 min)
- *   object_key  — R2 object key to store and later pass to /api/credentials/download-url
- *   expires_in  — seconds until the upload URL expires (900)
- *   max_bytes   — maximum allowed file size for this mime type
+ * Response (envelope):
+ *   data.uploadUrl  — presigned PUT URL (expires in 15 min); pass ContentType header when uploading
+ *   data.key        — R2 object key to store and later pass to /api/credentials/download-url
+ *   data.expiresIn  — seconds until the URL expires (900)
+ *   data.maxBytes   — maximum allowed file size for this mime type
  */
 export async function GET(req: NextRequest) {
   const auth = await requireAuth(req);
@@ -114,6 +121,8 @@ export async function GET(req: NextRequest) {
   if (!["uploads", "avatars", "posts", "documents"].includes(folder)) {
     return err("Unsupported upload folder", 422);
   }
+
+  // Prefer explicit extension param; fall back to mime-type-derived value.
   const extensionByMime: Record<string, string> = {
     "image/jpeg": "jpg",
     "image/png": "png",
@@ -135,23 +144,27 @@ export async function GET(req: NextRequest) {
     "application/vnd.ms-excel": "xls",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
   };
-  const ext = extensionByMime[mime] ?? "bin";
-  const objectKey = `${folder}/${auth.user.userId}/${crypto.randomUUID()}.${ext}`;
+  const extParam = req.nextUrl.searchParams.get("extension")?.replace(/[^a-z0-9]/gi, "");
+  const ext = extParam || extensionByMime[mime] || "bin";
 
+  const key = `${folder}/${auth.user.userId}/${crypto.randomUUID()}.${ext}`;
+
+  // ContentType MUST be included in the signed command so the presigned URL's
+  // signature covers the Content-Type header — omitting it causes 403s on upload.
   const uploadUrl = await getSignedUrl(
     getClient(),
     new PutObjectCommand({
       Bucket: config.r2.bucket()!,
-      Key: objectKey,
+      Key: key,
       ContentType: mime,
     }),
     { expiresIn: 900 } // 15 minutes
   );
 
   return ok({
-    upload_url: uploadUrl,
-    object_key: objectKey,
-    expires_in: 900,
-    max_bytes: maxBytes,
+    uploadUrl,
+    key,
+    expiresIn: 900,
+    maxBytes,
   });
 }
