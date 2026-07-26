@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { requireAuth } from "@/middleware/auth";
 import { ok, err } from "@/lib/api/response";
 import { resolveUrl } from "@/lib/services/r2";
+import { config } from "@/lib/config";
 
 /**
  * GET /api/credentials/download-url?key=<object_key>
@@ -24,6 +25,12 @@ export async function GET(req: NextRequest) {
   const key = req.nextUrl.searchParams.get("key");
   if (!key) return err("key query param is required", 400);
   if (key.startsWith("http")) return err("key must be an R2 object key, not a URL", 400);
+  if (!key.startsWith(`uploads/${auth.user.userId}/`) &&
+      !key.startsWith(`avatars/${auth.user.userId}/`) &&
+      !key.startsWith(`posts/${auth.user.userId}/`) &&
+      !key.startsWith(`documents/${auth.user.userId}/`)) {
+    return err("You may only request URLs for your own broker-issued objects", 403);
+  }
 
   const url = await resolveUrl(key, 604800);
   if (!url) return err("Failed to generate download URL", 500);

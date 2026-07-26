@@ -3,6 +3,7 @@ import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { requireAuth } from "@/middleware/auth";
 import { ok, err } from "@/lib/api/response";
+import { config } from "@/lib/config";
 
 const ALLOWED_MIME_TYPES = [
   // Images
@@ -20,6 +21,13 @@ const ALLOWED_MIME_TYPES = [
   "audio/ogg",
   "audio/mp4",
   "audio/webm",
+  "application/pdf",
+  "text/plain",
+  "application/rtf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 ] as const;
 
 type AllowedMime = (typeof ALLOWED_MIME_TYPES)[number];
@@ -28,24 +36,35 @@ const MAX_BYTES: Record<string, number> = {
   image: 10 * 1024 * 1024,   // 10 MB
   video: 500 * 1024 * 1024,  // 500 MB
   audio: 50 * 1024 * 1024,   // 50 MB
+  document: 25 * 1024 * 1024, // 25 MB
 };
 
-function getCategory(mime: string): "image" | "video" | "audio" | null {
+function getCategory(mime: string): "image" | "video" | "audio" | "document" | null {
   if (mime.startsWith("image/")) return "image";
   if (mime.startsWith("video/")) return "video";
   if (mime.startsWith("audio/")) return "audio";
+  if (
+    mime.startsWith("text/") ||
+    mime === "application/pdf" ||
+    mime === "application/rtf" ||
+    mime === "application/msword" ||
+    mime === "application/vnd.ms-excel" ||
+    mime.startsWith("application/vnd.openxmlformats-officedocument.")
+  ) return "document";
   return null;
 }
 
 function getClient(): S3Client {
-  const { R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY } = process.env;
-  if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY) {
-    throw new Error("R2 credentials missing: R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY required");
+  const accountId = config.r2.accountId();
+  const accessKeyId = config.r2.accessKeyId();
+  const secretAccessKey = config.r2.secretAccessKey();
+  if (!accountId || !accessKeyId || !secretAccessKey || !config.r2.bucket()) {
+    throw new Error("Cloudflare R2 credentials are not configured");
   }
   return new S3Client({
     region: "auto",
-    endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-    credentials: { accessKeyId: R2_ACCESS_KEY_ID, secretAccessKey: R2_SECRET_ACCESS_KEY },
+    endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+    credentials: { accessKeyId, secretAccessKey },
   });
 }
 
@@ -92,13 +111,37 @@ export async function GET(req: NextRequest) {
   }
 
   const folder = req.nextUrl.searchParams.get("folder")?.replace(/[^a-z0-9_-]/gi, "") || "uploads";
-  const ext = (mime as AllowedMime).split("/")[1].split(";")[0];
+  if (!["uploads", "avatars", "posts", "documents"].includes(folder)) {
+    return err("Unsupported upload folder", 422);
+  }
+  const extensionByMime: Record<string, string> = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+    "image/gif": "gif",
+    "video/mp4": "mp4",
+    "video/quicktime": "mov",
+    "video/webm": "webm",
+    "audio/mpeg": "mp3",
+    "audio/wav": "wav",
+    "audio/ogg": "ogg",
+    "audio/mp4": "m4a",
+    "audio/webm": "webm",
+    "application/pdf": "pdf",
+    "text/plain": "txt",
+    "application/rtf": "rtf",
+    "application/msword": "doc",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+    "application/vnd.ms-excel": "xls",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+  };
+  const ext = extensionByMime[mime] ?? "bin";
   const objectKey = `${folder}/${auth.user.userId}/${crypto.randomUUID()}.${ext}`;
 
   const uploadUrl = await getSignedUrl(
     getClient(),
     new PutObjectCommand({
-      Bucket: process.env.R2_BUCKET_NAME!,
+      Bucket: config.r2.bucket()!,
       Key: objectKey,
       ContentType: mime,
     }),

@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { requireAuth } from "@/middleware/auth";
 import { ok } from "@/lib/api/response";
+import { config } from "@/lib/config";
 
 /**
  * GET /api/credentials/config
@@ -23,18 +24,27 @@ export async function GET(req: NextRequest) {
   if ("response" in auth) return auth.response;
 
   return ok({
-    paystack_public_key: process.env.PAYSTACK_PUBLIC_KEY ?? null,
-    r2_public_base_url: process.env.R2_PUBLIC_BASE_URL ?? null,
-    app_id: process.env.CLIENT_APP_ID ?? "meetsweet-mobile",
+    r2_public_base_url: config.r2.publicBaseUrl() ?? null,
+    app_id: config.app.clientId(),
     upload_limits: {
       image: 10 * 1024 * 1024,   // 10 MB
       video: 500 * 1024 * 1024,  // 500 MB
       audio: 50 * 1024 * 1024,   // 50 MB
+      document: 25 * 1024 * 1024, // 25 MB
     },
     allowed_mime_types: {
       image: ["image/jpeg", "image/png", "image/webp", "image/gif"],
       video: ["video/mp4", "video/quicktime", "video/webm"],
       audio: ["audio/mpeg", "audio/wav", "audio/ogg", "audio/mp4", "audio/webm"],
+      document: [
+        "application/pdf",
+        "text/plain",
+        "application/rtf",
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.ms-excel",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      ],
     },
   });
 }

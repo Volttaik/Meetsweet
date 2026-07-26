@@ -1,92 +1,110 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@libsql/client";
-import { S3Client, HeadBucketCommand } from "@aws-sdk/client-s3";
+import { HeadBucketCommand, S3Client } from "@aws-sdk/client-s3";
+import { config, requiredEnvironmentPresent, serviceConfigured } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const ENV_VARS = [
-  { key: "TURSO_DATABASE_URL", label: "Turso Database URL", critical: true },
-  { key: "TURSO_AUTH_TOKEN", label: "Turso Auth Token", critical: true },
-  { key: "JWT_SECRET", label: "JWT Secret", critical: false },
-  { key: "SESSION_SECRET", label: "Session Secret (JWT fallback)", critical: false },
-  { key: "R2_ACCOUNT_ID", label: "R2 Account ID", critical: true },
-  { key: "R2_ACCESS_KEY_ID", label: "R2 Access Key ID", critical: true },
-  { key: "R2_SECRET_ACCESS_KEY", label: "R2 Secret Access Key", critical: true },
-  { key: "R2_BUCKET_NAME", label: "R2 Bucket Name", critical: true },
-  { key: "RESEND_API_KEY", label: "Resend API Key", critical: false },
-  { key: "RESEND_FROM_EMAIL", label: "Resend From Email", critical: false },
-  { key: "PAYSTACK_SECRET_KEY", label: "Paystack Secret Key", critical: false },
-  { key: "PAYSTACK_PUBLIC_KEY", label: "Paystack Public Key", critical: false },
-  { key: "R2_PUBLIC_BASE_URL", label: "R2 Public Base URL (optional CDN)", critical: false },
-  { key: "APP_URL", label: "App URL", critical: false },
-  { key: "CLIENT_APP_ID", label: "Client App ID", critical: false },
+type Status = "Present" | "Missing" | "Healthy" | "Unavailable";
+
+const REQUIRED_ENVIRONMENT = [
+  "TURSO_DATABASE_URL",
+  "TURSO_AUTH_TOKEN",
+  "CLOUDFLARE_ACCOUNT_ID",
+  "R2_ACCESS_KEY_ID",
+  "R2_SECRET_ACCESS_KEY",
+  "R2_BUCKET_NAME",
+  "RESEND_API_KEY",
+  "VERIFIED_SENDER_EMAIL",
+  "JWT_SECRET",
 ];
 
-async function checkDatabase(): Promise<{ ok: boolean; latencyMs?: number; error?: string }> {
-  const url = process.env.TURSO_DATABASE_URL;
-  if (!url) return { ok: false, error: "TURSO_DATABASE_URL not set" };
+function environmentPresent(primary: string, ...fallbacks: string[]): boolean {
+  return Boolean([primary, ...fallbacks].some((name) => process.env[name]?.trim()));
+}
+
+async function tursoHealth(): Promise<Status> {
+  if (!serviceConfigured("turso")) return "Unavailable";
   try {
-    const start = Date.now();
-    const client = createClient({ url, authToken: process.env.TURSO_AUTH_TOKEN });
+    const client = createClient({
+      url: config.turso.url()!,
+      authToken: config.turso.token()!,
+    });
     await client.execute("SELECT 1");
     client.close();
-    return { ok: true, latencyMs: Date.now() - start };
-  } catch (e: unknown) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    return "Healthy";
+  } catch {
+    return "Unavailable";
   }
 }
 
-async function checkR2(): Promise<{ ok: boolean; error?: string }> {
-  const { R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME } = process.env;
-  if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY || !R2_BUCKET_NAME) {
-    return { ok: false, error: "One or more R2 env vars missing" };
-  }
+async function cloudflareHealth(): Promise<Status> {
+  if (!serviceConfigured("cloudflare")) return "Unavailable";
   try {
     const client = new S3Client({
       region: "auto",
-      endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-      credentials: { accessKeyId: R2_ACCESS_KEY_ID, secretAccessKey: R2_SECRET_ACCESS_KEY },
+      endpoint: `https://${config.r2.accountId()}.r2.cloudflarestorage.com`,
+      credentials: {
+        accessKeyId: config.r2.accessKeyId()!,
+        secretAccessKey: config.r2.secretAccessKey()!,
+      },
     });
-    await client.send(new HeadBucketCommand({ Bucket: R2_BUCKET_NAME }));
-    return { ok: true };
-  } catch (e: unknown) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    await client.send(new HeadBucketCommand({ Bucket: config.r2.bucket()! }));
+    return "Healthy";
+  } catch {
+    return "Unavailable";
   }
 }
 
-function checkJwt(): { ok: boolean; error?: string } {
-  const secret = process.env.JWT_SECRET ?? process.env.SESSION_SECRET;
-  if (!secret) return { ok: false, error: "Neither JWT_SECRET nor SESSION_SECRET is set" };
-  if (secret.length < 32) return { ok: false, error: `Secret too short: ${secret.length} chars (need ≥32)` };
-  return { ok: true };
-}
-
 export async function GET() {
-  const [db, r2] = await Promise.all([checkDatabase(), checkR2()]);
-  const jwt = checkJwt();
+  const [turso, cloudflare] = await Promise.all([
+    tursoHealth(),
+    cloudflareHealth(),
+  ]);
+  const envNames = REQUIRED_ENVIRONMENT.map((name) => {
+    const fallback =
+      name === "CLOUDFLARE_ACCOUNT_ID"
+        ? "R2_ACCOUNT_ID"
+        : name === "VERIFIED_SENDER_EMAIL"
+          ? "RESEND_FROM_EMAIL"
+          : name === "JWT_SECRET"
+            ? "SESSION_SECRET"
+            : name === "TURSO_DATABASE_URL"
+              ? "DATABASE_URL"
+              : undefined;
+    return {
+      name,
+      status: environmentPresent(name, ...(fallback ? [fallback] : []))
+        ? "Present"
+        : "Missing",
+    };
+  });
 
-  const envStatus = ENV_VARS.map(({ key, label, critical }) => ({
-    key,
-    label,
-    critical,
-    set: !!process.env[key],
-  }));
+  const auth = serviceConfigured("auth") ? "Healthy" : "Unavailable";
+  const resend = serviceConfigured("resend") ? "Healthy" : "Unavailable";
+  const environment = envNames.every((item) => item.status === "Present")
+    ? "Present"
+    : "Missing";
+  const broker =
+    auth === "Healthy" &&
+    turso === "Healthy" &&
+    cloudflare === "Healthy" &&
+    resend === "Healthy"
+      ? "Healthy"
+      : "Unavailable";
 
-  const missingCritical = envStatus.filter((e) => e.critical && !e.set);
-  const healthy = db.ok && r2.ok && jwt.ok && missingCritical.length === 0;
+  const response = {
+    backend_reachable: "Healthy" as Status,
+    authentication: auth as Status,
+    turso: turso as Status,
+    cloudflare: cloudflare as Status,
+    resend: resend as Status,
+    required_environment_variables: environment as Status,
+    credential_broker: broker as Status,
+    backend_url: config.app.url() ? "Present" : "Missing",
+    environment_variables: envNames,
+  };
 
-  return NextResponse.json(
-    {
-      ok: healthy,
-      timestamp: new Date().toISOString(),
-      services: {
-        database: db,
-        r2_storage: r2,
-        jwt: jwt,
-      },
-      env: envStatus,
-    },
-    { status: healthy ? 200 : 503 }
-  );
+  return NextResponse.json(response, { status: broker === "Healthy" ? 200 : 503 });
 }

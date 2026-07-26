@@ -1,18 +1,23 @@
 import { Resend } from "resend";
+import { config } from "@/lib/config";
 
 let resend: Resend | null = null;
 
 function getResend(): Resend {
   if (!resend) {
-    if (!process.env.RESEND_API_KEY) {
+    if (!config.resend.apiKey()) {
       throw new Error("RESEND_API_KEY is required");
     }
-    resend = new Resend(process.env.RESEND_API_KEY);
+    resend = new Resend(config.resend.apiKey());
   }
   return resend;
 }
 
-const from = () => process.env.RESEND_FROM_EMAIL ?? "noreply@meetsweet.app";
+const from = () => {
+  const sender = config.resend.sender();
+  if (!sender) throw new Error("VERIFIED_SENDER_EMAIL is required");
+  return sender;
+};
 
 export async function sendVerificationEmail(opts: {
   to: string;

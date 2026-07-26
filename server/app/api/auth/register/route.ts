@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { users, profiles, wallets, verification_codes } from "@/lib/db/schema";
+import { users, profiles, verification_codes } from "@/lib/db/schema";
 import { hashPassword } from "@/lib/auth/password";
 import { generateId, generateVerificationCode, expiresAt } from "@/lib/auth/codes";
 import { parseBody } from "@/lib/api/validate";
@@ -50,12 +50,6 @@ export async function POST(req: NextRequest) {
     id: generateId(),
     user_id: userId,
     display_name: body.full_name,
-  });
-
-  // Create wallet
-  await db.insert(wallets).values({
-    id: generateId(),
-    user_id: userId,
   });
 
   // Generate verification code
