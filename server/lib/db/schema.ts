@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   index,
   integer,
+  real,
   sqliteTable,
   text,
   uniqueIndex,
@@ -17,6 +18,8 @@ const updatedAt = () =>
     .notNull()
     .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`);
 
+// ─── Auth / identity ────────────────────────────────────────────────────────
+
 export const users = sqliteTable(
   "users",
   {
@@ -26,18 +29,10 @@ export const users = sqliteTable(
     email: text("email").notNull(),
     phone: text("phone"),
     password_hash: text("password_hash").notNull(),
-    is_verified: integer("is_verified", { mode: "boolean" })
-      .notNull()
-      .default(false),
-    is_creator: integer("is_creator", { mode: "boolean" })
-      .notNull()
-      .default(false),
-    is_active: integer("is_active", { mode: "boolean" })
-      .notNull()
-      .default(true),
-    role: text("role", { enum: ["user", "creator", "admin"] })
-      .notNull()
-      .default("user"),
+    is_verified: integer("is_verified", { mode: "boolean" }).notNull().default(false),
+    is_creator: integer("is_creator", { mode: "boolean" }).notNull().default(false),
+    is_active: integer("is_active", { mode: "boolean" }).notNull().default(true),
+    role: text("role", { enum: ["user", "creator", "admin"] }).notNull().default("user"),
     created_at: createdAt(),
     updated_at: updatedAt(),
     deleted_at: text("deleted_at"),
@@ -50,22 +45,105 @@ export const users = sqliteTable(
 
 export const profiles = sqliteTable("profiles", {
   id: id(),
-  user_id: text("user_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
+  user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   display_name: text("display_name"),
+  bio: text("bio"),
   avatar_url: text("avatar_url"),
+  banner_url: text("banner_url"),
+  website: text("website"),
+  location: text("location"),
+  is_verified_creator: integer("is_verified_creator", { mode: "boolean" }).notNull().default(false),
+  subscription_price: real("subscription_price").default(0),
   created_at: createdAt(),
   updated_at: updatedAt(),
 });
+
+export const user_settings = sqliteTable("user_settings", {
+  id: id(),
+  user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  push_notifications: integer("push_notifications", { mode: "boolean" }).notNull().default(true),
+  email_notifications: integer("email_notifications", { mode: "boolean" }).notNull().default(true),
+  dark_mode: integer("dark_mode", { mode: "boolean" }).notNull().default(true),
+  data_saver: integer("data_saver", { mode: "boolean" }).notNull().default(false),
+  autoplay_media: integer("autoplay_media", { mode: "boolean" }).notNull().default(true),
+  biometric_login: integer("biometric_login", { mode: "boolean" }).notNull().default(false),
+  created_at: createdAt(),
+  updated_at: updatedAt(),
+});
+
+export const verification_codes = sqliteTable(
+  "verification_codes",
+  {
+    id: id(),
+    user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    code: text("code").notNull(),
+    type: text("type", { enum: ["email_verify", "password_reset", "phone_verify"] }).notNull(),
+    expires_at: text("expires_at").notNull(),
+    used_at: text("used_at"),
+    created_at: createdAt(),
+  },
+  (table) => [index("verification_codes_user_type_idx").on(table.user_id, table.type)],
+);
+
+export const refresh_tokens = sqliteTable(
+  "refresh_tokens",
+  {
+    id: id(),
+    user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    token_hash: text("token_hash").notNull(),
+    device_id: text("device_id"),
+    expires_at: text("expires_at").notNull(),
+    revoked_at: text("revoked_at"),
+    created_at: createdAt(),
+  },
+  (table) => [
+    uniqueIndex("refresh_tokens_hash_idx").on(table.token_hash),
+    index("refresh_tokens_user_idx").on(table.user_id),
+  ],
+);
+
+export const sessions = sqliteTable("sessions", {
+  id: id(),
+  user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  token_hash: text("token_hash").notNull(),
+  device_id: text("device_id"),
+  ip_address: text("ip_address"),
+  user_agent: text("user_agent"),
+  expires_at: text("expires_at").notNull(),
+  created_at: createdAt(),
+});
+
+export const login_history = sqliteTable(
+  "login_history",
+  {
+    id: id(),
+    user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    ip_address: text("ip_address"),
+    user_agent: text("user_agent"),
+    device_id: text("device_id"),
+    status: text("status", { enum: ["success", "failed"] }).notNull().default("success"),
+    created_at: createdAt(),
+  },
+  (table) => [index("login_history_user_idx").on(table.user_id)],
+);
+
+export const devices = sqliteTable("devices", {
+  id: id(),
+  user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  push_token: text("push_token"),
+  platform: text("platform"),
+  device_name: text("device_name"),
+  last_seen_at: text("last_seen_at"),
+  created_at: createdAt(),
+});
+
+// ─── Credential broker ───────────────────────────────────────────────────────
 
 export const credential_grants = sqliteTable(
   "credential_grants",
   {
     id: id(),
-    user_id: text("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+    user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
     token_hash: text("token_hash").notNull(),
     scopes: text("scopes").notNull(),
     expires_at: text("expires_at").notNull(),
@@ -79,69 +157,291 @@ export const credential_grants = sqliteTable(
   ],
 );
 
-export const verification_codes = sqliteTable(
-  "verification_codes",
-  {
-    id: id(),
-    user_id: text("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
-    code: text("code").notNull(),
-    type: text("type", {
-      enum: ["email_verify", "password_reset", "phone_verify"],
-    }).notNull(),
-    expires_at: text("expires_at").notNull(),
-    used_at: text("used_at"),
-    created_at: createdAt(),
-  },
-  (table) => [index("verification_codes_user_type_idx").on(table.user_id, table.type)],
-);
+// ─── Social ─────────────────────────────────────────────────────────────────
 
-export const refresh_tokens = sqliteTable(
-  "refresh_tokens",
-  {
-    id: id(),
-    user_id: text("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
-    token_hash: text("token_hash").notNull(),
-    device_id: text("device_id"),
-    expires_at: text("expires_at").notNull(),
-    revoked_at: text("revoked_at"),
-    created_at: createdAt(),
-  },
-  (table) => [
-    uniqueIndex("refresh_tokens_hash_idx").on(table.token_hash),
-    index("refresh_tokens_user_idx").on(table.user_id),
-  ],
-);
-
-export const user_settings = sqliteTable("user_settings", {
+export const posts = sqliteTable("posts", {
   id: id(),
-  user_id: text("user_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
-  biometric_login: integer("biometric_login", { mode: "boolean" })
-    .notNull()
-    .default(false),
+  creator_id: text("creator_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  caption: text("caption"),
+  visibility: text("visibility", { enum: ["public", "subscribers", "draft"] }).notNull().default("public"),
+  status: text("status", { enum: ["draft", "published"] }).notNull().default("draft"),
+  is_pinned: integer("is_pinned", { mode: "boolean" }).notNull().default(false),
+  preview_duration: integer("preview_duration"),
+  unlock_price: integer("unlock_price"),
+  expires_at: text("expires_at"),
+  published_at: text("published_at"),
+  view_count: integer("view_count").notNull().default(0),
+  like_count: integer("like_count").notNull().default(0),
+  comment_count: integer("comment_count").notNull().default(0),
+  save_count: integer("save_count").notNull().default(0),
+  created_at: createdAt(),
+  updated_at: updatedAt(),
+  deleted_at: text("deleted_at"),
+});
+
+export const media = sqliteTable("media", {
+  id: id(),
+  post_id: text("post_id").references(() => posts.id, { onDelete: "cascade" }),
+  uploader_id: text("uploader_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  url: text("url").notNull(),
+  blob_path: text("blob_path").notNull(),
+  type: text("type", { enum: ["image", "video"] }).notNull(),
+  mime_type: text("mime_type"),
+  size_bytes: integer("size_bytes"),
+  width: integer("width"),
+  height: integer("height"),
+  duration_seconds: real("duration_seconds"),
+  sort_order: integer("sort_order").notNull().default(0),
+  created_at: createdAt(),
+});
+
+export const post_likes = sqliteTable("post_likes", {
+  id: id(),
+  user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  post_id: text("post_id").notNull().references(() => posts.id, { onDelete: "cascade" }),
+  created_at: createdAt(),
+});
+
+export const post_views = sqliteTable("post_views", {
+  id: id(),
+  user_id: text("user_id").references(() => users.id, { onDelete: "set null" }),
+  post_id: text("post_id").notNull().references(() => posts.id, { onDelete: "cascade" }),
+  created_at: createdAt(),
+});
+
+export const saved_posts = sqliteTable("saved_posts", {
+  id: id(),
+  user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  post_id: text("post_id").notNull().references(() => posts.id, { onDelete: "cascade" }),
+  created_at: createdAt(),
+});
+
+export const hidden_posts = sqliteTable("hidden_posts", {
+  id: id(),
+  user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  post_id: text("post_id").notNull().references(() => posts.id, { onDelete: "cascade" }),
+  created_at: createdAt(),
+});
+
+export const archives = sqliteTable("archives", {
+  id: id(),
+  post_id: text("post_id").notNull().references(() => posts.id, { onDelete: "cascade" }),
+  creator_id: text("creator_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  price: real("price").default(0),
+  is_purchasable: integer("is_purchasable", { mode: "boolean" }).notNull().default(false),
+  created_at: createdAt(),
+});
+
+export const categories = sqliteTable("categories", {
+  id: id(),
+  name: text("name").notNull(),
+  slug: text("slug").notNull(),
+  post_count: integer("post_count").notNull().default(0),
+  created_at: createdAt(),
+});
+
+// ─── Social graph ─────────────────────────────────────────────────────────
+
+export const follows = sqliteTable("follows", {
+  id: id(),
+  follower_id: text("follower_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  following_id: text("following_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  created_at: createdAt(),
+});
+
+export const blocked_users = sqliteTable("blocked_users", {
+  id: id(),
+  blocker_id: text("blocker_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  blocked_id: text("blocked_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  created_at: createdAt(),
+});
+
+export const muted_users = sqliteTable("muted_users", {
+  id: id(),
+  muter_id: text("muter_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  muted_id: text("muted_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  created_at: createdAt(),
+});
+
+export const recent_searches = sqliteTable("recent_searches", {
+  id: id(),
+  user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  query: text("query").notNull(),
+  created_at: createdAt(),
+});
+
+// ─── Comments ─────────────────────────────────────────────────────────────
+
+export const comments = sqliteTable("comments", {
+  id: id(),
+  post_id: text("post_id").notNull().references(() => posts.id, { onDelete: "cascade" }),
+  author_id: text("author_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  body: text("body").notNull(),
+  is_pinned: integer("is_pinned", { mode: "boolean" }).notNull().default(false),
+  like_count: integer("like_count").notNull().default(0),
+  reply_count: integer("reply_count").notNull().default(0),
+  created_at: createdAt(),
+  updated_at: updatedAt(),
+  deleted_at: text("deleted_at"),
+});
+
+export const comment_replies = sqliteTable("comment_replies", {
+  id: id(),
+  comment_id: text("comment_id").notNull().references(() => comments.id, { onDelete: "cascade" }),
+  author_id: text("author_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  mention_id: text("mention_id").references(() => users.id),
+  body: text("body").notNull(),
+  like_count: integer("like_count").notNull().default(0),
+  created_at: createdAt(),
+  updated_at: updatedAt(),
+  deleted_at: text("deleted_at"),
+});
+
+export const comment_likes = sqliteTable("comment_likes", {
+  id: id(),
+  user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  comment_id: text("comment_id").references(() => comments.id, { onDelete: "cascade" }),
+  reply_id: text("reply_id").references(() => comment_replies.id, { onDelete: "cascade" }),
+  created_at: createdAt(),
+});
+
+export const reports = sqliteTable("reports", {
+  id: id(),
+  reporter_id: text("reporter_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  entity_type: text("entity_type").notNull(),
+  entity_id: text("entity_id").notNull(),
+  reason: text("reason").notNull(),
+  description: text("description"),
+  status: text("status").notNull().default("pending"),
   created_at: createdAt(),
   updated_at: updatedAt(),
 });
 
-export const login_history = sqliteTable(
-  "login_history",
-  {
-    id: id(),
-    user_id: text("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
-    ip_address: text("ip_address"),
-    user_agent: text("user_agent"),
-    device_id: text("device_id"),
-    status: text("status", { enum: ["success", "failed"] })
-      .notNull()
-      .default("success"),
-    created_at: createdAt(),
-  },
-  (table) => [index("login_history_user_idx").on(table.user_id)],
-);
+// ─── Messaging ────────────────────────────────────────────────────────────
+
+export const conversations = sqliteTable("conversations", {
+  id: id(),
+  type: text("type", { enum: ["direct", "group"] }).notNull().default("direct"),
+  name: text("name"),
+  avatar_url: text("avatar_url"),
+  last_message_at: text("last_message_at"),
+  created_by: text("created_by").references(() => users.id, { onDelete: "set null" }),
+  created_at: createdAt(),
+  updated_at: updatedAt(),
+});
+
+export const conversation_members = sqliteTable("conversation_members", {
+  id: id(),
+  conversation_id: text("conversation_id").notNull().references(() => conversations.id, { onDelete: "cascade" }),
+  user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  role: text("role").notNull().default("member"),
+  is_muted: integer("is_muted", { mode: "boolean" }).notNull().default(false),
+  is_pinned: integer("is_pinned", { mode: "boolean" }).notNull().default(false),
+  is_archived: integer("is_archived", { mode: "boolean" }).notNull().default(false),
+  last_read_at: text("last_read_at"),
+  created_at: createdAt(),
+});
+
+export const messages = sqliteTable("messages", {
+  id: id(),
+  conversation_id: text("conversation_id").notNull().references(() => conversations.id, { onDelete: "cascade" }),
+  sender_id: text("sender_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  reply_to_id: text("reply_to_id"),
+  type: text("type").notNull().default("text"),
+  body: text("body"),
+  media_url: text("media_url"),
+  media_blob_path: text("media_blob_path"),
+  reactions: text("reactions"),
+  is_edited: integer("is_edited", { mode: "boolean" }).notNull().default(false),
+  is_recalled: integer("is_recalled", { mode: "boolean" }).notNull().default(false),
+  created_at: createdAt(),
+  updated_at: updatedAt(),
+  deleted_at: text("deleted_at"),
+});
+
+export const message_reads = sqliteTable("message_reads", {
+  id: id(),
+  message_id: text("message_id").notNull().references(() => messages.id, { onDelete: "cascade" }),
+  user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  created_at: createdAt(),
+});
+
+// ─── Notifications ────────────────────────────────────────────────────────
+
+export const notifications = sqliteTable("notifications", {
+  id: id(),
+  user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  actor_id: text("actor_id").references(() => users.id, { onDelete: "set null" }),
+  type: text("type").notNull(),
+  entity_type: text("entity_type"),
+  entity_id: text("entity_id"),
+  body: text("body"),
+  is_read: integer("is_read", { mode: "boolean" }).notNull().default(false),
+  created_at: createdAt(),
+});
+
+// ─── Monetisation ─────────────────────────────────────────────────────────
+
+export const wallets = sqliteTable("wallets", {
+  id: id(),
+  user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  balance: real("balance").notNull().default(0),
+  currency: text("currency").notNull().default("NGN"),
+  created_at: createdAt(),
+  updated_at: updatedAt(),
+});
+
+export const transactions = sqliteTable("transactions", {
+  id: id(),
+  user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  type: text("type").notNull(),
+  amount: real("amount").notNull(),
+  currency: text("currency").notNull().default("NGN"),
+  status: text("status").notNull().default("pending"),
+  reference: text("reference"),
+  paystack_ref: text("paystack_ref"),
+  description: text("description"),
+  metadata: text("metadata"),
+  created_at: createdAt(),
+  updated_at: updatedAt(),
+});
+
+export const subscriptions = sqliteTable("subscriptions", {
+  id: id(),
+  subscriber_id: text("subscriber_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  creator_id: text("creator_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  status: text("status").notNull().default("pending"),
+  amount: real("amount").notNull(),
+  currency: text("currency").notNull().default("NGN"),
+  started_at: text("started_at"),
+  expires_at: text("expires_at"),
+  cancelled_at: text("cancelled_at"),
+  created_at: createdAt(),
+  updated_at: updatedAt(),
+});
+
+export const creator_settings = sqliteTable("creator_settings", {
+  id: id(),
+  user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  subscription_price: real("subscription_price").notNull().default(0),
+  allow_dms: integer("allow_dms", { mode: "boolean" }).notNull().default(true),
+  allow_comments: integer("allow_comments", { mode: "boolean" }).notNull().default(true),
+  welcome_message: text("welcome_message"),
+  verification_status: text("verification_status").notNull().default("none"),
+  created_at: createdAt(),
+  updated_at: updatedAt(),
+});
+
+export const creator_statistics = sqliteTable("creator_statistics", {
+  id: id(),
+  creator_id: text("creator_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  period: text("period").notNull(),
+  total_subscribers: integer("total_subscribers").notNull().default(0),
+  new_subscribers: integer("new_subscribers").notNull().default(0),
+  total_revenue: real("total_revenue").notNull().default(0),
+  total_views: integer("total_views").notNull().default(0),
+  total_likes: integer("total_likes").notNull().default(0),
+  total_posts: integer("total_posts").notNull().default(0),
+  created_at: createdAt(),
+  updated_at: updatedAt(),
+});
