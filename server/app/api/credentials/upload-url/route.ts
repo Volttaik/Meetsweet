@@ -72,6 +72,9 @@ function getClient(): S3Client {
     region: "auto",
     endpoint,
     credentials: { accessKeyId, secretAccessKey },
+    // R2 uses path-style URLs: <account>.r2.cloudflarestorage.com/<bucket>/...
+    // Virtual-hosted style (bucket as subdomain) returns 403 AccessDenied.
+    forcePathStyle: true,
     // Disable automatic checksum injection — R2 rejects presigned URLs that
     // include an x-amz-checksum-* query param with a placeholder value.
     requestChecksumCalculation: "when_required",
