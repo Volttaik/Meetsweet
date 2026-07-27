@@ -185,12 +185,14 @@ export const media = sqliteTable("media", {
   uploader_id: text("uploader_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   url: text("url").notNull(),
   blob_path: text("blob_path").notNull(),
-  type: text("type", { enum: ["image", "video"] }).notNull(),
+  type: text("type", { enum: ["image", "video", "audio", "document", "other"] }).notNull(),
   mime_type: text("mime_type"),
   size_bytes: integer("size_bytes"),
   width: integer("width"),
   height: integer("height"),
   duration_seconds: real("duration_seconds"),
+  thumbnail_url: text("thumbnail_url"),
+  file_name: text("file_name"),
   sort_order: integer("sort_order").notNull().default(0),
   created_at: createdAt(),
 });
@@ -349,8 +351,15 @@ export const messages = sqliteTable("messages", {
   reply_to_id: text("reply_to_id"),
   type: text("type").notNull().default("text"),
   body: text("body"),
+  caption: text("caption"),
   media_url: text("media_url"),
   media_blob_path: text("media_blob_path"),
+  mime_type: text("mime_type"),
+  file_name: text("file_name"),
+  file_size: integer("file_size"),
+  audio_duration: real("audio_duration"),
+  is_paid: integer("is_paid", { mode: "boolean" }).notNull().default(false),
+  paid_price: integer("paid_price"),
   reactions: text("reactions"),
   is_edited: integer("is_edited", { mode: "boolean" }).notNull().default(false),
   is_recalled: integer("is_recalled", { mode: "boolean" }).notNull().default(false),
@@ -358,6 +367,20 @@ export const messages = sqliteTable("messages", {
   updated_at: updatedAt(),
   deleted_at: text("deleted_at"),
 });
+
+export const message_unlocks = sqliteTable(
+  "message_unlocks",
+  {
+    id: id(),
+    message_id: text("message_id").notNull().references(() => messages.id, { onDelete: "cascade" }),
+    user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    credits_spent: integer("credits_spent").notNull().default(0),
+    created_at: createdAt(),
+  },
+  (table) => [
+    uniqueIndex("message_unlocks_msg_user_idx").on(table.message_id, table.user_id),
+  ],
+);
 
 export const message_reads = sqliteTable("message_reads", {
   id: id(),

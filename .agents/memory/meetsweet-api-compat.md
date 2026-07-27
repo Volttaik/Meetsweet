@@ -1,59 +1,33 @@
 ---
-name: MeetSweet API compatibility audit
-description: What was built and key decisions made when aligning the backend to the mobile app's API contract
+name: MeetSweet API compatibility
+description: Mobile is source of truth for the API contract; backend adapted to match.
 ---
 
-# MeetSweet API compatibility
+# MeetSweet API Compatibility
 
-## Context
-Mobile app (React Native/Expo, `/tmp/mobile/`) is the source of truth. Backend is Next.js 15 App Router + Drizzle/Turso at `server/app/api/`.
+## Rule
+The mobile app (`services/`, `contexts/`, `lib/api-client-react/`) is the source of truth.
+Backend routes must match the exact request fields and response shapes the mobile expects.
 
-All API calls go through `apiFetch()` which unwraps `{ ok: true, data: … }` envelopes, so route handlers use `ok()` / `created()` from `@/lib/api/response`.
+**Why:** Mobile is shipped to end-users and cannot be hot-patched; the backend can be deployed at any time.
 
-## Key architectural patterns
-- `requireAuth(req)` / `optionalAuth(req)` — returns `{ user: { userId } }` or `{ response: Response }`
-- `parseBody(req, zodSchema)` — returns `{ success, data }` or `{ success: false, response }`
-- `ok()`, `created()`, `err()`, `notFound()` from `@/lib/api/response`
-- `generateId()` from `@/lib/auth/codes`
-- `db` from `@/lib/db`; tables from `@/lib/db/schema`
+## Mobile normalizer patterns
+- Snake_case and camelCase are both checked with `??`: `raw.mediaUrl ?? raw.media_url`
+- `apiFetch` unwraps the `{ ok: true, data: ... }` envelope automatically
+- `requestUploadUrl` in `services/credentials/index.ts` normalizes both `uploadUrl`/`upload_url`, `key`/`object_key` — backend can return either
 
-## Response shape decisions
+## Key sync performed (July 2026)
+- Added `caption`, `mime_type`, `file_name`, `file_size`, `audio_duration`, `is_paid`, `paid_price` to `messages` table
+- Added `thumbnail_url`, `file_name` to `media` table
+- Expanded `media.type` enum: image | video | **audio | document | other**
+- New table: `message_unlocks` (unique on message_id + user_id)
+- New route: `PATCH /api/messages/:id` — edit own message
+- New route: `POST /api/messages/:id/unlock` — unlock paid content via credits
+- `POST /api/conversations/:id/messages` schema expanded for all new fields
+- `GET /api/conversations/:id/messages` response includes all new fields + unlock status
+- `GET /api/explore` now returns `media[]` array on each post
+- `POST /api/media` and `POST /api/media/upload` expanded to accept audio/document/other
+- `GET /api/conversations` unread count now correct when `last_read_at` is null
 
-**Why:** Mobile normalizers check camelCase fields only (e.g. `raw.otherUser`, `raw.isOwn`). We return both camelCase and snake_case for maximum compat.
-
-- `GET /api/users/me` — returns user fields at top level (not `{ user: … }`), with `follower_count`, `following_count`, `post_count`
-- `GET /api/wallet` — returns `{ balance, currency }` at top level
-- `GET /api/settings` — returns settings fields at top level, NOT `{ settings: … }`
-- `GET /api/creator/settings` — returns `{ subscription_price, allow_dms, allow_comments, welcome_message }` at top level
-- `GET /api/creator/statistics` — returns `{ period_stats, active_subscribers, total_posts, total_revenue }` (not raw db rows)
-- `GET /api/notifications` — includes `title`, `data { post_id, actor_id, actor_name, … }`, `unread_count`
-- `POST /api/posts` — returns `{ id }` not `{ post }`. Supports both `media_ids: string[]` and inline `media: [{}]`
-- `POST /api/conversations` — accepts `userId` (camelCase) OR `user_id`; returns `{ conversationId, created }`
-- `GET /api/conversations` — returns `otherUser` (camelCase), `unreadCount`, `lastMessageBody`
-- `GET /api/conversations/[id]/messages` — returns `isOwn`, `mediaType`, `isDeleted` (camelCase + snake_case)
-
-## New routes created (24 total)
-- `GET /api/users/[username]/posts`
-- `POST /api/users/[username]/report`
-- `POST /api/posts/[id]/publish`
-- `POST /api/posts/[id]/archive`
-- `POST /api/posts/[id]/restore`
-- `GET|POST /api/comments/[commentId]/replies`
-- `POST /api/comments/[commentId]/report`
-- `POST /api/messages/conversations/[conversationId]/read`
-- `DELETE /api/notifications/[id]`
-- `POST /api/subscriptions/[id]/cancel`
-- `GET /api/payments/verify?reference=…`
-- `GET /api/search`
-- `GET|DELETE /api/search/recent`
-- `GET /api/explore`
-- `POST /api/creator/become`
-- `POST /api/creator/verification`
-- `POST /api/creator/withdraw`
-- `POST /api/auth/change-password`
-- `PATCH /api/auth/biometric`
-- `DELETE /api/auth/delete-account`
-- `POST /api/auth/logout-all`
-- `GET /api/auth/username-availability`
-
-**Why:** All discovered via mobile service files in `/tmp/mobile/services/`. TypeScript compiled clean after all additions.
+## Migration required on production
+Run `cd server && npx tsx scripts/migrate.ts` once to apply ALTER TABLE statements.

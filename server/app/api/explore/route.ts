@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
-import { eq, and, desc, isNull } from "drizzle-orm";
+import { eq, and, desc, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { users, profiles, posts } from "@/lib/db/schema";
+import { users, profiles, posts, media, post_likes, saved_posts } from "@/lib/db/schema";
 import { optionalAuth } from "@/middleware/auth";
 import { ok } from "@/lib/api/response";
 
@@ -10,7 +10,9 @@ export async function GET(req: NextRequest) {
   const limit = Math.min(Number(req.nextUrl.searchParams.get("limit") ?? 20), 50);
   const offset = (page - 1) * limit;
 
-  // Return public posts for the explore feed
+  const userId = await optionalAuth(req).then((a) => a?.userId ?? null);
+
+  // Return public posts for the explore feed, with media attached
   const postRows = await db
     .select({
       id: posts.id,
@@ -25,8 +27,10 @@ export async function GET(req: NextRequest) {
       like_count: posts.like_count,
       comment_count: posts.comment_count,
       save_count: posts.save_count,
+      view_count: posts.view_count,
       created_at: posts.created_at,
       published_at: posts.published_at,
+      updated_at: posts.updated_at,
     })
     .from(posts)
     .innerJoin(users, eq(users.id, posts.creator_id))
@@ -41,6 +45,71 @@ export async function GET(req: NextRequest) {
     .orderBy(desc(posts.published_at))
     .limit(limit)
     .offset(offset);
+
+  // Attach media to each post
+  const postIds = postRows.map((p) => p.id);
+  let mediaByPost: Record<string, unknown[]> = {};
+
+  if (postIds.length > 0) {
+    const allMedia = await db
+      .select()
+      .from(media)
+      .where(
+        sql`${media.post_id} IN (${sql.join(postIds.map((id) => sql`${id}`), sql`, `)})`,
+      );
+
+    mediaByPost = allMedia.reduce(
+      (acc, m) => {
+        if (!m.post_id) return acc;
+        if (!acc[m.post_id]) acc[m.post_id] = [];
+        acc[m.post_id].push({
+          url: m.url,
+          type: m.type,
+          thumbnail_url: m.thumbnail_url ?? null,
+          duration_secs: m.duration_seconds,
+          file_size: m.size_bytes,
+          width: m.width,
+          height: m.height,
+        });
+        return acc;
+      },
+      {} as Record<string, unknown[]>,
+    );
+  }
+
+  // Liked / bookmarked sets for the current user
+  let likedSet = new Set<string>();
+  let savedSet = new Set<string>();
+  if (userId && postIds.length > 0) {
+    const liked = await db
+      .select({ post_id: post_likes.post_id })
+      .from(post_likes)
+      .where(
+        and(
+          eq(post_likes.user_id, userId),
+          sql`${post_likes.post_id} IN (${sql.join(postIds.map((id) => sql`${id}`), sql`, `)})`,
+        ),
+      );
+    likedSet = new Set(liked.map((l) => l.post_id));
+
+    const saved = await db
+      .select({ post_id: saved_posts.post_id })
+      .from(saved_posts)
+      .where(
+        and(
+          eq(saved_posts.user_id, userId),
+          sql`${saved_posts.post_id} IN (${sql.join(postIds.map((id) => sql`${id}`), sql`, `)})`,
+        ),
+      );
+    savedSet = new Set(saved.map((s) => s.post_id));
+  }
+
+  const enrichedPosts = postRows.map((p) => ({
+    ...p,
+    media: mediaByPost[p.id] ?? [],
+    liked_by_me: likedSet.has(p.id),
+    bookmarked_by_me: savedSet.has(p.id),
+  }));
 
   // Return featured creators (is_creator=true)
   const creatorRows = await db
@@ -61,7 +130,7 @@ export async function GET(req: NextRequest) {
     .offset(offset);
 
   return ok({
-    posts: postRows,
+    posts: enrichedPosts,
     users: creatorRows.map((u) => ({
       id: u.id,
       name: u.full_name,

@@ -8,19 +8,46 @@ import { generateId } from "@/lib/auth/codes";
 import { config } from "@/lib/config";
 
 const ALLOWED_MIME_TYPES = [
+  // Images
   "image/jpeg",
   "image/png",
   "image/webp",
   "image/gif",
   "image/heic",
   "image/heif",
+  // Video
   "video/mp4",
   "video/quicktime",
   "video/webm",
+  // Audio
+  "audio/mpeg",
+  "audio/wav",
+  "audio/ogg",
+  "audio/mp4",
+  "audio/webm",
+  // Documents
+  "application/pdf",
+  "text/plain",
+  "application/rtf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 ] as const;
 
-const MAX_IMAGE_BYTES = 10 * 1024 * 1024;  // 10 MB
-const MAX_VIDEO_BYTES = 500 * 1024 * 1024; // 500 MB
+const MAX_BYTES_BY_CATEGORY: Record<string, number> = {
+  image: 10 * 1024 * 1024,    // 10 MB
+  video: 500 * 1024 * 1024,   // 500 MB
+  audio: 50 * 1024 * 1024,    // 50 MB
+  document: 25 * 1024 * 1024, // 25 MB
+};
+
+function getCategory(mime: string): "image" | "video" | "audio" | "document" {
+  if (mime.startsWith("image/")) return "image";
+  if (mime.startsWith("video/")) return "video";
+  if (mime.startsWith("audio/")) return "audio";
+  return "document";
+}
 
 const EXT_BY_MIME: Record<string, string> = {
   "image/jpeg": "jpg",
@@ -32,6 +59,18 @@ const EXT_BY_MIME: Record<string, string> = {
   "video/mp4": "mp4",
   "video/quicktime": "mov",
   "video/webm": "webm",
+  "audio/mpeg": "mp3",
+  "audio/wav": "wav",
+  "audio/ogg": "ogg",
+  "audio/mp4": "m4a",
+  "audio/webm": "webm",
+  "application/pdf": "pdf",
+  "text/plain": "txt",
+  "application/rtf": "rtf",
+  "application/msword": "doc",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+  "application/vnd.ms-excel": "xls",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
 };
 
 function getClient(): S3Client {
@@ -91,11 +130,11 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const isVideo = mimeType.startsWith("video/");
-  const maxBytes = isVideo ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES;
+  const category = getCategory(mimeType);
+  const maxBytes = MAX_BYTES_BY_CATEGORY[category];
   if (file.size > maxBytes) {
     return err(
-      `File too large. Max for ${isVideo ? "video" : "image"}: ${maxBytes / 1024 / 1024} MB`,
+      `File too large. Max for ${category}: ${maxBytes / 1024 / 1024} MB`,
       413,
     );
   }
@@ -127,6 +166,7 @@ export async function POST(req: NextRequest) {
 
   const mediaId = generateId();
   const postId = (formData.get("post_id") as string | null) || null;
+  const fileName = (formData.get("file_name") as string | null) || null;
 
   await db.insert(media).values({
     id: mediaId,
@@ -134,9 +174,10 @@ export async function POST(req: NextRequest) {
     post_id: postId,
     url,
     blob_path: key,
-    type: isVideo ? "video" : "image",
+    type: category,
     mime_type: mimeType,
     size_bytes: file.size,
+    file_name: fileName,
   });
 
   return created({
@@ -144,7 +185,7 @@ export async function POST(req: NextRequest) {
       id: mediaId,
       url,
       key,
-      type: isVideo ? "video" : "image",
+      type: category,
       mime_type: mimeType,
       size_bytes: file.size,
     },

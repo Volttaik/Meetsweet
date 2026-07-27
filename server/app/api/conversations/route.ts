@@ -70,20 +70,21 @@ export async function GET(req: NextRequest) {
       .limit(1);
 
     // Count unread messages (messages after last_read_at from other users)
+    // When last_read_at is null, count all messages from others
     let unread_count = 0;
-    if (membership.last_read_at) {
-      const [unreadRow] = await db
-        .select({ count: sql<number>`count(*)` })
-        .from(messages)
-        .where(
-          and(
-            eq(messages.conversation_id, convId),
-            sql`${messages.created_at} > ${membership.last_read_at}`,
-            sql`${messages.sender_id} != ${auth.user.userId}`,
-          ),
-        );
-      unread_count = unreadRow?.count ?? 0;
-    }
+    const [unreadRow] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(messages)
+      .where(
+        and(
+          eq(messages.conversation_id, convId),
+          sql`${messages.sender_id} != ${auth.user.userId}`,
+          ...(membership.last_read_at
+            ? [sql`${messages.created_at} > ${membership.last_read_at}`]
+            : []),
+        ),
+      );
+    unread_count = unreadRow?.count ?? 0;
 
     result.push({
       id: conv.id,
