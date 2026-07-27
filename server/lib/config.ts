@@ -11,7 +11,21 @@ function firstSet(...names: string[]): string | undefined {
 
 export const config = {
   turso: {
-    url: () => firstSet("TURSO_DATABASE_URL", "DATABASE_URL"),
+    // Never fall back to DATABASE_URL — in Replit that is always the built-in
+    // PostgreSQL URL (postgresql://...?sslmode=...) which libsql cannot parse.
+    url: () => {
+      const raw = firstSet("TURSO_DATABASE_URL");
+      if (!raw) return undefined;
+      // Strip any unsupported query params (e.g. sslmode) so a mis-pasted URL
+      // doesn't silently break every API route.
+      try {
+        const u = new URL(raw);
+        u.search = "";
+        return u.toString();
+      } catch {
+        return raw;
+      }
+    },
     token: () => firstSet("TURSO_AUTH_TOKEN"),
   },
   r2: {
