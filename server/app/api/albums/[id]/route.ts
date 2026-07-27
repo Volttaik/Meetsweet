@@ -31,6 +31,12 @@ export async function GET(
   return ok({ album });
 }
 
+// Mobile app uses PUT for updates — alias to the same handler
+export const PUT = async (
+  req: NextRequest,
+  ctx: { params: Promise<{ id: string }> },
+) => PATCH(req, ctx);
+
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },

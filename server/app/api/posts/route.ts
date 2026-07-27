@@ -108,7 +108,8 @@ export async function GET(req: NextRequest) {
     .innerJoin(users, eq(users.id, posts.creator_id))
     .leftJoin(profiles, eq(profiles.user_id, posts.creator_id));
 
-  let conditions = and(isNull(posts.deleted_at), eq(posts.status, "published"));
+  // Posts feed only returns content_type='post' items (not videos or shorts)
+  let conditions = and(isNull(posts.deleted_at), eq(posts.status, "published"), eq(posts.content_type, "post"));
 
   if (bookmarked && userId) {
     const bookmarkedIds = await db

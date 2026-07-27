@@ -177,6 +177,80 @@ async function run() {
       name: "post_unlocks: user history index",
       sql: `CREATE INDEX IF NOT EXISTS post_unlocks_user_created_idx ON post_unlocks(user_id, created_at)`,
     },
+
+    // ── posts table: content_type discriminator (post / video / short) ────────
+    {
+      name: "posts: add content_type",
+      sql: `ALTER TABLE posts ADD COLUMN content_type TEXT NOT NULL DEFAULT 'post'`,
+    },
+    {
+      name: "posts: add title",
+      sql: `ALTER TABLE posts ADD COLUMN title TEXT`,
+    },
+    {
+      name: "posts: add description",
+      sql: `ALTER TABLE posts ADD COLUMN description TEXT`,
+    },
+    {
+      name: "posts: add share_count",
+      sql: `ALTER TABLE posts ADD COLUMN share_count INTEGER NOT NULL DEFAULT 0`,
+    },
+    {
+      name: "posts: content_type index",
+      sql: `CREATE INDEX IF NOT EXISTS posts_content_type_status_idx ON posts(content_type, status, visibility)`,
+    },
+    {
+      name: "posts: creator+content_type index",
+      sql: `CREATE INDEX IF NOT EXISTS posts_creator_content_type_idx ON posts(creator_id, content_type)`,
+    },
+
+    // ── creator_reviews table (new) ───────────────────────────────────────────
+    {
+      name: "create creator_reviews",
+      sql: `
+        CREATE TABLE IF NOT EXISTS creator_reviews (
+          id TEXT PRIMARY KEY,
+          creator_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          reviewer_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          rating INTEGER NOT NULL,
+          body TEXT,
+          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+          updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        )
+      `,
+    },
+    {
+      name: "creator_reviews: unique creator/reviewer index",
+      sql: `CREATE UNIQUE INDEX IF NOT EXISTS creator_reviews_creator_reviewer_idx ON creator_reviews(creator_id, reviewer_id)`,
+    },
+    {
+      name: "creator_reviews: creator index",
+      sql: `CREATE INDEX IF NOT EXISTS creator_reviews_creator_idx ON creator_reviews(creator_id)`,
+    },
+
+    // ── shares table (new) ────────────────────────────────────────────────────
+    {
+      name: "create shares",
+      sql: `
+        CREATE TABLE IF NOT EXISTS shares (
+          id TEXT PRIMARY KEY,
+          creator_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+          content_type TEXT NOT NULL,
+          content_id TEXT NOT NULL,
+          token TEXT NOT NULL,
+          expires_at TEXT,
+          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        )
+      `,
+    },
+    {
+      name: "shares: unique token index",
+      sql: `CREATE UNIQUE INDEX IF NOT EXISTS shares_token_idx ON shares(token)`,
+    },
+    {
+      name: "shares: content index",
+      sql: `CREATE INDEX IF NOT EXISTS shares_content_idx ON shares(content_type, content_id)`,
+    },
   ];
 
   for (const m of migrations) {

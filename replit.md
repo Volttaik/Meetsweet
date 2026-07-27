@@ -43,13 +43,21 @@ Acts as a credential broker + full feature API.
 - `server/app/api/credentials/` — scoped credential and signed URL routes
 - `server/app/api/conversations/` — messaging conversations
 - `server/app/api/messages/` — individual message operations (edit, delete, unlock)
-- `server/app/api/posts/` — posts, comments, likes, bookmarks
-- `server/app/api/explore/` — explore/discover feed
+- `server/app/api/posts/` — posts feed (content_type='post' only), comments, likes, bookmarks
+- `server/app/api/videos/` — long-form video feed, detail, likes, comments, recommendations
+- `server/app/api/shorts/` — shorts feed, detail, likes, views, comments, recommendations
+- `server/app/api/creators/` — creator profiles, posts/videos/shorts/albums per creator, reviews, stats, subscribers
+- `server/app/api/albums/` — albums CRUD, items, unlock, purchase
+- `server/app/api/explore/` — public discovery feed (posts only)
+- `server/app/api/collections/` — algorithmic content collections for Explore tab
+- `server/app/api/search/` — full-text search, recent searches, trending searches
+- `server/app/api/shares/` — share link generation and resolution
 - `server/app/api/users/` — user profiles and social graph
 - `server/app/api/media/` — media registration and proxy upload
 - `server/app/api/wallet/` — wallet balance and transactions
 - `server/lib/db/schema.ts` — full Drizzle schema
 - `server/lib/auth/` — JWT + password helpers
+- `server/lib/services/content.ts` — shared helpers for video/short/comment response shapes
 - `server/middleware.ts` — CORS + security headers
 - `server/app/page.tsx` — diagnostic status panel
 - `server/scripts/migrate.ts` — one-shot migration for new columns

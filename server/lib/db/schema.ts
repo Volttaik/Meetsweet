@@ -162,7 +162,11 @@ export const credential_grants = sqliteTable(
 export const posts = sqliteTable("posts", {
   id: id(),
   creator_id: text("creator_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  // content_type distinguishes posts / long-form videos / shorts
+  content_type: text("content_type", { enum: ["post", "video", "short"] }).notNull().default("post"),
+  title: text("title"),
   caption: text("caption"),
+  description: text("description"),
   visibility: text("visibility", { enum: ["public", "subscribers", "draft"] }).notNull().default("public"),
   status: text("status", { enum: ["draft", "published"] }).notNull().default("draft"),
   is_pinned: integer("is_pinned", { mode: "boolean" }).notNull().default(false),
@@ -174,10 +178,14 @@ export const posts = sqliteTable("posts", {
   like_count: integer("like_count").notNull().default(0),
   comment_count: integer("comment_count").notNull().default(0),
   save_count: integer("save_count").notNull().default(0),
+  share_count: integer("share_count").notNull().default(0),
   created_at: createdAt(),
   updated_at: updatedAt(),
   deleted_at: text("deleted_at"),
-});
+}, (table) => [
+  index("posts_content_type_status_idx").on(table.content_type, table.status, table.visibility),
+  index("posts_creator_content_type_idx").on(table.creator_id, table.content_type),
+]);
 
 export const media = sqliteTable("media", {
   id: id(),
@@ -312,6 +320,44 @@ export const post_unlocks = sqliteTable(
   (table) => [
     uniqueIndex("post_unlocks_post_user_idx").on(table.post_id, table.user_id),
     index("post_unlocks_user_created_idx").on(table.user_id, table.created_at),
+  ],
+);
+
+// ─── Creator reviews ─────────────────────────────────────────────────────────
+
+export const creator_reviews = sqliteTable(
+  "creator_reviews",
+  {
+    id: id(),
+    creator_id: text("creator_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    reviewer_id: text("reviewer_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    rating: integer("rating").notNull(), // 1–5
+    body: text("body"),
+    created_at: createdAt(),
+    updated_at: updatedAt(),
+  },
+  (table) => [
+    uniqueIndex("creator_reviews_creator_reviewer_idx").on(table.creator_id, table.reviewer_id),
+    index("creator_reviews_creator_idx").on(table.creator_id),
+  ],
+);
+
+// ─── Shares ────────────────────────────────────────────────────────────────
+
+export const shares = sqliteTable(
+  "shares",
+  {
+    id: id(),
+    creator_id: text("creator_id").references(() => users.id, { onDelete: "set null" }),
+    content_type: text("content_type").notNull(), // post | video | short | album | creator
+    content_id: text("content_id").notNull(),
+    token: text("token").notNull(),
+    expires_at: text("expires_at"),
+    created_at: createdAt(),
+  },
+  (table) => [
+    uniqueIndex("shares_token_idx").on(table.token),
+    index("shares_content_idx").on(table.content_type, table.content_id),
   ],
 );
 

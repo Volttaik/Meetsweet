@@ -1,0 +1,102 @@
+import { NextRequest } from "next/server";
+import { eq, and, desc, isNull } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { albums, users, profiles, album_unlocks } from "@/lib/db/schema";
+import { optionalAuth } from "@/middleware/auth";
+import { ok, err } from "@/lib/api/response";
+
+export async function GET(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params;
+  const page = Math.max(1, Number(req.nextUrl.searchParams.get("page") ?? 1));
+  const limit = Math.min(Math.max(1, Number(req.nextUrl.searchParams.get("limit") ?? 20)), 50);
+  const userId = (await optionalAuth(req))?.userId ?? null;
+
+  const condition = id.includes("-") && id.length > 20 ? eq(users.id, id) : eq(users.username, id);
+  const [creator] = await db.select({ id: users.id, is_creator: users.is_creator })
+    .from(users).where(and(condition, eq(users.is_active, true))).limit(1);
+  if (!creator || !creator.is_creator) return err("Creator not found", 404);
+
+  const rows = await db
+    .select({
+      id: albums.id,
+      creator_id: albums.creator_id,
+      title: albums.title,
+      description: albums.description,
+      cover_url: albums.cover_url,
+      price_credits: albums.price_credits,
+      is_premium: albums.is_premium,
+      visibility: albums.visibility,
+      item_count: albums.item_count,
+      created_at: albums.created_at,
+      updated_at: albums.updated_at,
+      creator_name: users.full_name,
+      creator_username: users.username,
+      creator_avatar_url: profiles.avatar_url,
+      creator_is_verified: users.is_verified,
+    })
+    .from(albums)
+    .innerJoin(users, eq(users.id, albums.creator_id))
+    .leftJoin(profiles, eq(profiles.user_id, albums.creator_id))
+    .where(and(
+      eq(albums.creator_id, creator.id),
+      isNull(albums.deleted_at),
+      eq(albums.visibility, "public"),
+    ))
+    .orderBy(desc(albums.created_at))
+    .limit(limit + 1)
+    .offset((page - 1) * limit);
+
+  const hasMore = rows.length > limit;
+  const items = hasMore ? rows.slice(0, limit) : rows;
+  const albumIds = items.map((a) => a.id);
+
+  const unlockedSet = userId && albumIds.length > 0
+    ? await db.select({ album_id: album_unlocks.album_id }).from(album_unlocks)
+        .where(eq(album_unlocks.user_id, userId))
+        .then((r) => new Set(r.map((x) => x.album_id)))
+    : new Set<string>();
+
+  const result = items.map((row) => ({
+    id: row.id,
+    creator_id: row.creator_id,
+    title: row.title,
+    description: row.description,
+    cover_url: row.cover_url,
+    coverUrl: row.cover_url,
+    preview_urls: row.cover_url ? [row.cover_url] : [],
+    previewUrls: row.cover_url ? [row.cover_url] : [],
+    price_credits: row.price_credits,
+    priceCredits: row.price_credits,
+    is_premium: row.is_premium,
+    isPremium: row.is_premium,
+    visibility: row.visibility,
+    item_count: row.item_count,
+    itemCount: row.item_count,
+    created_at: row.created_at,
+    createdAt: row.created_at,
+    is_unlocked_by_me: unlockedSet.has(row.id) || !row.is_premium || row.creator_id === userId,
+    isUnlockedByMe: unlockedSet.has(row.id) || !row.is_premium || row.creator_id === userId,
+    creator: {
+      id: row.creator_id,
+      name: row.creator_name,
+      username: row.creator_username,
+      avatar_url: row.creator_avatar_url,
+      avatarUrl: row.creator_avatar_url,
+      is_verified: row.creator_is_verified,
+      isVerified: row.creator_is_verified,
+      is_online: false,
+    },
+  }));
+
+  return ok({
+    albums: result,
+    page,
+    limit,
+    has_more: hasMore,
+    hasMore,
+    next_cursor: hasMore ? items[items.length - 1]?.created_at ?? null : null,
+  });
+}

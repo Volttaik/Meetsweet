@@ -53,3 +53,7 @@ R2_ENDPOINT = "https://e72d5cb6f9f658585db827cb12790c89.r2.cloudflarestorage.com
 TURSO_DATABASE_URL = "libsql://database-fulvous-ferry-vercel-icfg-v86wsrnn1jihzin22m9nophx.aws-us-east-1.turso.io"
 TURSO_AUTH_TOKEN = "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJpYXQiOjE3ODQ5MzM2OTAsImlkIjoiMDE5Zjk2NTYtYWIwMS03OTk1LTk1YjYtNWM2NjY5MWNhZjQ0Iiwia2lkIjoiWXUyV2h3THp0LUNvcy0weTFVZ1NPQkFDU2NvenlpR29zUm93Wk11bFhRUSIsInJpZCI6IjEyOTU4OWU4LThkMDctNDI1OS04NTM2LWI5NzU2YTUzYTJmZSJ9.VidDtKBeWoO254bF6yruq72PttN3dw5bfN0AEFert2r1VpuDAc_uUAjQ_4l0gxKoQszXnbhkr1Y-gRvHLmUlBQ"
 R2_PUBLIC_BASE_URL = "https://pub-d9ad361a069040f7b41ce5c176fdf3be.r2.dev"
+
+[[ports]]
+localPort = 3000
+externalPort = 80

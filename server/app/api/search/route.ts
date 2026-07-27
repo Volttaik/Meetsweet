@@ -88,6 +88,7 @@ export async function GET(req: NextRequest) {
           isNull(posts.deleted_at),
           eq(posts.status, "published"),
           eq(posts.visibility, "public"),
+          eq(posts.content_type, "post"),
           like(posts.caption, pattern),
         ),
       )
