@@ -1,33 +1,33 @@
 ---
 name: MeetSweet API compatibility
-description: Mobile is source of truth for the API contract; backend adapted to match.
+description: Backend-vs-mobile audit results and production database migration status
 ---
 
-# MeetSweet API Compatibility
+# MeetSweet Backend ↔ Mobile Compatibility
 
-## Rule
-The mobile app (`services/`, `contexts/`, `lib/api-client-react/`) is the source of truth.
-Backend routes must match the exact request fields and response shapes the mobile expects.
+## Audit status (July 2026)
+Full 10-phase audit completed. Backend compared against MeetSweet-mobile.git frontend.
 
-**Why:** Mobile is shipped to end-users and cannot be hot-patched; the backend can be deployed at any time.
+## Production database
+All 40 tables confirmed present in live Turso database.
+Migration script (`server/scripts/migrate.ts`) was run for the first time in July 2026 — all 24 steps applied fresh:
+- Added `media.thumbnail_url`, `media.file_name`
+- Added `messages.caption`, `.mime_type`, `.file_name`, `.file_size`, `.audio_duration`, `.is_paid`, `.paid_price`
+- Created `message_unlocks` table (with unique index)
+- Created `albums`, `album_items`, `album_unlocks` tables (with indexes)
+- Created `post_unlocks` table (with indexes)
 
-## Mobile normalizer patterns
-- Snake_case and camelCase are both checked with `??`: `raw.mediaUrl ?? raw.media_url`
-- `apiFetch` unwraps the `{ ok: true, data: ... }` envelope automatically
-- `requestUploadUrl` in `services/credentials/index.ts` normalizes both `uploadUrl`/`upload_url`, `key`/`object_key` — backend can return either
+**Why:** Production DB had never had the migration run — tables/columns were missing before this.
 
-## Key sync performed (July 2026)
-- Added `caption`, `mime_type`, `file_name`, `file_size`, `audio_duration`, `is_paid`, `paid_price` to `messages` table
-- Added `thumbnail_url`, `file_name` to `media` table
-- Expanded `media.type` enum: image | video | **audio | document | other**
-- New table: `message_unlocks` (unique on message_id + user_id)
-- New route: `PATCH /api/messages/:id` — edit own message
-- New route: `POST /api/messages/:id/unlock` — unlock paid content via credits
-- `POST /api/conversations/:id/messages` schema expanded for all new fields
-- `GET /api/conversations/:id/messages` response includes all new fields + unlock status
-- `GET /api/explore` now returns `media[]` array on each post
-- `POST /api/media` and `POST /api/media/upload` expanded to accept audio/document/other
-- `GET /api/conversations` unread count now correct when `last_read_at` is null
+## Missing route found and fixed
+`POST /api/auth/resend-verification` — was absent, now at `server/app/api/auth/resend-verification/route.ts`.
+Used by `verify-email.tsx` screen's "Resend Code" button.
 
-## Migration required on production
-Run `cd server && npx tsx scripts/migrate.ts` once to apply ALTER TABLE statements.
+## Known non-issues (intentional design)
+- Mobile explore service derives catalog from `GET /api/posts`, not `GET /api/explore` — explore route exists but mobile bypasses it
+- Mobile album service is local-only (derived from explore posts) — album API routes exist and are correct but mobile doesn't call them yet
+
+## Response shape notes
+- All mobile-facing routes output both camelCase and snake_case fields (mobile normalizers accept either)
+- `GET /users/me` returns user flat in data envelope; `PATCH /users/me` returns `{user: ...}` — mobile handles both via `raw?.user ?? raw`
+- `GET /credentials/upload-url` returns camelCase (`uploadUrl`, `key`) — mobile normalizes both
