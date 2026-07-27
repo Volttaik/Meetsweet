@@ -32,7 +32,15 @@ export async function GET(req: NextRequest) {
     [settings] = await db.select().from(user_settings).where(eq(user_settings.user_id, auth.user.userId)).limit(1);
   }
 
-  return ok({ settings });
+  // Return settings fields directly — mobile expects AppSettings at the top level, not wrapped.
+  return ok({
+    push_notifications: settings!.push_notifications,
+    email_notifications: settings!.email_notifications,
+    dark_mode: settings!.dark_mode,
+    data_saver: settings!.data_saver,
+    autoplay_media: settings!.autoplay_media,
+    biometric_login: settings!.biometric_login,
+  });
 }
 
 export async function PATCH(req: NextRequest) {
@@ -57,5 +65,12 @@ export async function PATCH(req: NextRequest) {
   }
 
   const [settings] = await db.select().from(user_settings).where(eq(user_settings.user_id, auth.user.userId)).limit(1);
-  return ok({ settings });
+  return ok({
+    push_notifications: settings!.push_notifications,
+    email_notifications: settings!.email_notifications,
+    dark_mode: settings!.dark_mode,
+    data_saver: settings!.data_saver,
+    autoplay_media: settings!.autoplay_media,
+    biometric_login: settings!.biometric_login,
+  });
 }

@@ -31,7 +31,13 @@ export async function GET(req: NextRequest) {
     [settings] = await db.select().from(creator_settings).where(eq(creator_settings.user_id, auth.user.userId)).limit(1);
   }
 
-  return ok({ settings });
+  // Return CreatorSettings fields directly — mobile expects them at the top level.
+  return ok({
+    subscription_price: settings!.subscription_price,
+    allow_dms: settings!.allow_dms,
+    allow_comments: settings!.allow_comments,
+    welcome_message: settings!.welcome_message,
+  });
 }
 
 export async function PATCH(req: NextRequest) {
@@ -56,5 +62,10 @@ export async function PATCH(req: NextRequest) {
   }
 
   const [settings] = await db.select().from(creator_settings).where(eq(creator_settings.user_id, auth.user.userId)).limit(1);
-  return ok({ settings });
+  return ok({
+    subscription_price: settings!.subscription_price,
+    allow_dms: settings!.allow_dms,
+    allow_comments: settings!.allow_comments,
+    welcome_message: settings!.welcome_message,
+  });
 }

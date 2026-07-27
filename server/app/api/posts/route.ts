@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { eq, and, desc, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { users, profiles, posts, media, post_likes, saved_posts } from "@/lib/db/schema";
+import { users, profiles, posts, media, post_likes, saved_posts, follows } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err, created } from "@/lib/api/response";
@@ -13,6 +13,10 @@ const createSchema = z.object({
   visibility: z.enum(["public", "subscribers", "draft"]).default("public"),
   preview_duration: z.number().int().min(1).nullable().optional(),
   unlock_price: z.number().int().min(0).nullable().optional(),
+  expires_at: z.string().optional(),
+  // media_ids: IDs of pre-uploaded media records (from POST /api/media)
+  media_ids: z.array(z.string()).max(10).optional(),
+  // media: inline media objects (legacy / direct creation path)
   media: z
     .array(
       z.object({
@@ -26,9 +30,11 @@ const createSchema = z.object({
         duration_seconds: z.number().optional(),
       }),
     )
-    .min(1)
     .max(10)
     .optional(),
+  // categories/tags accepted but not yet stored
+  categories: z.array(z.string()).optional(),
+  tags: z.array(z.string()).optional(),
 });
 
 function postRow(p: Record<string, unknown>, mediaItems: unknown[], liked: boolean, bookmarked: boolean) {
@@ -176,7 +182,16 @@ export async function POST(req: NextRequest) {
   const parsed = await parseBody(req, createSchema);
   if (!parsed.success) return parsed.response;
 
-  const { caption, visibility, preview_duration, unlock_price, media: mediaItems } = parsed.data;
+  const {
+    caption,
+    visibility,
+    preview_duration,
+    unlock_price,
+    expires_at,
+    media: mediaItems,
+    media_ids,
+  } = parsed.data;
+
   const postId = generateId();
   const now = new Date().toISOString();
 
@@ -188,9 +203,11 @@ export async function POST(req: NextRequest) {
     status: "published",
     preview_duration: preview_duration ?? null,
     unlock_price: unlock_price ?? null,
+    expires_at: expires_at ?? null,
     published_at: now,
   });
 
+  // Support inline media objects (legacy path)
   if (mediaItems && mediaItems.length > 0) {
     await db.insert(media).values(
       mediaItems.map((m, i) => ({
@@ -210,6 +227,16 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const [post] = await db.select().from(posts).where(eq(posts.id, postId)).limit(1);
-  return created({ post });
+  // Support media_ids: associate pre-uploaded media records with this post
+  if (media_ids && media_ids.length > 0) {
+    for (let i = 0; i < media_ids.length; i++) {
+      await db
+        .update(media)
+        .set({ post_id: postId, sort_order: i })
+        .where(and(eq(media.id, media_ids[i]), eq(media.uploader_id, auth.user.userId)));
+    }
+  }
+
+  // Return { id } — mobile only needs the post ID
+  return created({ id: postId });
 }

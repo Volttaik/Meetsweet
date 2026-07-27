@@ -1,8 +1,8 @@
 import { NextRequest } from "next/server";
-import { eq } from "drizzle-orm";
+import { eq, and, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { users, profiles } from "@/lib/db/schema";
+import { users, profiles, follows, posts } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err } from "@/lib/api/response";
@@ -10,6 +10,7 @@ import { ok, err } from "@/lib/api/response";
 const patchSchema = z.object({
   full_name: z.string().min(2).max(100).optional(),
   display_name: z.string().min(1).max(100).optional(),
+  username: z.string().min(2).max(30).regex(/^[a-zA-Z0-9_]+$/, "Only letters, numbers and underscores").optional(),
   bio: z.string().max(300).nullable().optional(),
   avatar_url: z.string().url().nullable().optional(),
   banner_url: z.string().url().nullable().optional(),
@@ -48,7 +49,30 @@ export async function GET(req: NextRequest) {
 
   if (!row) return err("User not found", 404);
 
-  return ok({ user: row });
+  // Follower / following / post counts
+  const [followerCount] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(follows)
+    .where(eq(follows.following_id, auth.user.userId));
+
+  const [followingCount] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(follows)
+    .where(eq(follows.follower_id, auth.user.userId));
+
+  const [postCount] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(posts)
+    .where(and(eq(posts.creator_id, auth.user.userId), isNull(posts.deleted_at)));
+
+  // Mobile's normalizeUser(raw) is called directly on the unwrapped data,
+  // so we return the user fields at the top level (not wrapped in {user:...}).
+  return ok({
+    ...row,
+    follower_count: followerCount?.count ?? 0,
+    following_count: followingCount?.count ?? 0,
+    post_count: postCount?.count ?? 0,
+  });
 }
 
 export async function PATCH(req: NextRequest) {
@@ -58,11 +82,18 @@ export async function PATCH(req: NextRequest) {
   const parsed = await parseBody(req, patchSchema);
   if (!parsed.success) return parsed.response;
 
-  const { full_name, display_name, bio, avatar_url, banner_url, website, location } = parsed.data;
+  const { full_name, display_name, username, bio, avatar_url, banner_url, website, location } = parsed.data;
   const now = new Date().toISOString();
 
   if (full_name !== undefined) {
     await db.update(users).set({ full_name, updated_at: now }).where(eq(users.id, auth.user.userId));
+  }
+
+  if (username !== undefined) {
+    // Check username uniqueness
+    const [taken] = await db.select({ id: users.id }).from(users).where(eq(users.username, username)).limit(1);
+    if (taken && taken.id !== auth.user.userId) return err("Username already taken", 409, "USERNAME_TAKEN");
+    await db.update(users).set({ username, updated_at: now }).where(eq(users.id, auth.user.userId));
   }
 
   const profileUpdates: Record<string, unknown> = { updated_at: now };

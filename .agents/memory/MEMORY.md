@@ -1,0 +1,1 @@
+- [MeetSweet API compatibility](meetsweet-api-compat.md) — mobile is source of truth; backend adapted with 24 new routes + 8 response format fixes

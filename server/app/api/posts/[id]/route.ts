@@ -12,6 +12,7 @@ const patchSchema = z.object({
   visibility: z.enum(["public", "subscribers", "draft"]).optional(),
   is_pinned: z.boolean().optional(),
   preview_duration: z.number().int().min(1).nullable().optional(),
+  expires_at: z.string().nullable().optional(),
 });
 
 export async function GET(

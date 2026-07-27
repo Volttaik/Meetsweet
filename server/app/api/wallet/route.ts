@@ -15,5 +15,7 @@ export async function GET(req: NextRequest) {
     .where(eq(wallets.user_id, auth.user.userId))
     .limit(1);
 
-  return ok({ wallet: wallet ?? { balance: 0, currency: "NGN" } });
+  // Mobile expects { balance, currency } at the top level of data, not nested.
+  const w = wallet ?? { balance: 0, currency: "NGN" };
+  return ok({ balance: w.balance, currency: w.currency });
 }

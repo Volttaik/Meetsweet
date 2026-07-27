@@ -11,7 +11,7 @@ import { generateId } from "@/lib/auth/codes";
 const sendSchema = z.object({
   body: z.string().max(2000).optional(),
   media_url: z.string().url().nullable().optional(),
-  media_type: z.enum(["image", "video"]).nullable().optional(),
+  media_type: z.enum(["image", "video", "audio"]).nullable().optional(),
   reply_to_id: z.string().optional(),
 }).refine((d) => d.body || d.media_url, { message: "body or media_url required" });
 
@@ -24,6 +24,35 @@ async function assertMember(convId: string, userId: string) {
     .where(and(eq(conversation_members.conversation_id, convId), eq(conversation_members.user_id, userId)))
     .limit(1);
   return member ? "ok" : "forbidden";
+}
+
+function formatMessage(m: Record<string, unknown>, myUserId: string) {
+  const isOwn = m.sender_id === myUserId;
+  return {
+    id: m.id,
+    body: m.is_recalled ? null : m.body,
+    mediaUrl: m.is_recalled ? null : m.media_url,
+    media_url: m.is_recalled ? null : m.media_url,
+    // mobile normalizer checks raw.mediaType ?? raw.media_type
+    mediaType: m.media_type ?? null,
+    media_type: m.media_type ?? null,
+    // mobile normalizer checks raw.isDeleted ?? raw.is_deleted
+    isDeleted: Boolean(m.is_recalled),
+    is_deleted: Boolean(m.is_recalled),
+    is_recalled: Boolean(m.is_recalled),
+    // mobile normalizer checks raw.isOwn (camelCase only)
+    isOwn,
+    is_own: isOwn,
+    createdAt: m.created_at,
+    created_at: m.created_at,
+    sender: {
+      id: m.sender_id,
+      name: m.sender_name,
+      username: m.sender_username,
+      avatar_url: m.sender_avatar,
+      avatarUrl: m.sender_avatar,
+    },
+  };
 }
 
 export async function GET(
@@ -41,74 +70,39 @@ export async function GET(
   const before = req.nextUrl.searchParams.get("before");
   const limit = Math.min(Number(req.nextUrl.searchParams.get("limit") ?? 20), 50);
 
-  let query = db
-    .select({
-      id: messages.id,
-      body: messages.body,
-      media_url: messages.media_url,
-      type: messages.type,
-      is_edited: messages.is_edited,
-      is_recalled: messages.is_recalled,
-      reply_to_id: messages.reply_to_id,
-      created_at: messages.created_at,
-      sender_id: users.id,
-      sender_name: users.full_name,
-      sender_username: users.username,
-      sender_avatar: profiles.avatar_url,
-    })
+  const baseSelect = {
+    id: messages.id,
+    body: messages.body,
+    media_url: messages.media_url,
+    media_type: messages.type,
+    is_recalled: messages.is_recalled,
+    reply_to_id: messages.reply_to_id,
+    created_at: messages.created_at,
+    sender_id: users.id,
+    sender_name: users.full_name,
+    sender_username: users.username,
+    sender_avatar: profiles.avatar_url,
+  };
+
+  const whereClause = before
+    ? and(eq(messages.conversation_id, id), lt(messages.created_at, before))
+    : eq(messages.conversation_id, id);
+
+  const rows = await db
+    .select(baseSelect)
     .from(messages)
     .innerJoin(users, eq(users.id, messages.sender_id))
     .leftJoin(profiles, eq(profiles.user_id, messages.sender_id))
-    .where(eq(messages.conversation_id, id))
+    .where(whereClause)
     .orderBy(desc(messages.created_at))
     .limit(limit + 1);
 
-  if (before) {
-    query = db
-      .select({
-        id: messages.id,
-        body: messages.body,
-        media_url: messages.media_url,
-        type: messages.type,
-        is_edited: messages.is_edited,
-        is_recalled: messages.is_recalled,
-        reply_to_id: messages.reply_to_id,
-        created_at: messages.created_at,
-        sender_id: users.id,
-        sender_name: users.full_name,
-        sender_username: users.username,
-        sender_avatar: profiles.avatar_url,
-      })
-      .from(messages)
-      .innerJoin(users, eq(users.id, messages.sender_id))
-      .leftJoin(profiles, eq(profiles.user_id, messages.sender_id))
-      .where(and(eq(messages.conversation_id, id), lt(messages.created_at, before)))
-      .orderBy(desc(messages.created_at))
-      .limit(limit + 1);
-  }
-
-  const rows = await query;
   const hasMore = rows.length > limit;
   const items = hasMore ? rows.slice(0, limit) : rows;
 
   return ok({
-    messages: items.map((m) => ({
-      id: m.id,
-      body: m.is_recalled ? null : m.body,
-      media_url: m.is_recalled ? null : m.media_url,
-      type: m.type,
-      is_edited: m.is_edited,
-      is_recalled: m.is_recalled,
-      reply_to_id: m.reply_to_id,
-      created_at: m.created_at,
-      is_own: m.sender_id === auth.user.userId,
-      sender: {
-        id: m.sender_id,
-        name: m.sender_name,
-        username: m.sender_username,
-        avatar_url: m.sender_avatar,
-      },
-    })),
+    messages: items.map((m) => formatMessage(m as Record<string, unknown>, auth.user.userId)),
+    hasMore,
     has_more: hasMore,
   });
 }
@@ -138,7 +132,7 @@ export async function POST(
     body: parsed.data.body ?? null,
     media_url: parsed.data.media_url ?? null,
     reply_to_id: parsed.data.reply_to_id ?? null,
-    type: parsed.data.media_url ? "media" : "text",
+    type: parsed.data.media_url ? (parsed.data.media_type ?? "media") : "text",
   });
 
   await db.update(conversations).set({ last_message_at: now, updated_at: now }).where(eq(conversations.id, id));
@@ -148,8 +142,7 @@ export async function POST(
       id: messages.id,
       body: messages.body,
       media_url: messages.media_url,
-      type: messages.type,
-      is_edited: messages.is_edited,
+      media_type: messages.type,
       is_recalled: messages.is_recalled,
       reply_to_id: messages.reply_to_id,
       created_at: messages.created_at,
@@ -165,22 +158,6 @@ export async function POST(
     .limit(1);
 
   return ok({
-    message: {
-      id: row!.id,
-      body: row!.body,
-      media_url: row!.media_url,
-      type: row!.type,
-      is_edited: row!.is_edited,
-      is_recalled: row!.is_recalled,
-      reply_to_id: row!.reply_to_id,
-      created_at: row!.created_at,
-      is_own: true,
-      sender: {
-        id: row!.sender_id,
-        name: row!.sender_name,
-        username: row!.sender_username,
-        avatar_url: row!.sender_avatar,
-      },
-    },
+    message: formatMessage(row as Record<string, unknown>, auth.user.userId),
   });
 }
