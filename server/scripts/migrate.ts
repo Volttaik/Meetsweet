@@ -85,6 +85,98 @@ async function run() {
         ON message_unlocks(message_id, user_id)
       `,
     },
+    // ── album support ──────────────────────────────────────────────────────
+    {
+      name: "create albums",
+      sql: `
+        CREATE TABLE IF NOT EXISTS albums (
+          id TEXT PRIMARY KEY,
+          creator_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          title TEXT NOT NULL,
+          description TEXT NOT NULL DEFAULT '',
+          cover_url TEXT,
+          price_credits INTEGER NOT NULL DEFAULT 0,
+          is_premium INTEGER NOT NULL DEFAULT 0,
+          visibility TEXT NOT NULL DEFAULT 'public',
+          item_count INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+          updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+          deleted_at TEXT
+        )
+      `,
+    },
+    {
+      name: "albums: creator index",
+      sql: `CREATE INDEX IF NOT EXISTS albums_creator_created_idx ON albums(creator_id, created_at)`,
+    },
+    {
+      name: "albums: visibility index",
+      sql: `CREATE INDEX IF NOT EXISTS albums_visibility_created_idx ON albums(visibility, created_at)`,
+    },
+    {
+      name: "create album_items",
+      sql: `
+        CREATE TABLE IF NOT EXISTS album_items (
+          id TEXT PRIMARY KEY,
+          album_id TEXT NOT NULL REFERENCES albums(id) ON DELETE CASCADE,
+          media_id TEXT NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+          sort_order INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        )
+      `,
+    },
+    {
+      name: "album_items: unique album/media index",
+      sql: `CREATE UNIQUE INDEX IF NOT EXISTS album_items_album_media_idx ON album_items(album_id, media_id)`,
+    },
+    {
+      name: "album_items: ordering index",
+      sql: `CREATE INDEX IF NOT EXISTS album_items_album_sort_idx ON album_items(album_id, sort_order)`,
+    },
+    {
+      name: "album_items: media index",
+      sql: `CREATE INDEX IF NOT EXISTS album_items_media_idx ON album_items(media_id)`,
+    },
+    {
+      name: "create album_unlocks",
+      sql: `
+        CREATE TABLE IF NOT EXISTS album_unlocks (
+          id TEXT PRIMARY KEY,
+          album_id TEXT NOT NULL REFERENCES albums(id) ON DELETE CASCADE,
+          user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          credits_spent INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        )
+      `,
+    },
+    {
+      name: "album_unlocks: unique album/user index",
+      sql: `CREATE UNIQUE INDEX IF NOT EXISTS album_unlocks_album_user_idx ON album_unlocks(album_id, user_id)`,
+    },
+    {
+      name: "album_unlocks: user history index",
+      sql: `CREATE INDEX IF NOT EXISTS album_unlocks_user_created_idx ON album_unlocks(user_id, created_at)`,
+    },
+    {
+      name: "create post_unlocks",
+      sql: `
+        CREATE TABLE IF NOT EXISTS post_unlocks (
+          id TEXT PRIMARY KEY,
+          post_id TEXT NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+          user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          credits_spent INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        )
+      `,
+    },
+    {
+      name: "post_unlocks: unique post/user index",
+      sql: `CREATE UNIQUE INDEX IF NOT EXISTS post_unlocks_post_user_idx ON post_unlocks(post_id, user_id)`,
+    },
+    {
+      name: "post_unlocks: user history index",
+      sql: `CREATE INDEX IF NOT EXISTS post_unlocks_user_created_idx ON post_unlocks(user_id, created_at)`,
+    },
   ];
 
   for (const m of migrations) {

@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { eq, and, desc, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { users, profiles, posts, media, post_likes, saved_posts, follows } from "@/lib/db/schema";
+import { users, profiles, posts, media, post_likes, saved_posts, post_unlocks } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err, created } from "@/lib/api/response";
@@ -69,6 +69,7 @@ export async function GET(req: NextRequest) {
   const bookmarked = searchParams.get("bookmarked") === "true";
   const creatorId = searchParams.get("creator_id");
   const cursor = searchParams.get("cursor");
+  const page = Math.max(1, Number(searchParams.get("page") ?? 1));
   const limit = Math.min(Number(searchParams.get("limit") ?? 20), 50);
 
   let userId: string | null = null;
@@ -115,7 +116,7 @@ export async function GET(req: NextRequest) {
       .from(saved_posts)
       .where(eq(saved_posts.user_id, userId));
     const ids = bookmarkedIds.map((b) => b.post_id);
-    if (ids.length === 0) return ok({ posts: [], nextCursor: null });
+    if (ids.length === 0) return ok({ posts: [], next_cursor: null, nextCursor: null, page, limit });
     conditions = and(conditions, sql`${posts.id} IN (${sql.join(ids.map((id) => sql`${id}`), sql`, `)})`);
   }
 
@@ -123,16 +124,21 @@ export async function GET(req: NextRequest) {
     conditions = and(conditions, eq(posts.creator_id, creatorId));
   }
 
+  if (cursor) {
+    conditions = and(conditions, sql`${posts.published_at} < ${cursor}`);
+  }
+
   const rows = await baseSelect
     .where(conditions)
     .orderBy(desc(posts.published_at))
-    .limit(limit + 1);
+    .limit(limit + 1)
+    .offset(cursor ? 0 : (page - 1) * limit);
 
   const hasMore = rows.length > limit;
   const items = hasMore ? rows.slice(0, limit) : rows;
 
   const postIds = items.map((p) => p.id);
-  if (postIds.length === 0) return ok({ posts: [], nextCursor: null });
+  if (postIds.length === 0) return ok({ posts: [], next_cursor: null, nextCursor: null, page, limit });
 
   const allMedia = await db
     .select()
@@ -165,13 +171,35 @@ export async function GET(req: NextRequest) {
     {} as Record<string, unknown[]>,
   );
 
-  const result = items.map((p) =>
-    postRow(p as Record<string, unknown>, mediaByPost[p.id] ?? [], likedSet.has(p.id), savedSet.has(p.id)),
-  );
+  let unlockedSet = new Set<string>();
+  if (userId && postIds.length > 0) {
+    const unlocked = await db.select({ post_id: post_unlocks.post_id })
+      .from(post_unlocks)
+      .where(and(
+        eq(post_unlocks.user_id, userId),
+        sql`${post_unlocks.post_id} IN (${sql.join(postIds.map((id) => sql`${id}`), sql`, `)})`,
+      ));
+    unlockedSet = new Set(unlocked.map((row) => row.post_id));
+  }
+
+  const result = items.map((p) => {
+    const isOwner = p.creator_id === userId;
+    const isLocked = (p.unlock_price ?? 0) > 0 && !isOwner && !unlockedSet.has(p.id);
+    const visibleMedia = (mediaByPost[p.id] ?? []).map((item) => {
+      const mediaItem = item as Record<string, unknown>;
+      return isLocked
+        ? { ...mediaItem, url: null, thumbnail_url: null, is_locked: true }
+        : { ...mediaItem, is_locked: false };
+    });
+    return postRow(p as Record<string, unknown>, visibleMedia, likedSet.has(p.id), savedSet.has(p.id));
+  });
 
   return ok({
     posts: result,
-    nextCursor: hasMore ? items[items.length - 1]?.created_at : null,
+    next_cursor: hasMore ? items[items.length - 1]?.published_at ?? items[items.length - 1]?.created_at : null,
+    nextCursor: hasMore ? items[items.length - 1]?.published_at ?? items[items.length - 1]?.created_at : null,
+    page,
+    limit,
   });
 }
 

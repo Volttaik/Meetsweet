@@ -195,7 +195,10 @@ export const media = sqliteTable("media", {
   file_name: text("file_name"),
   sort_order: integer("sort_order").notNull().default(0),
   created_at: createdAt(),
-});
+}, (table) => [
+  index("media_post_sort_idx").on(table.post_id, table.sort_order),
+  index("media_uploader_idx").on(table.uploader_id),
+]);
 
 export const post_likes = sqliteTable("post_likes", {
   id: id(),
@@ -241,6 +244,76 @@ export const categories = sqliteTable("categories", {
   post_count: integer("post_count").notNull().default(0),
   created_at: createdAt(),
 });
+
+// ─── Creator collections / paid content ─────────────────────────────────────
+
+export const albums = sqliteTable(
+  "albums",
+  {
+    id: id(),
+    creator_id: text("creator_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    description: text("description").notNull().default(""),
+    cover_url: text("cover_url"),
+    price_credits: integer("price_credits").notNull().default(0),
+    is_premium: integer("is_premium", { mode: "boolean" }).notNull().default(false),
+    visibility: text("visibility", { enum: ["public", "subscribers", "private"] }).notNull().default("public"),
+    item_count: integer("item_count").notNull().default(0),
+    created_at: createdAt(),
+    updated_at: updatedAt(),
+    deleted_at: text("deleted_at"),
+  },
+  (table) => [
+    index("albums_creator_created_idx").on(table.creator_id, table.created_at),
+    index("albums_visibility_created_idx").on(table.visibility, table.created_at),
+  ],
+);
+
+export const album_items = sqliteTable(
+  "album_items",
+  {
+    id: id(),
+    album_id: text("album_id").notNull().references(() => albums.id, { onDelete: "cascade" }),
+    media_id: text("media_id").notNull().references(() => media.id, { onDelete: "cascade" }),
+    sort_order: integer("sort_order").notNull().default(0),
+    created_at: createdAt(),
+  },
+  (table) => [
+    uniqueIndex("album_items_album_media_idx").on(table.album_id, table.media_id),
+    index("album_items_album_sort_idx").on(table.album_id, table.sort_order),
+    index("album_items_media_idx").on(table.media_id),
+  ],
+);
+
+export const album_unlocks = sqliteTable(
+  "album_unlocks",
+  {
+    id: id(),
+    album_id: text("album_id").notNull().references(() => albums.id, { onDelete: "cascade" }),
+    user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    credits_spent: integer("credits_spent").notNull().default(0),
+    created_at: createdAt(),
+  },
+  (table) => [
+    uniqueIndex("album_unlocks_album_user_idx").on(table.album_id, table.user_id),
+    index("album_unlocks_user_created_idx").on(table.user_id, table.created_at),
+  ],
+);
+
+export const post_unlocks = sqliteTable(
+  "post_unlocks",
+  {
+    id: id(),
+    post_id: text("post_id").notNull().references(() => posts.id, { onDelete: "cascade" }),
+    user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    credits_spent: integer("credits_spent").notNull().default(0),
+    created_at: createdAt(),
+  },
+  (table) => [
+    uniqueIndex("post_unlocks_post_user_idx").on(table.post_id, table.user_id),
+    index("post_unlocks_user_created_idx").on(table.user_id, table.created_at),
+  ],
+);
 
 // ─── Social graph ─────────────────────────────────────────────────────────
 

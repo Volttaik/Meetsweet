@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { eq, and, desc, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { users, profiles, posts, media, post_likes, saved_posts } from "@/lib/db/schema";
+import { users, profiles, posts, media, post_likes, saved_posts, post_unlocks } from "@/lib/db/schema";
 import { optionalAuth } from "@/middleware/auth";
 import { ok } from "@/lib/api/response";
 
@@ -80,6 +80,7 @@ export async function GET(req: NextRequest) {
   // Liked / bookmarked sets for the current user
   let likedSet = new Set<string>();
   let savedSet = new Set<string>();
+  let unlockedSet = new Set<string>();
   if (userId && postIds.length > 0) {
     const liked = await db
       .select({ post_id: post_likes.post_id })
@@ -102,14 +103,34 @@ export async function GET(req: NextRequest) {
         ),
       );
     savedSet = new Set(saved.map((s) => s.post_id));
+
+    const unlocked = await db
+      .select({ post_id: post_unlocks.post_id })
+      .from(post_unlocks)
+      .where(
+        and(
+          eq(post_unlocks.user_id, userId),
+          sql`${post_unlocks.post_id} IN (${sql.join(postIds.map((id) => sql`${id}`), sql`, `)})`,
+        ),
+      );
+    unlockedSet = new Set(unlocked.map((u) => u.post_id));
   }
 
-  const enrichedPosts = postRows.map((p) => ({
-    ...p,
-    media: mediaByPost[p.id] ?? [],
-    liked_by_me: likedSet.has(p.id),
-    bookmarked_by_me: savedSet.has(p.id),
-  }));
+  const enrichedPosts = postRows.map((p) => {
+    const isLocked = (p.unlock_price ?? 0) > 0 && p.creator_id !== userId && !unlockedSet.has(p.id);
+    return {
+      ...p,
+      media: (mediaByPost[p.id] ?? []).map((item) => {
+        const mediaItem = item as Record<string, unknown>;
+        return isLocked
+          ? { ...mediaItem, url: null, thumbnail_url: null, is_locked: true }
+          : { ...mediaItem, is_locked: false };
+      }),
+      is_locked: isLocked,
+      liked_by_me: likedSet.has(p.id),
+      bookmarked_by_me: savedSet.has(p.id),
+    };
+  });
 
   // Return featured creators (is_creator=true)
   const creatorRows = await db
