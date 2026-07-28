@@ -86,6 +86,8 @@ export function buildVideoRow(
 
   return {
     id: row.id,
+    content_type: "video" as const,
+    contentType: "video" as const,
     title: row.title ?? row.caption ?? "",
     description: row.description ?? row.caption ?? "",
     caption: row.caption ?? null,
@@ -136,6 +138,8 @@ export function buildShortRow(
 
   return {
     id: row.id,
+    content_type: "short" as const,
+    contentType: "short" as const,
     caption: row.caption ?? row.title ?? "",
     video_url: primary?.url ?? null,
     videoUrl: primary?.url ?? null,

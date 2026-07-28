@@ -3,7 +3,7 @@ import { eq, and, desc, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { users, profiles, posts, media, post_likes, saved_posts, post_unlocks } from "@/lib/db/schema";
-import { requireAuth } from "@/middleware/auth";
+import { requireAuth, optionalAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err, created } from "@/lib/api/response";
 import { generateId } from "@/lib/auth/codes";
@@ -40,6 +40,7 @@ const createSchema = z.object({
 function postRow(p: Record<string, unknown>, mediaItems: unknown[], liked: boolean, bookmarked: boolean) {
   return {
     id: p.id,
+    content_type: "post",
     creator_id: p.creator_id,
     creator_username: p.creator_username,
     creator_display_name: p.creator_display_name,
@@ -125,13 +126,28 @@ export async function GET(req: NextRequest) {
     conditions = and(conditions, eq(posts.creator_id, creatorId));
   }
 
+  // Compound cursor encodes both fields of the ORDER BY (published_at, id)
+  // as "ISO_TS__UUID" so that the WHERE clause exactly reproduces the sort
+  // position and rows with the same published_at are never skipped or repeated.
   if (cursor) {
-    conditions = and(conditions, sql`${posts.published_at} < ${cursor}`);
+    const sepIdx = cursor.lastIndexOf("__");
+    if (sepIdx !== -1) {
+      // New compound format: "published_at__id"
+      const cursorTs = cursor.slice(0, sepIdx);
+      const cursorId = cursor.slice(sepIdx + 2);
+      conditions = and(
+        conditions,
+        sql`(${posts.published_at} < ${cursorTs} OR (${posts.published_at} = ${cursorTs} AND ${posts.id} < ${cursorId}))`,
+      );
+    } else {
+      // Legacy plain-timestamp cursor: fall back to simple comparison
+      conditions = and(conditions, sql`${posts.published_at} < ${cursor}`);
+    }
   }
 
   const rows = await baseSelect
     .where(conditions)
-    .orderBy(desc(posts.published_at))
+    .orderBy(desc(posts.published_at), desc(posts.id))
     .limit(limit + 1)
     .offset(cursor ? 0 : (page - 1) * limit);
 
@@ -195,10 +211,16 @@ export async function GET(req: NextRequest) {
     return postRow(p as Record<string, unknown>, visibleMedia, likedSet.has(p.id), savedSet.has(p.id));
   });
 
+  const lastItem = items[items.length - 1];
+  // Compound cursor: "published_at__id" — both ordering fields, no ambiguity at boundaries
+  const nextCursor = hasMore && lastItem
+    ? `${lastItem.published_at ?? lastItem.created_at}__${lastItem.id}`
+    : null;
+
   return ok({
     posts: result,
-    next_cursor: hasMore ? items[items.length - 1]?.published_at ?? items[items.length - 1]?.created_at : null,
-    nextCursor: hasMore ? items[items.length - 1]?.published_at ?? items[items.length - 1]?.created_at : null,
+    next_cursor: nextCursor,
+    nextCursor,
     page,
     limit,
   });

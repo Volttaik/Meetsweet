@@ -1,13 +1,13 @@
 /**
- * One-time seed: insert the default categories into the database.
- * Run with: cd server && pnpm tsx scripts/seed-categories.ts
+ * Seed the categories table with the standard MeetSweet content categories.
+ * Run with: npx tsx scripts/seed-categories.ts
  *
- * Safe to run multiple times — uses INSERT OR IGNORE.
+ * Idempotent — skips categories that already exist (matched by slug).
  */
 import { createClient } from "@libsql/client";
 import { drizzle } from "drizzle-orm/libsql";
-import { sql } from "drizzle-orm";
-import * as schema from "../lib/db/schema";
+import { eq } from "drizzle-orm";
+import { categories } from "../lib/db/schema";
 
 const CATEGORIES = [
   { name: "Lifestyle", slug: "lifestyle" },
@@ -28,25 +28,52 @@ const CATEGORIES = [
   { name: "Luxury", slug: "luxury" },
 ];
 
+function randomId() {
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
 async function main() {
   const url = process.env.TURSO_DATABASE_URL;
   const authToken = process.env.TURSO_AUTH_TOKEN;
-  if (!url) throw new Error("TURSO_DATABASE_URL is required");
 
-  const client = createClient({ url, authToken });
-  const db = drizzle(client, { schema });
-
-  for (const cat of CATEGORIES) {
-    await db.run(
-      sql`INSERT OR IGNORE INTO categories (id, name, slug) VALUES (lower(hex(randomblob(16))), ${cat.name}, ${cat.slug})`
-    );
+  if (!url) {
+    console.error("TURSO_DATABASE_URL is not set");
+    process.exit(1);
   }
 
-  console.log(`✅ Seeded ${CATEGORIES.length} categories.`);
+  const client = createClient({ url, authToken });
+  const db2 = drizzle(client, { schema: { categories } });
+
+  let inserted = 0;
+  let skipped = 0;
+
+  for (const cat of CATEGORIES) {
+    const existing = await db2
+      .select({ id: categories.id })
+      .from(categories)
+      .where(eq(categories.slug, cat.slug))
+      .limit(1);
+
+    if (existing.length > 0) {
+      skipped++;
+      continue;
+    }
+
+    await db2.insert(categories).values({
+      id: randomId(),
+      name: cat.name,
+      slug: cat.slug,
+      post_count: 0,
+    });
+    inserted++;
+    console.log(`  ✓ Inserted: ${cat.name}`);
+  }
+
+  console.log(`\nDone. Inserted ${inserted}, skipped ${skipped} (already existed).`);
   process.exit(0);
 }
 
 main().catch((err) => {
-  console.error("Seed failed:", err);
+  console.error(err);
   process.exit(1);
 });

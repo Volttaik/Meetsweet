@@ -24,6 +24,7 @@ export async function GET(
   const [row] = await db
     .select({
       id: posts.id,
+      content_type: posts.content_type,
       creator_id: posts.creator_id,
       creator_username: users.username,
       creator_display_name: profiles.display_name,
@@ -88,6 +89,7 @@ export async function GET(
 
   return ok({
     ...row,
+    // content_type comes from the DB select above — no override needed
     is_locked: isLocked,
     unlocked_by_me: !isLocked,
     liked_by_me: likedByMe,

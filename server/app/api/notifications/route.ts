@@ -73,7 +73,17 @@ export async function GET(req: NextRequest) {
       created_at: n.created_at,
       // Mobile normalizer reads from raw.data sub-object
       data: {
+        // content_type lets the mobile app route to the correct screen
+        content_type: (["post", "video", "short", "album"].includes(n.entity_type ?? "")
+          ? n.entity_type
+          : n.entity_type === "comment" ? "post" : null) as string | null,
+        entity_type: n.entity_type ?? null,
+        entity_id: n.entity_id ?? null,
+        // Convenience aliases for each content type
         post_id: n.entity_type === "post" ? n.entity_id : null,
+        video_id: n.entity_type === "video" ? n.entity_id : null,
+        short_id: n.entity_type === "short" ? n.entity_id : null,
+        album_id: n.entity_type === "album" ? n.entity_id : null,
         comment_id: n.entity_type === "comment" ? n.entity_id : null,
         actor_id: n.actor_id ?? null,
         actor_name: n.actor_name ?? null,
