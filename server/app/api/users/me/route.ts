@@ -65,12 +65,19 @@ export async function GET(req: NextRequest) {
     .from(posts)
     .where(and(eq(posts.creator_id, auth.user.userId), isNull(posts.deleted_at)));
 
+  // Subscriber count (active subscriptions to this user as a creator)
+  const [subscriberCount] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(subscriptions)
+    .where(and(eq(subscriptions.creator_id, auth.user.userId), eq(subscriptions.status, "active")));
+
   // Mobile's normalizeUser(raw) is called directly on the unwrapped data,
   // so we return the user fields at the top level (not wrapped in {user:...}).
   return ok({
     ...row,
     follower_count: followerCount?.count ?? 0,
     following_count: followingCount?.count ?? 0,
+    subscriber_count: subscriberCount?.count ?? 0,
     post_count: postCount?.count ?? 0,
   });
 }

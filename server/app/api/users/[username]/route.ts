@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { eq, and, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { users, profiles, follows } from "@/lib/db/schema";
+import { users, profiles, follows, subscriptions } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
 import { ok, err } from "@/lib/api/response";
 
@@ -47,6 +47,12 @@ export async function GET(
     .from(follows)
     .where(eq(follows.follower_id, row.id));
 
+  // Subscriber count (active subscriptions to this creator)
+  const [subscriberCount] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(subscriptions)
+    .where(and(eq(subscriptions.creator_id, row.id), eq(subscriptions.status, "active")));
+
   // Check if requester is following
   let isFollowing = false;
   const authResult = await requireAuth(req);
@@ -80,6 +86,7 @@ export async function GET(
       subscription_price: row.subscription_price,
       follower_count: followerCount?.count ?? 0,
       following_count: followingCount?.count ?? 0,
+      subscriber_count: subscriberCount?.count ?? 0,
       created_at: row.created_at,
     },
     isFollowing,
