@@ -111,6 +111,7 @@ export async function GET(
     subscriptionPrice: settings?.subscription_price ?? user.subscription_price ?? 0,
     allow_dms: settings?.allow_dms ?? true,
     allow_comments: settings?.allow_comments ?? true,
+    who_can_message: (settings?.who_can_message as 'everyone' | 'subscribers' | 'none') ?? 'everyone',
     is_following: isFollowing,
     isFollowing,
     is_subscribed: isSubscribed,

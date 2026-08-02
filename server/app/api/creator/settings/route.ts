@@ -12,6 +12,7 @@ const patchSchema = z.object({
   subscription_price: z.number().min(0).optional(),
   allow_dms: z.boolean().optional(),
   allow_comments: z.boolean().optional(),
+  who_can_message: z.enum(["everyone", "subscribers", "none"]).optional(),
   welcome_message: z.string().max(500).nullable().optional(),
 });
 
@@ -36,6 +37,7 @@ export async function GET(req: NextRequest) {
     subscription_price: settings!.subscription_price,
     allow_dms: settings!.allow_dms,
     allow_comments: settings!.allow_comments,
+    who_can_message: settings!.who_can_message,
     welcome_message: settings!.welcome_message,
   });
 }
@@ -66,6 +68,7 @@ export async function PATCH(req: NextRequest) {
     subscription_price: settings!.subscription_price,
     allow_dms: settings!.allow_dms,
     allow_comments: settings!.allow_comments,
+    who_can_message: settings!.who_can_message,
     welcome_message: settings!.welcome_message,
   });
 }

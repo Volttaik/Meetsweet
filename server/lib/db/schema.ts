@@ -568,6 +568,11 @@ export const creator_settings = sqliteTable("creator_settings", {
   subscription_price: real("subscription_price").notNull().default(0),
   allow_dms: integer("allow_dms", { mode: "boolean" }).notNull().default(true),
   allow_comments: integer("allow_comments", { mode: "boolean" }).notNull().default(true),
+  // who_can_message: 'everyone' | 'subscribers' | 'none'
+  // - 'everyone': Anyone can message
+  // - 'subscribers': Only subscribers can message
+  // - 'none': No one can message
+  who_can_message: text("who_can_message", { enum: ["everyone", "subscribers", "none"] }).notNull().default("everyone"),
   welcome_message: text("welcome_message"),
   verification_status: text("verification_status").notNull().default("none"),
   created_at: createdAt(),
