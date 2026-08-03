@@ -592,3 +592,30 @@ export const creator_statistics = sqliteTable("creator_statistics", {
   created_at: createdAt(),
   updated_at: updatedAt(),
 });
+
+// ─── Creator Payouts ─────────────────────────────────────────────────────────
+
+export const creator_bank_details = sqliteTable("creator_bank_details", {
+  id: id(),
+  user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  bank_name: text("bank_name").notNull(),
+  account_number: text("account_number").notNull(),
+  account_name: text("account_name").notNull(),
+  created_at: createdAt(),
+  updated_at: updatedAt(),
+});
+
+export const creator_withdrawals = sqliteTable("creator_withdrawals", {
+  id: id(),
+  user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  amount: real("amount").notNull(),
+  status: text("status", { enum: ["pending", "processing", "completed", "failed"] }).notNull().default("pending"),
+  bank_name: text("bank_name").notNull(),
+  account_number: text("account_number").notNull(),
+  account_name: text("account_name").notNull(),
+  reference: text("reference"),
+  created_at: createdAt(),
+  updated_at: updatedAt(),
+}, (table) => [
+  index("creator_withdrawals_user_status_idx").on(table.user_id, table.status),
+]);
