@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { transactions, wallets } from "@/lib/db/schema";
+import { transactions, wallets, profiles } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
 import { ok, err } from "@/lib/api/response";
 import { config } from "@/lib/config";
@@ -78,8 +78,8 @@ export async function POST(req: NextRequest) {
   const user = auth.user;
   const [profile] = await db
     .select()
-    .from("profiles")
-    .where(eq("user_id", user.userId))
+    .from(profiles)
+    .where(eq(profiles.user_id, user.userId))
     .limit(1);
 
   const customerEmail = profile?.email ?? `${user.userId}@meetsweet.app`;
