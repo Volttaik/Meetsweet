@@ -73,6 +73,21 @@ async function assertMember(convId: string, userId: string) {
   return member ? "ok" : "forbidden";
 }
 
+function parseReactions(raw: unknown): { emoji: string; user_ids: string[]; userIds: string[] }[] {
+  if (!raw || typeof raw !== "string") return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((r: { emoji: string; user_ids?: string[]; userIds?: string[] }) => ({
+      emoji: r.emoji,
+      user_ids: r.user_ids ?? r.userIds ?? [],
+      userIds: r.user_ids ?? r.userIds ?? [],
+    }));
+  } catch {
+    return [];
+  }
+}
+
 function formatMessage(
   m: Record<string, unknown>,
   myUserId: string,
@@ -121,6 +136,8 @@ function formatMessage(
     reply_to_id: m.reply_to_id ?? null,
     createdAt: m.created_at,
     created_at: m.created_at,
+    // Reactions — stored as JSON in messages.reactions
+    reactions: parseReactions(m.reactions),
     sender: {
       id: m.sender_id,
       name: m.sender_name,
@@ -146,6 +163,7 @@ const MSG_SELECT = {
   is_recalled: messages.is_recalled,
   is_edited: messages.is_edited,
   reply_to_id: messages.reply_to_id,
+  reactions: messages.reactions,
   created_at: messages.created_at,
   sender_id: users.id,
   sender_name: users.full_name,
