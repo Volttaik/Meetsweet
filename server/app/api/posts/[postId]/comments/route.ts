@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { eq, and, desc, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { users, profiles, comments, posts } from "@/lib/db/schema";
+import { users, profiles, comments, posts, comment_likes } from "@/lib/db/schema";
 import { requireAuth, optionalAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err, created } from "@/lib/api/response";
@@ -83,18 +83,6 @@ export async function GET(
   // Get liked status for each comment if user is authenticated
   let likedSet = new Set<string>();
   if (userId && rows.length > 0) {
-    const commentIds = rows.map((r) => r.id);
-    const likes = await db
-      .select({ comment_id: comments.id })
-      .from(comments)
-      .innerJoin(
-        sql`comment_likes ON comment_likes.comment_id = comments.id AND comment_likes.user_id = ${userId}`,
-        eq(comments.id, sql`comment_likes.comment_id`)
-      )
-      .where(sql`${comments.id} IN (${sql.join(commentIds.map((id) => sql`${id}`), sql`, `)})`);
-    
-    // Alternative approach using a subquery
-    const { comment_likes } = await import("@/lib/db/schema");
     const likedComments = await db
       .select({ comment_id: comment_likes.comment_id })
       .from(comment_likes)

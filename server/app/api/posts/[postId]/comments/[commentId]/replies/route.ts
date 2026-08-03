@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { eq, and, isNull, desc, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { users, profiles, comments, comment_replies } from "@/lib/db/schema";
+import { users, profiles, comments, comment_replies, comment_likes } from "@/lib/db/schema";
 import { requireAuth, optionalAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err, created } from "@/lib/api/response";
@@ -81,7 +81,6 @@ export async function GET(
   // Get liked status if user is authenticated
   let likedSet = new Set<string>();
   if (userId && rows.length > 0) {
-    const { comment_likes } = await import("@/lib/db/schema");
     const likedReplies = await db
       .select({ reply_id: comment_likes.reply_id })
       .from(comment_likes)
