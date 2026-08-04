@@ -26,26 +26,26 @@ export async function POST(req: NextRequest) {
   const auth = await requireAuth(req);
   if ("response" in auth) return auth.response;
 
-  let body: { transactionId?: string };
+  // Mobile sends { reference } (the Paystack reference from initiate-paystack).
+  // Legacy clients may send { transactionId } (our internal DB id) — support both.
+  let body: { reference?: string; transactionId?: string };
   try {
     body = await req.json();
   } catch {
     return err("Invalid JSON body", 400);
   }
 
-  const { transactionId } = body;
-  if (!transactionId) {
-    return err("transactionId is required", 400);
+  const { reference: paystackRef, transactionId } = body;
+  if (!paystackRef && !transactionId) {
+    return err("reference or transactionId is required", 400);
   }
 
   const now = new Date().toISOString();
 
-  // Find the transaction — must belong to the authenticated user
-  const [tx] = await db
-    .select()
-    .from(transactions)
-    .where(eq(transactions.id, transactionId))
-    .limit(1);
+  // Look up by Paystack reference first (mobile path), fall back to internal ID (legacy)
+  const [tx] = paystackRef
+    ? await db.select().from(transactions).where(eq(transactions.reference, paystackRef)).limit(1)
+    : await db.select().from(transactions).where(eq(transactions.id, transactionId!)).limit(1);
 
   if (!tx) {
     return err("Transaction not found", 404);

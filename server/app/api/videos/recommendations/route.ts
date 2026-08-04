@@ -33,6 +33,9 @@ export async function GET(req: NextRequest) {
       like_count: posts.like_count,
       comment_count: posts.comment_count,
       share_count: posts.share_count,
+      // tier and thumbnail_url required by buildVideoRow for access gating + response shape
+      tier: posts.tier,
+      thumbnail_url: posts.thumbnail_url,
       created_at: posts.created_at,
       published_at: posts.published_at,
       creator_username: users.username,

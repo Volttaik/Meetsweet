@@ -116,6 +116,9 @@ export async function GET(
     isFollowing,
     is_subscribed: isSubscribed,
     isSubscribed,
+    // Mobile normalizer reads raw.subscribed_to_creator
+    subscribed_to_creator: isSubscribed,
+    subscribedToCreator: isSubscribed,
     joined_at: user.created_at,
   };
 

@@ -32,7 +32,7 @@ export async function POST(
   const [buyer] = await db.select({ id: wallets.id, balance: wallets.balance })
     .from(wallets).where(eq(wallets.user_id, auth.user.userId)).limit(1);
   if (!buyer || buyer.balance < price) {
-    return err("Insufficient credits", 402, "INSUFFICIENT_CREDITS");
+    return err("Insufficient wallet balance", 402, "INSUFFICIENT_BALANCE");
   }
 
   const [creator] = await db.select({ id: users.id })
@@ -45,7 +45,7 @@ export async function POST(
         .set({ balance: sql`${wallets.balance} - ${price}`, updated_at: new Date().toISOString() })
         .where(and(eq(wallets.id, buyer.id), gte(wallets.balance, price)))
         .returning({ id: wallets.id });
-      if (!debited) throw new Error("INSUFFICIENT_CREDITS");
+      if (!debited) throw new Error("INSUFFICIENT_BALANCE");
 
       const [creatorWallet] = await tx.select({ id: wallets.id })
         .from(wallets).where(eq(wallets.user_id, post.creator_id)).limit(1);
@@ -77,8 +77,8 @@ export async function POST(
       });
     });
   } catch (error) {
-    if (error instanceof Error && error.message === "INSUFFICIENT_CREDITS") {
-      return err("Insufficient credits", 402, "INSUFFICIENT_CREDITS");
+    if (error instanceof Error && error.message === "INSUFFICIENT_BALANCE") {
+      return err("Insufficient wallet balance", 402, "INSUFFICIENT_BALANCE");
     }
     throw error;
   }

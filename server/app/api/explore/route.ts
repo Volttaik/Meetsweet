@@ -73,7 +73,9 @@ export async function GET(req: NextRequest) {
         isNull(posts.deleted_at),
         eq(posts.status, "published"),
         eq(posts.visibility, "public"),
-        inArray(posts.content_type, ["post", "video", "short"]),
+        // Shorts are exclusive to the Shorts feed — never appear in Explore.
+        // Mobile already skips them client-side, but the backend should not send them.
+        inArray(posts.content_type, ["post", "video"]),
       ),
     )
     // Three-level ordering for full determinism at every page boundary:

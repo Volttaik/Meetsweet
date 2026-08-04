@@ -8,12 +8,15 @@ import { parseBody } from "@/lib/api/validate";
 import { ok, err, created } from "@/lib/api/response";
 import { generateId } from "@/lib/auth/codes";
 
-// Tier prices in credits (bronze = entry, diamond = top)
+// Tier prices in Naira (wallet balance).
+// Bronze is the free/public tier — subscribing without a tier (the mobile default)
+// charges the creator's own subscription_price from creator_settings.
+// Named tiers (silver/gold/diamond) apply a fixed platform price.
 const TIER_PRICES: Record<string, number> = {
-  bronze: 200,
-  silver: 500,
-  gold: 800,
-  diamond: 1000,
+  bronze:  0,     // free entry — charge creator's subscription_price instead
+  silver:  500,
+  gold:    1500,
+  diamond: 3000,
 };
 
 export async function GET(req: NextRequest) {
@@ -79,8 +82,10 @@ export async function POST(req: NextRequest) {
     req,
     z.object({
       creator_id: z.string().min(1),
-      // tier defaults to "bronze" if not supplied — the cheapest entry point
-      tier: z.enum(["bronze", "silver", "gold", "diamond"]).default("bronze"),
+      // tier is optional — the mobile app sends only creator_id (flat subscription model).
+      // Named tiers (silver/gold/diamond) apply fixed platform prices.
+      // Omitting tier (or sending "bronze") charges the creator's own subscription_price.
+      tier: z.enum(["bronze", "silver", "gold", "diamond"]).optional(),
     }),
   );
   if (!parsed.success) return parsed.response;
@@ -99,12 +104,25 @@ export async function POST(req: NextRequest) {
 
   // Idempotent: return existing active subscription instead of erroring
   if (existing && existing.status === "active") {
-    return ok({ subscription_id: existing.id, subscribed: true, tier: existing.tier, subscription: existing });
+    const sub = { id: existing.id, creator_id, status: "active" as const, amount: 0, started_at: "", expires_at: "" };
+    return ok({ subscription_id: existing.id, subscribed: true, tier: existing.tier, subscription: sub });
   }
 
-  const price = TIER_PRICES[tier];
+  // Resolve price:
+  //   - Named tier (silver/gold/diamond) → fixed TIER_PRICES amount
+  //   - No tier or "bronze" → creator's own subscription_price
+  const [settings] = await db
+    .select({ subscription_price: creator_settings.subscription_price })
+    .from(creator_settings)
+    .where(eq(creator_settings.user_id, creator_id))
+    .limit(1);
 
-  // Charge wallet if tier has a cost
+  const creatorPrice = settings?.subscription_price ?? 0;
+  const useTier = tier && tier !== "bronze" ? tier : null;
+  const price = useTier ? (TIER_PRICES[useTier] ?? creatorPrice) : creatorPrice;
+  const resolvedTier = useTier ?? "bronze";
+
+  // Charge wallet if subscription has a cost
   if (price > 0) {
     const [wallet] = await db
       .select({ id: wallets.id, balance: wallets.balance })
@@ -125,23 +143,17 @@ export async function POST(req: NextRequest) {
     await db.insert(transactions).values({
       id: generateId(),
       user_id: auth.user.userId,
-      type: "debit",
+      type: "subscription",
       amount: price,
       currency: "NGN",
       status: "success",
-      description: `Subscription (${tier}) to creator ${creator_id}`,
+      description: `Subscription to creator ${creator_id}`,
+      metadata: JSON.stringify({ creator_id, tier: resolvedTier }),
     });
   }
 
   const now = new Date().toISOString();
   const expires = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-
-  // Fall back to creator's subscription_price if no tier price override
-  const [settings] = await db
-    .select({ subscription_price: creator_settings.subscription_price })
-    .from(creator_settings)
-    .where(eq(creator_settings.user_id, creator_id))
-    .limit(1);
 
   const subId = generateId();
   await db.insert(subscriptions).values({
@@ -149,11 +161,12 @@ export async function POST(req: NextRequest) {
     subscriber_id: auth.user.userId,
     creator_id,
     status: "active",
-    tier,
-    amount: price > 0 ? price : (settings?.subscription_price ?? 0),
+    tier: resolvedTier as "bronze" | "silver" | "gold" | "diamond",
+    amount: price,
     started_at: now,
     expires_at: expires,
   });
 
-  return created({ subscribed: true, subscription_id: subId, tier });
+  const sub = { id: subId, creator_id, status: "active" as const, amount: price, started_at: now, expires_at: expires };
+  return created({ subscribed: true, subscription_id: subId, tier: resolvedTier, subscription: sub });
 }

@@ -101,7 +101,7 @@ export async function POST(
       .limit(1);
 
     if (!buyerWallet || buyerWallet.balance < price) {
-      return err("Insufficient credits", 402, "INSUFFICIENT_CREDITS");
+      return err("Insufficient wallet balance", 402, "INSUFFICIENT_BALANCE");
     }
 
     const [creatorWallet] = await db

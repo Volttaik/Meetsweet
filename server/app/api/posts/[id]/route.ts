@@ -11,7 +11,9 @@ const patchSchema = z.object({
   caption: z.string().max(2200).nullable().optional(),
   title: z.string().max(300).nullable().optional(),
   description: z.string().max(5000).nullable().optional(),
-  content_type: z.enum(["post", "video", "short", "album"]).optional(),
+  // content_type is intentionally omitted — once content is created as a short/video/post
+  // it must never change type, otherwise it bleeds into the wrong feed and screen.
+  // Use the dedicated /api/shorts, /api/videos endpoints to create the correct type.
   visibility: z.enum(["public", "subscribers", "draft"]).optional(),
   tier: z.enum(["bronze", "silver", "gold", "diamond"]).nullable().optional(),
   thumbnail_url: z.string().url().nullable().optional(),
@@ -104,14 +106,22 @@ export async function GET(
     is_pinned: row.is_pinned,
     preview_duration: row.preview_duration,
     like_count: row.like_count,
+    likeCount: row.like_count,
     comment_count: row.comment_count,
+    commentCount: row.comment_count,
     save_count: row.save_count,
+    saveCount: row.save_count,
+    share_count: row.share_count,
+    shareCount: row.share_count,
     view_count: row.view_count,
+    viewCount: row.view_count,
     published_at: row.published_at,
     created_at: row.created_at,
     updated_at: row.updated_at,
     liked_by_me: likedByMe,
+    likedByMe,
     bookmarked_by_me: bookmarkedByMe,
+    bookmarkedByMe,
     media: postMedia.map((m) => ({
       id: m.id,
       url: m.url,

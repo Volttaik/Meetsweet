@@ -9,12 +9,13 @@ import { ok, err } from "@/lib/api/response";
 import { generateId } from "@/lib/auth/codes";
 import { TIER_ORDER, tierIndex } from "@/lib/services/content";
 
-// Tier prices in credits — must stay in sync with subscriptions/route.ts
+// Tier prices — must stay in sync with subscriptions/route.ts
+// bronze = flat subscription (priced at creator's own subscription_price, not a fixed platform fee)
 const TIER_PRICES: Record<string, number> = {
-  bronze: 200,
-  silver: 500,
-  gold: 800,
-  diamond: 1000,
+  bronze:  0,
+  silver:  500,
+  gold:    1500,
+  diamond: 3000,
 };
 
 const schema = z.object({
@@ -58,7 +59,7 @@ export async function POST(
   // Determine current tier: prefer stored tier column; fall back to amount-based inference
   const currentTier = sub.tier ?? (
     TIER_ORDER.find((t) => TIER_PRICES[t] === sub.amount) ??
-    (sub.amount >= 1000 ? "diamond" : sub.amount >= 800 ? "gold" : sub.amount >= 500 ? "silver" : "bronze")
+    (sub.amount >= 3000 ? "diamond" : sub.amount >= 1500 ? "gold" : sub.amount >= 500 ? "silver" : "bronze")
   );
 
   if (tierIndex(newTier) <= tierIndex(currentTier)) {

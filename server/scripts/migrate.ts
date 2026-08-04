@@ -306,6 +306,76 @@ async function run() {
       name: "subscriptions: add tier",
       sql: `ALTER TABLE subscriptions ADD COLUMN tier TEXT`,
     },
+
+    // ── posts: unlock / pin / preview / expiry columns ─────────────────────
+    // These may have been absent from the original base posts table in older deployments.
+    {
+      name: "posts: add unlock_price",
+      sql: `ALTER TABLE posts ADD COLUMN unlock_price INTEGER`,
+    },
+    {
+      name: "posts: add is_pinned",
+      sql: `ALTER TABLE posts ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0`,
+    },
+    {
+      name: "posts: add preview_duration",
+      sql: `ALTER TABLE posts ADD COLUMN preview_duration INTEGER`,
+    },
+    {
+      name: "posts: add expires_at",
+      sql: `ALTER TABLE posts ADD COLUMN expires_at TEXT`,
+    },
+
+    // ── wallets table ──────────────────────────────────────────────────────
+    {
+      name: "create wallets",
+      sql: `
+        CREATE TABLE IF NOT EXISTS wallets (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+          balance REAL NOT NULL DEFAULT 0,
+          currency TEXT NOT NULL DEFAULT 'NGN',
+          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+          updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        )
+      `,
+    },
+    {
+      name: "wallets: user index",
+      sql: `CREATE INDEX IF NOT EXISTS wallets_user_idx ON wallets(user_id)`,
+    },
+
+    // ── transactions table ─────────────────────────────────────────────────
+    {
+      name: "create transactions",
+      sql: `
+        CREATE TABLE IF NOT EXISTS transactions (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          type TEXT NOT NULL,
+          amount REAL NOT NULL,
+          currency TEXT NOT NULL DEFAULT 'NGN',
+          status TEXT NOT NULL DEFAULT 'pending',
+          reference TEXT,
+          description TEXT,
+          metadata TEXT,
+          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+          updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        )
+      `,
+    },
+    {
+      name: "transactions: user index",
+      sql: `CREATE INDEX IF NOT EXISTS transactions_user_created_idx ON transactions(user_id, created_at)`,
+    },
+    {
+      name: "transactions: reference index",
+      sql: `CREATE UNIQUE INDEX IF NOT EXISTS transactions_reference_idx ON transactions(reference) WHERE reference IS NOT NULL`,
+    },
+    {
+      name: "transactions: status index",
+      sql: `CREATE INDEX IF NOT EXISTS transactions_status_idx ON transactions(status)`,
+    },
   ];
 
   for (const m of migrations) {

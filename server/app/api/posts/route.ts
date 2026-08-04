@@ -161,9 +161,18 @@ export async function GET(req: NextRequest) {
     eq(posts.visibility, "public"),
   );
 
-  // Apply content_type filter when provided; otherwise return all types
+  // Apply content_type filter.
+  // When omitted, exclude 'short' and 'album' — shorts belong exclusively in the
+  // Shorts feed (/api/shorts/feed and /api/creators/:id/shorts), and albums are
+  // a first-class content type served by /api/albums.
   if (contentTypeFilter) {
     conditions = and(conditions, eq(posts.content_type, contentTypeFilter));
+  } else {
+    // Default: return posts + videos only (not shorts or albums)
+    conditions = and(
+      conditions,
+      sql`${posts.content_type} IN ('post', 'video')`,
+    );
   }
 
   if (bookmarked && userId) {
