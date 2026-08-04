@@ -75,11 +75,14 @@ export async function POST(req: NextRequest) {
   if (!creator) return err("Creator not found", 404);
 
   const [existing] = await db
-    .select({ id: subscriptions.id })
+    .select({ id: subscriptions.id, status: subscriptions.status })
     .from(subscriptions)
     .where(and(eq(subscriptions.subscriber_id, auth.user.userId), eq(subscriptions.creator_id, creator_id)))
     .limit(1);
-  if (existing) return err("Already subscribed", 409);
+  // Idempotent: return existing active subscription instead of erroring
+  if (existing && existing.status === "active") {
+    return ok({ subscription_id: existing.id, subscribed: true, subscription: existing });
+  }
 
   const [settings] = await db
     .select({ subscription_price: creator_settings.subscription_price })

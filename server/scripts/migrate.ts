@@ -210,12 +210,45 @@ async function run() {
       sql: `ALTER TABLE posts ADD COLUMN share_count INTEGER NOT NULL DEFAULT 0`,
     },
     {
+      name: "posts: add thumbnail_url",
+      sql: `ALTER TABLE posts ADD COLUMN thumbnail_url TEXT`,
+    },
+    {
+      name: "posts: add tier",
+      sql: `ALTER TABLE posts ADD COLUMN tier TEXT`,
+    },
+    {
+      name: "posts: add tags",
+      sql: `ALTER TABLE posts ADD COLUMN tags TEXT`,
+    },
+    {
       name: "posts: content_type index",
       sql: `CREATE INDEX IF NOT EXISTS posts_content_type_status_idx ON posts(content_type, status, visibility)`,
     },
     {
       name: "posts: creator+content_type index",
       sql: `CREATE INDEX IF NOT EXISTS posts_creator_content_type_idx ON posts(creator_id, content_type)`,
+    },
+
+    // ── post_categories junction table ────────────────────────────────────────
+    {
+      name: "create post_categories",
+      sql: `
+        CREATE TABLE IF NOT EXISTS post_categories (
+          id TEXT PRIMARY KEY,
+          post_id TEXT NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+          category_id TEXT NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        )
+      `,
+    },
+    {
+      name: "post_categories: unique post/category index",
+      sql: `CREATE UNIQUE INDEX IF NOT EXISTS post_categories_post_cat_idx ON post_categories(post_id, category_id)`,
+    },
+    {
+      name: "post_categories: category index",
+      sql: `CREATE INDEX IF NOT EXISTS post_categories_category_idx ON post_categories(category_id)`,
     },
 
     // ── creator_reviews table (new) ───────────────────────────────────────────

@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { eq, and, desc, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { users, profiles, posts, media, post_likes, saved_posts } from "@/lib/db/schema";
+import { users, profiles, posts, media, post_likes, saved_posts, post_categories } from "@/lib/db/schema";
 import { requireAuth, optionalAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err, created } from "@/lib/api/response";
@@ -10,7 +10,13 @@ import { generateId } from "@/lib/auth/codes";
 
 const createSchema = z.object({
   caption: z.string().max(2200).nullable().optional(),
+  title: z.string().max(300).nullable().optional(),
+  description: z.string().max(5000).nullable().optional(),
+  content_type: z.enum(["post", "video", "short", "album"]).default("post"),
   visibility: z.enum(["public", "subscribers", "draft"]).default("public"),
+  tier: z.enum(["bronze", "silver", "gold", "diamond"]).nullable().optional(),
+  thumbnail_url: z.string().url().nullable().optional(),
+  tags: z.array(z.string().max(50)).max(20).optional(),
   preview_duration: z.number().int().min(1).nullable().optional(),
   expires_at: z.string().optional(),
   // media_ids: IDs of pre-uploaded media records (from POST /api/media)
@@ -31,24 +37,46 @@ const createSchema = z.object({
     )
     .max(10)
     .optional(),
-  // categories/tags accepted but not yet stored
+  // categories: array of category ID strings
   categories: z.array(z.string()).optional(),
-  tags: z.array(z.string()).optional(),
 });
 
-function postRow(p: Record<string, unknown>, mediaItems: unknown[], liked: boolean, bookmarked: boolean) {
+function mediaShape(m: Record<string, unknown>) {
+  return {
+    id: m.id,
+    url: m.url,
+    type: m.type,
+    thumbnail_url: (m.thumbnail_url as string | null) ?? null,
+    duration_secs: m.duration_seconds ?? null,
+    width: m.width ?? null,
+    height: m.height ?? null,
+    file_size: m.size_bytes ?? null,
+  };
+}
+
+function postRow(
+  p: Record<string, unknown>,
+  mediaItems: Record<string, unknown>[],
+  liked: boolean,
+  bookmarked: boolean,
+) {
   return {
     id: p.id,
-    content_type: "post",
+    content_type: p.content_type ?? "post",
     creator_id: p.creator_id,
     creator_username: p.creator_username,
     creator_display_name: p.creator_display_name,
     creator_avatar: p.creator_avatar,
     creator_is_verified: p.creator_is_verified,
-    caption: p.caption,
+    caption: p.caption ?? null,
+    title: p.title ?? null,
+    description: p.description ?? null,
     visibility: p.visibility,
     status: p.status,
     is_pinned: p.is_pinned,
+    tier: p.tier ?? null,
+    thumbnail_url: p.thumbnail_url ?? null,
+    tags: p.tags ? JSON.parse(p.tags as string) : [],
     preview_duration: p.preview_duration,
     like_count: p.like_count,
     comment_count: p.comment_count,
@@ -59,7 +87,7 @@ function postRow(p: Record<string, unknown>, mediaItems: unknown[], liked: boole
     updated_at: p.updated_at,
     liked_by_me: liked,
     bookmarked_by_me: bookmarked,
-    media: mediaItems,
+    media: mediaItems.map(mediaShape),
   };
 }
 
@@ -84,12 +112,18 @@ export async function GET(req: NextRequest) {
   const baseSelect = db
     .select({
       id: posts.id,
+      content_type: posts.content_type,
       creator_id: posts.creator_id,
       creator_username: users.username,
       creator_display_name: profiles.display_name,
       creator_avatar: profiles.avatar_url,
       creator_is_verified: users.is_verified,
       caption: posts.caption,
+      title: posts.title,
+      description: posts.description,
+      thumbnail_url: posts.thumbnail_url,
+      tier: posts.tier,
+      tags: posts.tags,
       visibility: posts.visibility,
       status: posts.status,
       is_pinned: posts.is_pinned,
@@ -179,10 +213,10 @@ export async function GET(req: NextRequest) {
     (acc, m) => {
       if (!m.post_id) return acc;
       if (!acc[m.post_id]) acc[m.post_id] = [];
-      acc[m.post_id].push({ url: m.url, type: m.type, thumbnail_url: m.thumbnail_url ?? null, duration_secs: m.duration_seconds, file_size: m.size_bytes, width: m.width, height: m.height });
+      acc[m.post_id].push(m as Record<string, unknown>);
       return acc;
     },
-    {} as Record<string, unknown[]>,
+    {} as Record<string, Record<string, unknown>[]>,
   );
 
   const result = items.map((p) =>
@@ -213,7 +247,13 @@ export async function POST(req: NextRequest) {
 
   const {
     caption,
+    title,
+    description,
+    content_type,
     visibility,
+    tier,
+    thumbnail_url,
+    tags,
     preview_duration,
     expires_at,
     media: mediaItems,
@@ -226,7 +266,13 @@ export async function POST(req: NextRequest) {
   await db.insert(posts).values({
     id: postId,
     creator_id: auth.user.userId,
+    content_type: content_type ?? "post",
     caption: caption ?? null,
+    title: title ?? null,
+    description: description ?? null,
+    thumbnail_url: thumbnail_url ?? null,
+    tier: tier ?? null,
+    tags: tags && tags.length > 0 ? JSON.stringify(tags) : null,
     visibility: visibility ?? "public",
     status: "published",
     preview_duration: preview_duration ?? null,
@@ -262,6 +308,17 @@ export async function POST(req: NextRequest) {
         .set({ post_id: postId, sort_order: i })
         .where(and(eq(media.id, media_ids[i]), eq(media.uploader_id, auth.user.userId)));
     }
+  }
+
+  // Store category associations
+  if (parsed.data.categories && parsed.data.categories.length > 0) {
+    await db.insert(post_categories).values(
+      parsed.data.categories.map((categoryId) => ({
+        id: generateId(),
+        post_id: postId,
+        category_id: categoryId,
+      })),
+    ).onConflictDoNothing();
   }
 
   // Return { id } — mobile only needs the post ID

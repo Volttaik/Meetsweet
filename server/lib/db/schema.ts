@@ -162,11 +162,17 @@ export const credential_grants = sqliteTable(
 export const posts = sqliteTable("posts", {
   id: id(),
   creator_id: text("creator_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  // content_type distinguishes posts / long-form videos / shorts
-  content_type: text("content_type", { enum: ["post", "video", "short"] }).notNull().default("post"),
+  // content_type distinguishes posts / long-form videos / shorts / albums
+  content_type: text("content_type", { enum: ["post", "video", "short", "album"] }).notNull().default("post"),
   title: text("title"),
   caption: text("caption"),
   description: text("description"),
+  // thumbnail_url: custom thumbnail for video/short posts
+  thumbnail_url: text("thumbnail_url"),
+  // tier: subscription tier required to view (bronze/silver/gold/diamond)
+  tier: text("tier", { enum: ["bronze", "silver", "gold", "diamond"] }),
+  // tags: JSON array of tag strings, e.g. '["comedy","lifestyle"]'
+  tags: text("tags"),
   visibility: text("visibility", { enum: ["public", "subscribers", "draft"] }).notNull().default("public"),
   status: text("status", { enum: ["draft", "published"] }).notNull().default("draft"),
   is_pinned: integer("is_pinned", { mode: "boolean" }).notNull().default(false),
@@ -252,6 +258,20 @@ export const categories = sqliteTable("categories", {
   post_count: integer("post_count").notNull().default(0),
   created_at: createdAt(),
 });
+
+export const post_categories = sqliteTable(
+  "post_categories",
+  {
+    id: id(),
+    post_id: text("post_id").notNull().references(() => posts.id, { onDelete: "cascade" }),
+    category_id: text("category_id").notNull().references(() => categories.id, { onDelete: "cascade" }),
+    created_at: createdAt(),
+  },
+  (table) => [
+    uniqueIndex("post_categories_post_cat_idx").on(table.post_id, table.category_id),
+    index("post_categories_category_idx").on(table.category_id),
+  ],
+);
 
 // ─── Creator collections / paid content ─────────────────────────────────────
 

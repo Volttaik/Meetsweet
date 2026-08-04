@@ -64,11 +64,12 @@ Acts as a credential broker + full feature API.
 
 ## Migration Note
 
-After the July 2026 sync, `pnpm migrate` (or `npx tsx scripts/migrate.ts`) must be
-run once against the production Turso database to add new columns:
+Run `npx tsx scripts/migrate.ts` once against the Turso database to apply all schema additions.
+The script is idempotent (safe to run multiple times). It adds:
 - `messages`: `caption`, `mime_type`, `file_name`, `file_size`, `audio_duration`, `is_paid`, `paid_price`
 - `media`: `thumbnail_url`, `file_name`
-- New table: `message_unlocks`
+- `posts`: `thumbnail_url`, `tier`, `tags` (August 2026)
+- New tables: `message_unlocks`, `post_categories`
 
 ## User preferences
 

@@ -35,8 +35,14 @@ export async function GET(
   const rows = await db
     .select({
       id: posts.id,
+      content_type: posts.content_type,
       creator_id: posts.creator_id,
       caption: posts.caption,
+      title: posts.title,
+      description: posts.description,
+      thumbnail_url: posts.thumbnail_url,
+      tier: posts.tier,
+      tags: posts.tags,
       visibility: posts.visibility,
       like_count: posts.like_count,
       comment_count: posts.comment_count,
@@ -45,6 +51,7 @@ export async function GET(
       share_count: posts.share_count,
       created_at: posts.created_at,
       published_at: posts.published_at,
+      updated_at: posts.updated_at,
       creator_username: users.username,
       creator_display_name: profiles.display_name,
       creator_avatar: profiles.avatar_url,
@@ -89,9 +96,29 @@ export async function GET(
   const enriched = items.map((p) => {
     const postMedia = mediaByPost[p.id] ?? [];
     return {
-      ...p,
+      id: p.id,
+      content_type: p.content_type ?? "post",
+      creator_id: p.creator_id,
+      creator_username: p.creator_username,
+      creator_display_name: p.creator_display_name,
+      creator_avatar: p.creator_avatar,
+      creator_is_verified: p.creator_is_verified,
+      caption: p.caption ?? null,
+      title: p.title ?? null,
+      description: p.description ?? null,
+      thumbnail_url: p.thumbnail_url ?? null,
+      tier: p.tier ?? null,
+      tags: p.tags ? JSON.parse(p.tags) : [],
+      visibility: p.visibility,
+      like_count: p.like_count,
+      comment_count: p.comment_count,
+      save_count: p.save_count,
+      view_count: p.view_count,
+      published_at: p.published_at,
+      created_at: p.created_at,
+      updated_at: p.updated_at,
       liked_by_me: likedSet.has(p.id),
-      bookmarked: savedSet.has(p.id),
+      bookmarked_by_me: savedSet.has(p.id),
       subscribed_to_creator: isSubscribed,
       media: postMedia.map((m) => ({
         id: m.id,
@@ -101,6 +128,7 @@ export async function GET(
         duration_secs: m.duration_seconds,
         width: m.width,
         height: m.height,
+        file_size: m.size_bytes,
       })),
     };
   });

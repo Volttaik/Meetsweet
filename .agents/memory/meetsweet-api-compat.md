@@ -1,36 +1,32 @@
 ---
 name: MeetSweet API compatibility
-description: Backend-vs-mobile audit results and production database migration status
+description: Mobile is source of truth for response shapes; covers all schema additions and route fixes made to match the mobile contract.
 ---
 
-# MeetSweet Backend ↔ Mobile Compatibility
+# MeetSweet API Compatibility
 
-## Audit status (July 2026)
-Full 10-phase audit completed. Backend compared against MeetSweet-mobile.git frontend.
+## Rule
+Mobile app (Expo/React Native) is the source of truth for all response shapes. Every post object returned from ANY endpoint must include `content_type`, `title`, `thumbnail_url`, `tier`, `tags`, `media` (with `id`), and all social counts.
 
-## Production database
-All 40 tables confirmed present in live Turso database.
-Migration script (`server/scripts/migrate.ts`) was run for the first time in July 2026 — all 24 steps applied fresh:
-- Added `media.thumbnail_url`, `media.file_name`
-- Added `messages.caption`, `.mime_type`, `.file_name`, `.file_size`, `.audio_duration`, `.is_paid`, `.paid_price`
-- Created `message_unlocks` table (with unique index)
-- Created `albums`, `album_items`, `album_unlocks` tables (with indexes)
-- Created `post_unlocks` table (with indexes)
+**Why:** The mobile's content routing (shorts vs videos vs posts vs albums) breaks silently if `content_type` is missing or wrong. `tags` is stored as JSON text in DB and must be parsed on read.
 
-**Why:** Production DB had never had the migration run — tables/columns were missing before this.
+## How to apply
+- `tags` column on `posts` table is `TEXT` storing a JSON array string (e.g. `'["comedy","lifestyle"]'`). Always `JSON.parse()` on read; `JSON.stringify()` on write.
+- `thumbnail_url` on the `posts` table holds the creator-supplied custom thumbnail, not the media row thumbnail. Both exist — the posts.thumbnail_url is the preferred one for video/short posts.
+- `post_categories` junction table links posts to categories. Insert with `onConflictDoNothing()`.
+- `content_type` enum: `"post" | "video" | "short" | "album"` — "album" was added in August 2026 to the schema but NOT enforced at the DB level (SQLite text, no hard constraint).
 
-## Missing route found and fixed
-`POST /api/auth/resend-verification` — was absent, now at `server/app/api/auth/resend-verification/route.ts`.
-Used by `verify-email.tsx` screen's "Resend Code" button.
+## Schema additions (August 2026)
+- `posts.thumbnail_url` TEXT
+- `posts.tier` TEXT (bronze/silver/gold/diamond)
+- `posts.tags` TEXT (JSON array)
+- New table: `post_categories` (post_id, category_id, unique index)
+- Migration script: `cd server && npx tsx scripts/migrate.ts` — idempotent
 
-## Health endpoint
-- Mobile polls `HEAD /api/health` for connectivity. The route lives at `server/app/api/health/route.ts` and `/api/health` must be in `PUBLIC_BYPASS` in `server/middleware.ts` — if it falls off that list, all connectivity polls return 403.
-
-## Known non-issues (intentional design)
-- Mobile explore service derives catalog from `GET /api/posts`, not `GET /api/explore` — explore route exists but mobile bypasses it
-- Mobile album service is local-only (derived from explore posts) — album API routes exist and are correct but mobile doesn't call them yet
-
-## Response shape notes
-- All mobile-facing routes output both camelCase and snake_case fields (mobile normalizers accept either)
-- `GET /users/me` returns user flat in data envelope; `PATCH /users/me` returns `{user: ...}` — mobile handles both via `raw?.user ?? raw`
-- `GET /credentials/upload-url` returns camelCase (`uploadUrl`, `key`) — mobile normalizes both
+## Key route fixes made
+- `POST /api/posts` now stores `content_type`, `title`, `thumbnail_url`, `tier`, `tags`, and wires `categories` → `post_categories`
+- `GET /api/posts` `postRow()` no longer hardcodes `content_type: "post"` — reads from DB
+- `GET /api/posts/:id` returns full field set including `thumbnail_url`, `tier`, `tags` (parsed)
+- `PATCH /api/media/:id` added at `server/app/api/media/[id]/route.ts`
+- Subscriptions POST is now idempotent (returns existing active subscription instead of 409)
+- `creators/[id]/posts` now returns `content_type`, `title`, `thumbnail_url`, `tier`, `tags`
