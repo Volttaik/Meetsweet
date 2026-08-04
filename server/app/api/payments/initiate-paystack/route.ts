@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { transactions, wallets } from "@/lib/db/schema";
+import { transactions, users, wallets } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
 import { ok, err } from "@/lib/api/response";
 import { config } from "@/lib/config";
@@ -76,13 +76,13 @@ export async function POST(req: NextRequest) {
 
   // Create Paystack virtual account for bank transfer
   const user = auth.user;
-  const [profile] = await db
+  const [userRecord] = await db
     .select()
-    .from("profiles")
-    .where(eq("user_id", user.userId))
+    .from(users)
+    .where(eq(users.id, user.userId))
     .limit(1);
 
-  const customerEmail = profile?.email ?? `${user.userId}@meetsweet.app`;
+  const customerEmail = userRecord?.email ?? `${user.userId}@meetsweet.app`;
 
   try {
     const response = await fetch("https://api.paystack.co/dedicated_account", {
