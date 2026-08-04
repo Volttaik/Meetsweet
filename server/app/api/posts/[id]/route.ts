@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { eq, and, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { users, profiles, posts, media, post_likes, saved_posts, post_unlocks } from "@/lib/db/schema";
+import { users, profiles, posts, media, post_likes, saved_posts } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err } from "@/lib/api/response";
@@ -35,7 +35,6 @@ export async function GET(
       status: posts.status,
       is_pinned: posts.is_pinned,
       preview_duration: posts.preview_duration,
-      unlock_price: posts.unlock_price,
       like_count: posts.like_count,
       comment_count: posts.comment_count,
       save_count: posts.save_count,
@@ -56,7 +55,6 @@ export async function GET(
 
   let likedByMe = false;
   let bookmarkedByMe = false;
-  let unlockedByMe = false;
 
   const authResult = await requireAuth(req);
   if (!("response" in authResult)) {
@@ -74,47 +72,21 @@ export async function GET(
       .where(and(eq(saved_posts.user_id, uid), eq(saved_posts.post_id, id)))
       .limit(1);
     bookmarkedByMe = !!saved;
-
-    const [unlocked] = await db
-      .select({ id: post_unlocks.id })
-      .from(post_unlocks)
-      .where(and(eq(post_unlocks.user_id, uid), eq(post_unlocks.post_id, id)))
-      .limit(1);
-    unlockedByMe = !!unlocked;
   }
-
-  const isLocked = (row.unlock_price ?? 0) > 0
-    && row.creator_id !== (authResult && !("response" in authResult) ? authResult.user.userId : null)
-    && !unlockedByMe;
 
   return ok({
     ...row,
-    // content_type comes from the DB select above — no override needed
-    is_locked: isLocked,
-    unlocked_by_me: !isLocked,
     liked_by_me: likedByMe,
     bookmarked_by_me: bookmarkedByMe,
-    media: postMedia.map((m) => isLocked
-      ? {
-          url: null,
-          type: m.type,
-          thumbnail_url: null,
-          duration_secs: m.duration_seconds,
-          file_size: m.size_bytes,
-          width: m.width,
-          height: m.height,
-          is_locked: true,
-        }
-      : {
-          url: m.url,
-          type: m.type,
-          thumbnail_url: m.thumbnail_url ?? null,
-          duration_secs: m.duration_seconds,
-          file_size: m.size_bytes,
-          width: m.width,
-          height: m.height,
-          is_locked: false,
-        }),
+    media: postMedia.map((m) => ({
+      url: m.url,
+      type: m.type,
+      thumbnail_url: m.thumbnail_url ?? null,
+      duration_secs: m.duration_seconds,
+      file_size: m.size_bytes,
+      width: m.width,
+      height: m.height,
+    })),
   });
 }
 

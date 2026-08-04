@@ -9,7 +9,6 @@ import {
   albums,
   post_likes,
   saved_posts,
-  post_unlocks,
 } from "@/lib/db/schema";
 import { optionalAuth } from "@/middleware/auth";
 import { ok } from "@/lib/api/response";
@@ -58,7 +57,6 @@ export async function GET(req: NextRequest) {
       title:                posts.title,
       description:          posts.description,
       visibility:           posts.visibility,
-      unlock_price:         posts.unlock_price,
       like_count:           posts.like_count,
       comment_count:        posts.comment_count,
       save_count:           posts.save_count,
@@ -131,62 +129,46 @@ export async function GET(req: NextRequest) {
 
   const mediaByPost = groupMediaByPost(allMediaRows);
 
-  // ── Liked / bookmarked / unlocked sets ─────────────────────────────────
+  // ── Liked / bookmarked sets ─────────────────────────────────────────────
 
-  let likedSet    = new Set<string>();
-  let savedSet    = new Set<string>();
-  let unlockedSet = new Set<string>();
+  let likedSet = new Set<string>();
+  let savedSet = new Set<string>();
 
   if (userId && postIds.length > 0) {
     const idList = sql.join(postIds.map((id) => sql`${id}`), sql`, `);
-    const [liked, saved, unlocked] = await Promise.all([
+    const [liked, saved] = await Promise.all([
       db.select({ post_id: post_likes.post_id })
         .from(post_likes)
         .where(and(eq(post_likes.user_id, userId), sql`${post_likes.post_id} IN (${idList})`)),
       db.select({ post_id: saved_posts.post_id })
         .from(saved_posts)
         .where(and(eq(saved_posts.user_id, userId), sql`${saved_posts.post_id} IN (${idList})`)),
-      db.select({ post_id: post_unlocks.post_id })
-        .from(post_unlocks)
-        .where(and(eq(post_unlocks.user_id, userId), sql`${post_unlocks.post_id} IN (${idList})`)),
     ]);
-    likedSet    = new Set(liked.map((l) => l.post_id));
-    savedSet    = new Set(saved.map((s) => s.post_id));
-    unlockedSet = new Set(unlocked.map((u) => u.post_id));
+    likedSet = new Set(liked.map((l) => l.post_id));
+    savedSet = new Set(saved.map((s) => s.post_id));
   }
 
   // ── Build typed items ───────────────────────────────────────────────────
 
   const items = rows.map((r) => {
-    const locked = (r.unlock_price ?? 0) > 0 && r.creator_id !== userId && !unlockedSet.has(r.id);
-    const rawMedia = (mediaByPost[r.id] ?? []).map((m) =>
-      locked
-        ? { ...m, url: null as unknown as string, thumbnail_url: null }
-        : m,
-    );
+    const rawMedia = mediaByPost[r.id] ?? [];
 
     if (r.content_type === "video") {
-      return {
-        ...buildVideoRow(
-          { ...r, share_count: r.share_count ?? 0 },
-          rawMedia,
-          likedSet.has(r.id),
-          false,
-        ),
-        is_locked: locked,
-      };
+      return buildVideoRow(
+        { ...r, share_count: r.share_count ?? 0 },
+        rawMedia,
+        likedSet.has(r.id),
+        false,
+      );
     }
 
     if (r.content_type === "short") {
-      return {
-        ...buildShortRow(
-          { ...r, share_count: r.share_count ?? 0 },
-          rawMedia,
-          likedSet.has(r.id),
-          false,
-        ),
-        is_locked: locked,
-      };
+      return buildShortRow(
+        { ...r, share_count: r.share_count ?? 0 },
+        rawMedia,
+        likedSet.has(r.id),
+        false,
+      );
     }
 
     // post
@@ -197,7 +179,6 @@ export async function GET(req: NextRequest) {
       duration_secs: m.duration_seconds,
       width: m.width,
       height: m.height,
-      is_locked: locked,
     }));
     return {
       id:                   r.id,
@@ -209,7 +190,6 @@ export async function GET(req: NextRequest) {
       creator_is_verified:  r.creator_is_verified,
       caption:              r.caption,
       visibility:           r.visibility,
-      unlock_price:         r.unlock_price,
       like_count:           r.like_count,
       comment_count:        r.comment_count,
       save_count:           r.save_count,
@@ -218,8 +198,7 @@ export async function GET(req: NextRequest) {
       created_at:           r.created_at,
       liked_by_me:          likedSet.has(r.id),
       bookmarked_by_me:     savedSet.has(r.id),
-      is_locked:            locked,
-      thumbnail_url:        locked ? null : (postMedia[0]?.thumbnail_url ?? null),
+      thumbnail_url:        postMedia[0]?.thumbnail_url ?? null,
       media:                postMedia,
     };
   });

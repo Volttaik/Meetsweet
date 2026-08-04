@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { eq, and, desc, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { posts, media, users, profiles, post_likes, saved_posts, post_unlocks, subscriptions } from "@/lib/db/schema";
+import { posts, media, users, profiles, post_likes, saved_posts, subscriptions } from "@/lib/db/schema";
 import { optionalAuth } from "@/middleware/auth";
 import { ok, err } from "@/lib/api/response";
 import { groupMediaByPost } from "@/lib/services/content";
@@ -38,7 +38,6 @@ export async function GET(
       creator_id: posts.creator_id,
       caption: posts.caption,
       visibility: posts.visibility,
-      unlock_price: posts.unlock_price,
       like_count: posts.like_count,
       comment_count: posts.comment_count,
       save_count: posts.save_count,
@@ -85,29 +84,20 @@ export async function GET(
         .then((r) => new Set(r.map((x) => x.post_id)))
     : new Set();
 
-  const unlockedSet: Set<string> = userId && postIds.length > 0
-    ? await db.select({ post_id: post_unlocks.post_id }).from(post_unlocks)
-        .where(and(eq(post_unlocks.user_id, userId), sql`${post_unlocks.post_id} IN (${sql.join(postIds.map((id) => sql`${id}`), sql`, `)})`))
-        .then((r) => new Set(r.map((x) => x.post_id)))
-    : new Set();
-
   const mediaByPost = groupMediaByPost(mediaRows);
 
   const enriched = items.map((p) => {
     const postMedia = mediaByPost[p.id] ?? [];
-    const isLocked = !!p.unlock_price && !unlockedSet.has(p.id) && userId !== p.creator_id;
     return {
       ...p,
       liked_by_me: likedSet.has(p.id),
       bookmarked: savedSet.has(p.id),
-      is_unlocked: !isLocked,
-      is_locked: isLocked,
       subscribed_to_creator: isSubscribed,
       media: postMedia.map((m) => ({
         id: m.id,
-        url: isLocked ? null : m.url,
+        url: m.url,
         type: m.type,
-        thumbnail_url: m.thumbnail_url,
+        thumbnail_url: m.thumbnail_url ?? null,
         duration_secs: m.duration_seconds,
         width: m.width,
         height: m.height,

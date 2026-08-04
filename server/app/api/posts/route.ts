@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { eq, and, desc, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { users, profiles, posts, media, post_likes, saved_posts, post_unlocks } from "@/lib/db/schema";
+import { users, profiles, posts, media, post_likes, saved_posts } from "@/lib/db/schema";
 import { requireAuth, optionalAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err, created } from "@/lib/api/response";
@@ -12,7 +12,6 @@ const createSchema = z.object({
   caption: z.string().max(2200).nullable().optional(),
   visibility: z.enum(["public", "subscribers", "draft"]).default("public"),
   preview_duration: z.number().int().min(1).nullable().optional(),
-  unlock_price: z.number().int().min(0).nullable().optional(),
   expires_at: z.string().optional(),
   // media_ids: IDs of pre-uploaded media records (from POST /api/media)
   media_ids: z.array(z.string()).max(10).optional(),
@@ -51,7 +50,6 @@ function postRow(p: Record<string, unknown>, mediaItems: unknown[], liked: boole
     status: p.status,
     is_pinned: p.is_pinned,
     preview_duration: p.preview_duration,
-    unlock_price: p.unlock_price,
     like_count: p.like_count,
     comment_count: p.comment_count,
     save_count: p.save_count,
@@ -96,7 +94,6 @@ export async function GET(req: NextRequest) {
       status: posts.status,
       is_pinned: posts.is_pinned,
       preview_duration: posts.preview_duration,
-      unlock_price: posts.unlock_price,
       like_count: posts.like_count,
       comment_count: posts.comment_count,
       save_count: posts.save_count,
@@ -188,28 +185,9 @@ export async function GET(req: NextRequest) {
     {} as Record<string, unknown[]>,
   );
 
-  let unlockedSet = new Set<string>();
-  if (userId && postIds.length > 0) {
-    const unlocked = await db.select({ post_id: post_unlocks.post_id })
-      .from(post_unlocks)
-      .where(and(
-        eq(post_unlocks.user_id, userId),
-        sql`${post_unlocks.post_id} IN (${sql.join(postIds.map((id) => sql`${id}`), sql`, `)})`,
-      ));
-    unlockedSet = new Set(unlocked.map((row) => row.post_id));
-  }
-
-  const result = items.map((p) => {
-    const isOwner = p.creator_id === userId;
-    const isLocked = (p.unlock_price ?? 0) > 0 && !isOwner && !unlockedSet.has(p.id);
-    const visibleMedia = (mediaByPost[p.id] ?? []).map((item) => {
-      const mediaItem = item as Record<string, unknown>;
-      return isLocked
-        ? { ...mediaItem, url: null, thumbnail_url: null, is_locked: true }
-        : { ...mediaItem, is_locked: false };
-    });
-    return postRow(p as Record<string, unknown>, visibleMedia, likedSet.has(p.id), savedSet.has(p.id));
-  });
+  const result = items.map((p) =>
+    postRow(p as Record<string, unknown>, mediaByPost[p.id] ?? [], likedSet.has(p.id), savedSet.has(p.id)),
+  );
 
   const lastItem = items[items.length - 1];
   // Compound cursor: "published_at__id" — both ordering fields, no ambiguity at boundaries
@@ -237,7 +215,6 @@ export async function POST(req: NextRequest) {
     caption,
     visibility,
     preview_duration,
-    unlock_price,
     expires_at,
     media: mediaItems,
     media_ids,
@@ -253,7 +230,6 @@ export async function POST(req: NextRequest) {
     visibility: visibility ?? "public",
     status: "published",
     preview_duration: preview_duration ?? null,
-    unlock_price: unlock_price ?? null,
     expires_at: expires_at ?? null,
     published_at: now,
   });
