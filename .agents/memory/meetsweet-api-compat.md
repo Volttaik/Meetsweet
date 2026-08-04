@@ -23,6 +23,9 @@ Migration script (`server/scripts/migrate.ts`) was run for the first time in Jul
 `POST /api/auth/resend-verification` — was absent, now at `server/app/api/auth/resend-verification/route.ts`.
 Used by `verify-email.tsx` screen's "Resend Code" button.
 
+## Health endpoint
+- Mobile polls `HEAD /api/health` for connectivity. The route lives at `server/app/api/health/route.ts` and `/api/health` must be in `PUBLIC_BYPASS` in `server/middleware.ts` — if it falls off that list, all connectivity polls return 403.
+
 ## Known non-issues (intentional design)
 - Mobile explore service derives catalog from `GET /api/posts`, not `GET /api/explore` — explore route exists but mobile bypasses it
 - Mobile album service is local-only (derived from explore posts) — album API routes exist and are correct but mobile doesn't call them yet

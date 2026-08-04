@@ -178,6 +178,20 @@ async function run() {
       sql: `CREATE INDEX IF NOT EXISTS post_unlocks_user_created_idx ON post_unlocks(user_id, created_at)`,
     },
 
+    // ── creator_settings table additions ──────────────────────────────────────
+    {
+      name: "creator_settings: add who_can_message",
+      sql: `ALTER TABLE creator_settings ADD COLUMN who_can_message TEXT NOT NULL DEFAULT 'everyone'`,
+    },
+    {
+      name: "creator_settings: add welcome_message",
+      sql: `ALTER TABLE creator_settings ADD COLUMN welcome_message TEXT`,
+    },
+    {
+      name: "creator_settings: add verification_status",
+      sql: `ALTER TABLE creator_settings ADD COLUMN verification_status TEXT NOT NULL DEFAULT 'none'`,
+    },
+
     // ── posts table: content_type discriminator (post / video / short) ────────
     {
       name: "posts: add content_type",

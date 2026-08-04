@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 // Routes that bypass the X-Client-App-Id check entirely
 const PUBLIC_BYPASS = new Set([
+  "/api/health",
   "/api/healthz",
   "/api/diagnostic",
 ]);
