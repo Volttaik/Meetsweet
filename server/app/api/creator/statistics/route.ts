@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { eq, sql, desc, isNull } from "drizzle-orm";
+import { eq, and, sql, desc, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { creator_statistics, subscriptions, posts } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
@@ -28,17 +28,24 @@ export async function GET(req: NextRequest) {
     revenue: r.total_revenue,
   }));
 
-  // Active subscribers: count active subscriptions where this user is the creator
+  // Active subscribers: only count status = 'active'
   const [activeSubRow] = await db
     .select({ count: sql<number>`count(*)` })
     .from(subscriptions)
-    .where(eq(subscriptions.creator_id, auth.user.userId));
+    .where(and(
+      eq(subscriptions.creator_id, auth.user.userId),
+      eq(subscriptions.status, "active"),
+    ));
 
-  // Total posts: count non-deleted posts
+  // Total posts: only count published, non-deleted posts
   const [postCountRow] = await db
     .select({ count: sql<number>`count(*)` })
     .from(posts)
-    .where(eq(posts.creator_id, auth.user.userId));
+    .where(and(
+      eq(posts.creator_id, auth.user.userId),
+      eq(posts.status, "published"),
+      isNull(posts.deleted_at),
+    ));
 
   // Total revenue: sum of all periods' revenue
   const total_revenue = filtered.reduce((acc, r) => acc + (r.total_revenue ?? 0), 0);

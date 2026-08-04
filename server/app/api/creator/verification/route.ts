@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { creator_settings } from "@/lib/db/schema";
+import { creator_settings, reports } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok } from "@/lib/api/response";
@@ -20,14 +20,15 @@ export async function POST(req: NextRequest) {
   const parsed = await parseBody(req, schema);
   if (!parsed.success) return parsed.response;
 
+  const { id_type, id_number } = parsed.data;
+  const now = new Date().toISOString();
+
   // Upsert creator_settings and set verification_status to "pending"
   const [existing] = await db
     .select({ id: creator_settings.id })
     .from(creator_settings)
     .where(eq(creator_settings.user_id, auth.user.userId))
     .limit(1);
-
-  const now = new Date().toISOString();
 
   if (existing) {
     await db
@@ -41,6 +42,18 @@ export async function POST(req: NextRequest) {
       verification_status: "pending",
     });
   }
+
+  // Store the submitted identity document details in the reports table
+  // so admins can review verification requests
+  await db.insert(reports).values({
+    id: generateId(),
+    reporter_id: auth.user.userId,
+    entity_type: "creator_verification",
+    entity_id: auth.user.userId,
+    reason: id_type,
+    description: id_number,
+    status: "pending",
+  });
 
   return ok({ submitted: true, verification_status: "pending" });
 }

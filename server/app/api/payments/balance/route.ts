@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
   if ("response" in auth) return auth.response;
 
   const [wallet] = await db
-    .select({ balance: wallets.balance })
+    .select({ balance: wallets.balance, currency: wallets.currency })
     .from(wallets)
     .where(eq(wallets.user_id, auth.user.userId))
     .limit(1);
@@ -40,8 +40,16 @@ export async function GET(req: NextRequest) {
       ),
     );
 
-  const pendingWithdrawals = Number(pendingRow?.total ?? 0);
-  const availableForWithdrawal = Math.max(0, balance - pendingWithdrawals);
+  const pending_withdrawals = Number(pendingRow?.total ?? 0);
+  const available_for_withdrawal = Math.max(0, balance - pending_withdrawals);
 
-  return ok({ balance, pendingWithdrawals, availableForWithdrawal });
+  return ok({
+    balance,
+    currency: wallet?.currency ?? "NGN",
+    pending_withdrawals,
+    available_for_withdrawal,
+    // camelCase aliases for compatibility
+    pendingWithdrawals: pending_withdrawals,
+    availableForWithdrawal: available_for_withdrawal,
+  });
 }

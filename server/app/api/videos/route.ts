@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { eq, and, desc, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { posts, media, users, profiles, post_likes, subscriptions } from "@/lib/db/schema";
+import { posts, media, users, profiles, post_likes, subscriptions, post_categories } from "@/lib/db/schema";
 import { optionalAuth, requireAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok, created } from "@/lib/api/response";
@@ -14,6 +14,9 @@ const createSchema = z.object({
   description: z.string().max(5000).nullable().optional(),
   caption: z.string().max(2200).nullable().optional(),
   visibility: z.enum(["public", "subscribers", "draft"]).default("public"),
+  tier: z.enum(["bronze", "silver", "gold", "diamond"]).nullable().optional(),
+  thumbnail_url: z.string().url().nullable().optional(),
+  tags: z.array(z.string().max(50)).max(20).optional(),
   preview_duration: z.number().int().min(1).nullable().optional(),
   unlock_price: z.number().int().min(0).nullable().optional(),
   media_ids: z.array(z.string()).max(10).optional(),
@@ -34,7 +37,6 @@ const createSchema = z.object({
     .max(10)
     .optional(),
   categories: z.array(z.string()).optional(),
-  tags: z.array(z.string()).optional(),
 });
 
 export async function GET(req: NextRequest) {
@@ -124,7 +126,12 @@ export async function POST(req: NextRequest) {
   const parsed = await parseBody(req, createSchema);
   if (!parsed.success) return parsed.response;
 
-  const { title, description, caption, visibility, preview_duration, unlock_price, media_ids, media: mediaItems } = parsed.data;
+  const {
+    title, description, caption, visibility,
+    tier, thumbnail_url, tags,
+    preview_duration, unlock_price,
+    media_ids, media: mediaItems, categories,
+  } = parsed.data;
 
   const postId = generateId();
   const now = new Date().toISOString();
@@ -136,6 +143,9 @@ export async function POST(req: NextRequest) {
     title: title ?? null,
     description: description ?? caption ?? null,
     caption: caption ?? null,
+    thumbnail_url: thumbnail_url ?? null,
+    tier: tier ?? null,
+    tags: tags && tags.length > 0 ? JSON.stringify(tags) : null,
     visibility: visibility ?? "public",
     status: "published",
     preview_duration: preview_duration ?? null,
@@ -170,6 +180,16 @@ export async function POST(req: NextRequest) {
         .set({ post_id: postId, sort_order: i })
         .where(and(eq(media.id, media_ids[i]), eq(media.uploader_id, auth.user.userId)));
     }
+  }
+
+  if (categories && categories.length > 0) {
+    await db.insert(post_categories).values(
+      categories.map((categoryId) => ({
+        id: generateId(),
+        post_id: postId,
+        category_id: categoryId,
+      })),
+    ).onConflictDoNothing();
   }
 
   return created({ id: postId });

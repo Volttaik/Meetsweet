@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
 
   const now = new Date().toISOString();
 
-  // Find the transaction
+  // Find the transaction — must belong to the authenticated user
   const [tx] = await db
     .select()
     .from(transactions)
@@ -49,6 +49,11 @@ export async function POST(req: NextRequest) {
 
   if (!tx) {
     return err("Transaction not found", 404);
+  }
+
+  // Ownership check: prevent one user from crediting their wallet via another user's transaction
+  if (tx.user_id !== auth.user.userId) {
+    return err("Transaction not found", 404); // 404 not 403 to avoid leaking existence
   }
 
   // If already processed, return current state
