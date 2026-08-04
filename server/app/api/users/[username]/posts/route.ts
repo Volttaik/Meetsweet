@@ -119,7 +119,7 @@ export async function GET(
     (acc, m) => {
       if (!m.post_id) return acc;
       if (!acc[m.post_id]) acc[m.post_id] = [];
-      acc[m.post_id].push({ url: m.url, type: m.type, thumbnail_url: null, duration_secs: m.duration_seconds, file_size: m.size_bytes, width: m.width, height: m.height });
+      acc[m.post_id].push({ url: m.url, type: m.type, thumbnail_url: m.thumbnail_url ?? null, duration_secs: m.duration_seconds, file_size: m.size_bytes, width: m.width, height: m.height });
       return acc;
     },
     {} as Record<string, unknown[]>,
