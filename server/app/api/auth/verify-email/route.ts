@@ -5,8 +5,15 @@ import { db } from "@/lib/db";
 import { users, verification_codes } from "@/lib/db/schema";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err } from "@/lib/api/response";
+import { verifyEmailLimit, getClientIp, tooManyRequests } from "@/lib/security/rate-limiter";
 
 export async function POST(req: NextRequest) {
+  const ip = getClientIp(req);
+
+  // ── Rate limiting ────────────────────────────────────────────────────────
+  const rl = verifyEmailLimit(ip);
+  if (!rl.allowed) return tooManyRequests(rl.resetIn);
+
   const parsed = await parseBody(req, z.object({ code: z.string().length(6), email: z.string().email() }));
   if (!parsed.success) return parsed.response;
 

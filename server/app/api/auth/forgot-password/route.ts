@@ -7,15 +7,26 @@ import { parseBody } from "@/lib/api/validate";
 import { ok } from "@/lib/api/response";
 import { generateId, generateVerificationCode, expiresAt } from "@/lib/auth/codes";
 import { sendPasswordResetEmail } from "@/lib/services/email";
+import { forgotPasswordLimit, getClientIp, tooManyRequests } from "@/lib/security/rate-limiter";
 
 export async function POST(req: NextRequest) {
+  const ip = getClientIp(req);
+
   const parsed = await parseBody(req, z.object({ email: z.string().email() }));
   if (!parsed.success) return parsed.response;
 
   const { email } = parsed.data;
 
-  // Always respond the same to avoid enumeration
-  const [user] = await db.select({ id: users.id, full_name: users.full_name }).from(users).where(eq(users.email, email)).limit(1);
+  // ── Rate limiting ────────────────────────────────────────────────────────
+  const rl = forgotPasswordLimit(ip, email);
+  if (!rl.allowed) return tooManyRequests(rl.resetIn);
+
+  // ── Generate and send reset code (always same response to avoid enumeration)
+  const [user] = await db
+    .select({ id: users.id, full_name: users.full_name })
+    .from(users)
+    .where(eq(users.email, email))
+    .limit(1);
 
   if (user) {
     const code = generateVerificationCode();
@@ -29,9 +40,9 @@ export async function POST(req: NextRequest) {
 
     await sendPasswordResetEmail({
       to: email,
-      name: email,
+      name: user.full_name ?? email,
       code,
-    }).catch(() => null); // swallow email errors — code is stored in DB
+    }).catch(() => null);
   }
 
   return ok({ message: "If an account exists for that email, a reset code has been sent." });

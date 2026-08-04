@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { users } from "@/lib/db/schema";
+import { users, refresh_tokens } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err } from "@/lib/api/response";
@@ -30,8 +30,14 @@ export async function DELETE(req: NextRequest) {
   const valid = await verifyPassword(user.password_hash, parsed.data.password);
   if (!valid) return err("Password is incorrect", 400, "WRONG_PASSWORD");
 
-  // Soft-delete the account
   const now = new Date().toISOString();
+
+  // Revoke all active sessions before soft-deleting
+  await db
+    .update(refresh_tokens)
+    .set({ revoked_at: now })
+    .where(eq(refresh_tokens.user_id, auth.user.userId));
+
   await db
     .update(users)
     .set({ deleted_at: now, is_active: false, updated_at: now })
