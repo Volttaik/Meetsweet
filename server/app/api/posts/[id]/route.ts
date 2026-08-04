@@ -51,6 +51,7 @@ export async function GET(
       like_count: posts.like_count,
       comment_count: posts.comment_count,
       save_count: posts.save_count,
+      share_count: posts.share_count,
       view_count: posts.view_count,
       published_at: posts.published_at,
       created_at: posts.created_at,

@@ -16,10 +16,8 @@ const schema = z.object({
 /**
  * POST /api/payments/save-bank-details
  *
- * Persists the creator's withdrawal bank details.
- * Stored as JSON in creator_settings.welcome_message is NOT used here —
- * the bank details are stored in the verification_status field as a
- * JSON-encoded string under the key "bank_details".
+ * Persists the creator's withdrawal bank details in the dedicated
+ * creator_settings.bank_details column as a JSON string.
  *
  * Request body:
  * - bankName: string
@@ -41,22 +39,20 @@ export async function POST(req: NextRequest) {
   const now = new Date().toISOString();
   const bankJson = JSON.stringify({ bankName, accountNumber, accountName });
 
-  // Upsert into creator_settings — store bank details as JSON in welcome_message
-  // (we repurpose an available column since there is no dedicated bank_details table)
-  const existing = await db
+  const [existing] = await db
     .select({ id: creator_settings.id })
     .from(creator_settings)
     .where(eq(creator_settings.user_id, auth.user.userId))
     .limit(1);
 
-  if (existing.length > 0) {
-    await db
-      .update(creator_settings)
-      .set({ welcome_message: `BANK_DETAILS:${bankJson}`, updated_at: now })
-      .where(eq(creator_settings.user_id, auth.user.userId));
-  } else {
+  if (!existing) {
     return err("Creator settings not found. Become a creator first.", 404);
   }
+
+  await db
+    .update(creator_settings)
+    .set({ bank_details: bankJson, updated_at: now })
+    .where(eq(creator_settings.user_id, auth.user.userId));
 
   return ok({ success: true });
 }

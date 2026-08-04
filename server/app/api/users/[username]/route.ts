@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { eq, and, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users, profiles, follows } from "@/lib/db/schema";
-import { requireAuth } from "@/middleware/auth";
+import { optionalAuth } from "@/middleware/auth";
 import { ok, err } from "@/lib/api/response";
 
 export async function GET(
@@ -47,16 +47,16 @@ export async function GET(
     .from(follows)
     .where(eq(follows.follower_id, row.id));
 
-  // Check if requester is following
+  // Check if requester is following (optional auth — public profile is readable by anyone)
   let isFollowing = false;
-  const authResult = await requireAuth(req);
-  if (!("response" in authResult)) {
+  const viewer = await optionalAuth(req);
+  if (viewer?.userId) {
     const [existing] = await db
       .select({ id: follows.id })
       .from(follows)
       .where(
         and(
-          eq(follows.follower_id, authResult.user.userId),
+          eq(follows.follower_id, viewer.userId),
           eq(follows.following_id, row.id),
         ),
       )

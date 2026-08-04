@@ -95,11 +95,11 @@ export async function POST(req: NextRequest) {
         if (response.ok && json.status && json.data?.status === "success") {
           const amount = json.data.amount / 100; // Convert from kobo
 
-          // Update transaction status
+          // Update transaction status (use tx.id — already resolved; transactionId may be undefined)
           await db
             .update(transactions)
             .set({ status: "success", updated_at: now })
-            .where(eq(transactions.id, transactionId));
+            .where(eq(transactions.id, tx.id));
 
           // Credit wallet
           const [wallet] = await db
@@ -141,7 +141,7 @@ export async function POST(req: NextRequest) {
     await db
       .update(transactions)
       .set({ status: "success", updated_at: now })
-      .where(eq(transactions.id, transactionId));
+      .where(eq(transactions.id, tx.id));
 
     const [wallet] = await db
       .select({ id: wallets.id, balance: wallets.balance })

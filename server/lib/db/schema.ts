@@ -597,6 +597,8 @@ export const creator_settings = sqliteTable("creator_settings", {
   who_can_message: text("who_can_message", { enum: ["everyone", "subscribers", "none"] }).notNull().default("everyone"),
   welcome_message: text("welcome_message"),
   verification_status: text("verification_status").notNull().default("none"),
+  // Dedicated column for withdrawal bank details (JSON: { bankName, accountNumber, accountName })
+  bank_details: text("bank_details"),
   created_at: createdAt(),
   updated_at: updatedAt(),
 });

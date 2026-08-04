@@ -34,7 +34,8 @@ export async function POST(
   }
 
   const [updated] = await db.select({ like_count: comments.like_count }).from(comments).where(eq(comments.id, commentId)).limit(1);
-  return ok({ liked: true, like_count: updated?.like_count ?? 0 });
+  const count = updated?.like_count ?? 0;
+  return ok({ liked: true, like_count: count, likeCount: count });
 }
 
 export async function DELETE(
@@ -61,5 +62,6 @@ export async function DELETE(
   }
 
   const [updated] = await db.select({ like_count: comments.like_count }).from(comments).where(eq(comments.id, commentId)).limit(1);
-  return ok({ liked: false, like_count: updated?.like_count ?? 0 });
+  const count = updated?.like_count ?? 0;
+  return ok({ liked: false, like_count: count, likeCount: count });
 }

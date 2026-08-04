@@ -8,13 +8,10 @@ import {
   conversations,
   conversation_members,
   messages,
-  message_unlocks,
-  wallets,
-  transactions,
 } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
-import { ok, err, created } from "@/lib/api/response";
+import { ok, err } from "@/lib/api/response";
 import { generateId } from "@/lib/auth/codes";
 
 const sendSchema = z
@@ -38,11 +35,6 @@ const sendSchema = z
     fileSize: z.number().int().nullable().optional(),
     audio_duration: z.number().nullable().optional(),
     audioDuration: z.number().nullable().optional(),
-    // Paid content
-    is_paid: z.boolean().optional(),
-    isPaid: z.boolean().optional(),
-    paid_price: z.number().int().min(0).nullable().optional(),
-    paidPrice: z.number().int().min(0).nullable().optional(),
   })
   .refine(
     (d) =>
@@ -91,19 +83,16 @@ function parseReactions(raw: unknown): { emoji: string; user_ids: string[]; user
 function formatMessage(
   m: Record<string, unknown>,
   myUserId: string,
-  unlockedSet?: Set<string>,
 ) {
   const isOwn = m.sender_id === myUserId;
-  const isPaid = Boolean(m.is_paid);
-  const isUnlocked = isOwn || Boolean(unlockedSet?.has(m.id as string));
   const isRecalled = Boolean(m.is_recalled);
 
   return {
     id: m.id,
     body: isRecalled ? null : m.body,
     caption: isRecalled ? null : m.caption,
-    mediaUrl: isRecalled || (isPaid && !isUnlocked) ? null : (m.media_url ?? null),
-    media_url: isRecalled || (isPaid && !isUnlocked) ? null : (m.media_url ?? null),
+    mediaUrl: isRecalled ? null : (m.media_url ?? null),
+    media_url: isRecalled ? null : (m.media_url ?? null),
     // mobile normalizer checks raw.mediaType ?? raw.media_type
     mediaType: m.media_type ?? null,
     media_type: m.media_type ?? null,
@@ -116,13 +105,6 @@ function formatMessage(
     file_size: m.file_size ?? null,
     audioDuration: m.audio_duration ?? null,
     audio_duration: m.audio_duration ?? null,
-    // Paid content fields
-    isPaid,
-    is_paid: isPaid,
-    isUnlocked,
-    is_unlocked: isUnlocked,
-    paidPrice: m.paid_price ?? null,
-    paid_price: m.paid_price ?? null,
     // mobile normalizer checks raw.isDeleted ?? raw.is_deleted
     isDeleted: isRecalled,
     is_deleted: isRecalled,
@@ -158,8 +140,6 @@ const MSG_SELECT = {
   file_name: messages.file_name,
   file_size: messages.file_size,
   audio_duration: messages.audio_duration,
-  is_paid: messages.is_paid,
-  paid_price: messages.paid_price,
   is_recalled: messages.is_recalled,
   is_edited: messages.is_edited,
   reply_to_id: messages.reply_to_id,
@@ -208,20 +188,9 @@ export async function GET(
   const hasMore = rows.length > limit;
   const items = hasMore ? rows.slice(0, limit) : rows;
 
-  // Fetch unlocked paid messages for this user in one query
-  const paidIds = items.filter((m) => m.is_paid).map((m) => m.id);
-  let unlockedSet = new Set<string>();
-  if (paidIds.length > 0) {
-    const unlocks = await db
-      .select({ message_id: message_unlocks.message_id })
-      .from(message_unlocks)
-      .where(eq(message_unlocks.user_id, auth.user.userId));
-    unlockedSet = new Set(unlocks.map((u) => u.message_id));
-  }
-
   return ok({
     messages: items.map((m) =>
-      formatMessage(m as Record<string, unknown>, auth.user.userId, unlockedSet),
+      formatMessage(m as Record<string, unknown>, auth.user.userId),
     ),
     hasMore,
     has_more: hasMore,
@@ -252,8 +221,6 @@ export async function POST(
   const fileName = d.file_name ?? d.fileName ?? null;
   const fileSize = d.file_size ?? d.fileSize ?? null;
   const audioDuration = d.audio_duration ?? d.audioDuration ?? null;
-  const isPaid = d.is_paid ?? d.isPaid ?? false;
-  const paidPrice = d.paid_price ?? d.paidPrice ?? null;
 
   const msgId = generateId();
   const now = new Date().toISOString();
@@ -276,8 +243,6 @@ export async function POST(
     file_name: fileName,
     file_size: fileSize,
     audio_duration: audioDuration,
-    is_paid: isPaid,
-    paid_price: isPaid ? (paidPrice ?? null) : null,
   });
 
   await db
@@ -297,7 +262,6 @@ export async function POST(
     message: formatMessage(
       row as Record<string, unknown>,
       auth.user.userId,
-      new Set<string>(),
     ),
   });
 }

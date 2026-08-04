@@ -345,6 +345,26 @@ async function run() {
       sql: `CREATE INDEX IF NOT EXISTS wallets_user_idx ON wallets(user_id)`,
     },
 
+    // ── creator_settings: dedicated bank_details column ───────────────────
+    // Replaces the old BANK_DETAILS:{json} hack in welcome_message.
+    // Idempotent — safe to run even if already applied.
+    {
+      name: "creator_settings: add bank_details",
+      sql: `ALTER TABLE creator_settings ADD COLUMN bank_details TEXT`,
+    },
+    // Migrate any existing BANK_DETAILS:{json} values from welcome_message
+    // into bank_details and clear the mangled welcome_message.
+    {
+      name: "creator_settings: migrate bank_details from welcome_message",
+      sql: `
+        UPDATE creator_settings
+        SET
+          bank_details = SUBSTR(welcome_message, 14),
+          welcome_message = NULL
+        WHERE welcome_message LIKE 'BANK_DETAILS:%'
+      `,
+    },
+
     // ── transactions table ─────────────────────────────────────────────────
     {
       name: "create transactions",
