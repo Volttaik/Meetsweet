@@ -22,9 +22,15 @@ export function middleware(req: NextRequest) {
   // Rejects requests that don't carry the expected client identifier.
   // This is a lightweight first-line defence against naked/scripted access;
   // JWT auth on each route is the real auth layer.
+  //
+  // Requests that already carry a Bearer token are passed through — the JWT
+  // check inside requireAuth() is the real security gate for those routes.
+  // This handles upload/media flows where the HTTP client may not attach the
+  // app-id header but does include the user's auth token.
   const clientAppId = process.env.CLIENT_APP_ID ?? "meetsweet-mobile";
   const sentId = req.headers.get("x-client-app-id");
-  if (!PUBLIC_BYPASS.has(pathname) && sentId !== clientAppId) {
+  const hasBearerToken = req.headers.get("authorization")?.startsWith("Bearer ");
+  if (!PUBLIC_BYPASS.has(pathname) && sentId !== clientAppId && !hasBearerToken) {
     return new NextResponse(
       JSON.stringify({ error: "Forbidden" }),
       {
