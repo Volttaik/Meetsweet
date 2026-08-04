@@ -298,6 +298,14 @@ async function run() {
       name: "shares: content index",
       sql: `CREATE INDEX IF NOT EXISTS shares_content_idx ON shares(content_type, content_id)`,
     },
+
+    // ── subscriptions: add tier column ────────────────────────────────────────
+    // Aligns the subscription tier with post tier names (bronze/silver/gold/diamond).
+    // Previous upgrade/downgrade routes inferred tier from amount — this column stores it explicitly.
+    {
+      name: "subscriptions: add tier",
+      sql: `ALTER TABLE subscriptions ADD COLUMN tier TEXT`,
+    },
   ];
 
   for (const m of migrations) {

@@ -28,6 +28,8 @@ export async function GET(
       caption: posts.caption,
       description: posts.description,
       visibility: posts.visibility,
+      tier: posts.tier,
+      thumbnail_url: posts.thumbnail_url,
       unlock_price: posts.unlock_price,
       view_count: posts.view_count,
       like_count: posts.like_count,
@@ -67,16 +69,21 @@ export async function GET(
         .then((r) => new Set(r.map((x) => x.post_id)))
     : new Set();
 
-  const isSubscribed = userId
-    ? await db.select({ id: subscriptions.id }).from(subscriptions)
+  const [subscription] = userId
+    ? await db
+        .select({ id: subscriptions.id, tier: subscriptions.tier })
+        .from(subscriptions)
         .where(and(eq(subscriptions.subscriber_id, userId), eq(subscriptions.creator_id, creator.id), eq(subscriptions.status, "active")))
-        .then((r) => r.length > 0)
-    : false;
+        .limit(1)
+    : [];
+
+  const isSubscribed = !!subscription;
+  const subTier = subscription?.tier ?? null;
 
   const mediaByPost = groupMediaByPost(mediaRows);
 
   const videos = items.map((p) =>
-    buildVideoRow(p, mediaByPost[p.id] ?? [], likedSet.has(p.id), isSubscribed),
+    buildVideoRow(p, mediaByPost[p.id] ?? [], likedSet.has(p.id), isSubscribed, [], subTier),
   );
 
   return ok({

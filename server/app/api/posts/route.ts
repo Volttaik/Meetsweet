@@ -12,16 +12,23 @@ const createSchema = z.object({
   caption: z.string().max(2200).nullable().optional(),
   title: z.string().max(300).nullable().optional(),
   description: z.string().max(5000).nullable().optional(),
+  // The mobile app routes ALL content types through this endpoint.
+  // content_type drives which feed the post appears in:
+  //   "post"  → Posts/image feed
+  //   "video" → Long-form video feed
+  //   "short" → Shorts feed
+  //   "album" → Albums (legacy path; prefer POST /api/albums for full album features)
   content_type: z.enum(["post", "video", "short", "album"]).default("post"),
   visibility: z.enum(["public", "subscribers", "draft"]).default("public"),
   tier: z.enum(["bronze", "silver", "gold", "diamond"]).nullable().optional(),
   thumbnail_url: z.string().url().nullable().optional(),
   tags: z.array(z.string().max(50)).max(20).optional(),
   preview_duration: z.number().int().min(1).nullable().optional(),
+  unlock_price: z.number().int().min(0).nullable().optional(),
   expires_at: z.string().optional(),
   // media_ids: IDs of pre-uploaded media records (from POST /api/media)
   media_ids: z.array(z.string()).max(10).optional(),
-  // media: inline media objects (legacy / direct creation path)
+  // media: inline media objects
   media: z
     .array(
       z.object({
@@ -33,6 +40,7 @@ const createSchema = z.object({
         width: z.number().int().optional(),
         height: z.number().int().optional(),
         duration_seconds: z.number().optional(),
+        thumbnail_url: z.string().url().nullable().optional(),
       }),
     )
     .max(10)
@@ -98,15 +106,21 @@ export async function GET(req: NextRequest) {
   const cursor = searchParams.get("cursor");
   const page = Math.max(1, Number(searchParams.get("page") ?? 1));
   const limit = Math.min(Number(searchParams.get("limit") ?? 20), 50);
+  // Optional content_type filter: short | video | post | album
+  // When omitted, ALL published content types are returned so the mobile can
+  // filter client-side (video feed, posts feed etc. all query this endpoint).
+  const contentTypeFilter = searchParams.get("content_type") as
+    | "post" | "video" | "short" | "album" | null;
 
   let userId: string | null = null;
-  const authResult = await requireAuth(req);
-  if (!("response" in authResult)) {
-    userId = authResult.user.userId;
-  }
+  const authResult = await optionalAuth(req);
+  if (authResult?.userId) userId = authResult.userId;
 
-  if (bookmarked && !userId) {
-    return err("Authentication required", 401);
+  if (bookmarked) {
+    if (!userId) {
+      const authReq = await requireAuth(req);
+      if ("response" in authReq) return authReq.response;
+    }
   }
 
   const baseSelect = db
@@ -140,8 +154,17 @@ export async function GET(req: NextRequest) {
     .innerJoin(users, eq(users.id, posts.creator_id))
     .leftJoin(profiles, eq(profiles.user_id, posts.creator_id));
 
-  // Posts feed only returns content_type='post' items (not videos or shorts)
-  let conditions = and(isNull(posts.deleted_at), eq(posts.status, "published"), eq(posts.content_type, "post"));
+  // Base conditions: published + not deleted + public visibility (for unauthenticated callers)
+  let conditions = and(
+    isNull(posts.deleted_at),
+    eq(posts.status, "published"),
+    eq(posts.visibility, "public"),
+  );
+
+  // Apply content_type filter when provided; otherwise return all types
+  if (contentTypeFilter) {
+    conditions = and(conditions, eq(posts.content_type, contentTypeFilter));
+  }
 
   if (bookmarked && userId) {
     const bookmarkedIds = await db
@@ -150,7 +173,10 @@ export async function GET(req: NextRequest) {
       .where(eq(saved_posts.user_id, userId));
     const ids = bookmarkedIds.map((b) => b.post_id);
     if (ids.length === 0) return ok({ posts: [], next_cursor: null, nextCursor: null, page, limit });
-    conditions = and(conditions, sql`${posts.id} IN (${sql.join(ids.map((id) => sql`${id}`), sql`, `)})`);
+    conditions = and(
+      and(isNull(posts.deleted_at), eq(posts.status, "published")),
+      sql`${posts.id} IN (${sql.join(ids.map((id) => sql`${id}`), sql`, `)})`,
+    );
   }
 
   if (creatorId) {
@@ -158,12 +184,9 @@ export async function GET(req: NextRequest) {
   }
 
   // Compound cursor encodes both fields of the ORDER BY (published_at, id)
-  // as "ISO_TS__UUID" so that the WHERE clause exactly reproduces the sort
-  // position and rows with the same published_at are never skipped or repeated.
   if (cursor) {
     const sepIdx = cursor.lastIndexOf("__");
     if (sepIdx !== -1) {
-      // New compound format: "published_at__id"
       const cursorTs = cursor.slice(0, sepIdx);
       const cursorId = cursor.slice(sepIdx + 2);
       conditions = and(
@@ -171,7 +194,6 @@ export async function GET(req: NextRequest) {
         sql`(${posts.published_at} < ${cursorTs} OR (${posts.published_at} = ${cursorTs} AND ${posts.id} < ${cursorId}))`,
       );
     } else {
-      // Legacy plain-timestamp cursor: fall back to simple comparison
       conditions = and(conditions, sql`${posts.published_at} < ${cursor}`);
     }
   }
@@ -224,7 +246,6 @@ export async function GET(req: NextRequest) {
   );
 
   const lastItem = items[items.length - 1];
-  // Compound cursor: "published_at__id" — both ordering fields, no ambiguity at boundaries
   const nextCursor = hasMore && lastItem
     ? `${lastItem.published_at ?? lastItem.created_at}__${lastItem.id}`
     : null;
@@ -255,6 +276,7 @@ export async function POST(req: NextRequest) {
     thumbnail_url,
     tags,
     preview_duration,
+    unlock_price,
     expires_at,
     media: mediaItems,
     media_ids,
@@ -276,11 +298,12 @@ export async function POST(req: NextRequest) {
     visibility: visibility ?? "public",
     status: "published",
     preview_duration: preview_duration ?? null,
+    unlock_price: unlock_price ?? null,
     expires_at: expires_at ?? null,
     published_at: now,
   });
 
-  // Support inline media objects (legacy path)
+  // Support inline media objects
   if (mediaItems && mediaItems.length > 0) {
     await db.insert(media).values(
       mediaItems.map((m, i) => ({
@@ -295,6 +318,7 @@ export async function POST(req: NextRequest) {
         width: m.width ?? null,
         height: m.height ?? null,
         duration_seconds: m.duration_seconds ?? null,
+        thumbnail_url: m.thumbnail_url ?? null,
         sort_order: i,
       })),
     );
@@ -321,6 +345,5 @@ export async function POST(req: NextRequest) {
     ).onConflictDoNothing();
   }
 
-  // Return { id } — mobile only needs the post ID
   return created({ id: postId });
 }

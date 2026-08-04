@@ -573,6 +573,8 @@ export const subscriptions = sqliteTable("subscriptions", {
   subscriber_id: text("subscriber_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   creator_id: text("creator_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   status: text("status").notNull().default("pending"),
+  // tier: subscription level that gates access to tiered content (bronze < silver < gold < diamond)
+  tier: text("tier", { enum: ["bronze", "silver", "gold", "diamond"] }),
   amount: real("amount").notNull(),
   currency: text("currency").notNull().default("NGN"),
   started_at: text("started_at"),

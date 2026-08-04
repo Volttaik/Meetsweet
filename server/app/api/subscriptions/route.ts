@@ -2,11 +2,19 @@ import { NextRequest } from "next/server";
 import { eq, and, desc } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { users, profiles, subscriptions, creator_settings } from "@/lib/db/schema";
+import { users, profiles, subscriptions, creator_settings, wallets, transactions } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err, created } from "@/lib/api/response";
 import { generateId } from "@/lib/auth/codes";
+
+// Tier prices in credits (bronze = entry, diamond = top)
+const TIER_PRICES: Record<string, number> = {
+  bronze: 200,
+  silver: 500,
+  gold: 800,
+  diamond: 1000,
+};
 
 export async function GET(req: NextRequest) {
   const auth = await requireAuth(req);
@@ -19,6 +27,7 @@ export async function GET(req: NextRequest) {
       .select({
         id: subscriptions.id,
         status: subscriptions.status,
+        tier: subscriptions.tier,
         amount: subscriptions.amount,
         currency: subscriptions.currency,
         started_at: subscriptions.started_at,
@@ -42,6 +51,7 @@ export async function GET(req: NextRequest) {
     .select({
       id: subscriptions.id,
       status: subscriptions.status,
+      tier: subscriptions.tier,
       amount: subscriptions.amount,
       currency: subscriptions.currency,
       started_at: subscriptions.started_at,
@@ -65,43 +75,85 @@ export async function POST(req: NextRequest) {
   const auth = await requireAuth(req);
   if ("response" in auth) return auth.response;
 
-  const parsed = await parseBody(req, z.object({ creator_id: z.string().min(1) }));
+  const parsed = await parseBody(
+    req,
+    z.object({
+      creator_id: z.string().min(1),
+      // tier defaults to "bronze" if not supplied — the cheapest entry point
+      tier: z.enum(["bronze", "silver", "gold", "diamond"]).default("bronze"),
+    }),
+  );
   if (!parsed.success) return parsed.response;
 
-  const { creator_id } = parsed.data;
+  const { creator_id, tier } = parsed.data;
   if (creator_id === auth.user.userId) return err("Cannot subscribe to yourself", 400);
 
   const [creator] = await db.select({ id: users.id }).from(users).where(eq(users.id, creator_id)).limit(1);
   if (!creator) return err("Creator not found", 404);
 
   const [existing] = await db
-    .select({ id: subscriptions.id, status: subscriptions.status })
+    .select({ id: subscriptions.id, status: subscriptions.status, tier: subscriptions.tier })
     .from(subscriptions)
     .where(and(eq(subscriptions.subscriber_id, auth.user.userId), eq(subscriptions.creator_id, creator_id)))
     .limit(1);
+
   // Idempotent: return existing active subscription instead of erroring
   if (existing && existing.status === "active") {
-    return ok({ subscription_id: existing.id, subscribed: true, subscription: existing });
+    return ok({ subscription_id: existing.id, subscribed: true, tier: existing.tier, subscription: existing });
   }
 
+  const price = TIER_PRICES[tier];
+
+  // Charge wallet if tier has a cost
+  if (price > 0) {
+    const [wallet] = await db
+      .select({ id: wallets.id, balance: wallets.balance })
+      .from(wallets)
+      .where(eq(wallets.user_id, auth.user.userId))
+      .limit(1);
+
+    if (!wallet || (wallet.balance ?? 0) < price) {
+      return err("Insufficient wallet balance", 400, "INSUFFICIENT_BALANCE");
+    }
+
+    const now = new Date().toISOString();
+    await db
+      .update(wallets)
+      .set({ balance: (wallet.balance ?? 0) - price, updated_at: now })
+      .where(eq(wallets.id, wallet.id));
+
+    await db.insert(transactions).values({
+      id: generateId(),
+      user_id: auth.user.userId,
+      type: "debit",
+      amount: price,
+      currency: "NGN",
+      status: "success",
+      description: `Subscription (${tier}) to creator ${creator_id}`,
+    });
+  }
+
+  const now = new Date().toISOString();
+  const expires = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+  // Fall back to creator's subscription_price if no tier price override
   const [settings] = await db
     .select({ subscription_price: creator_settings.subscription_price })
     .from(creator_settings)
     .where(eq(creator_settings.user_id, creator_id))
     .limit(1);
 
-  const now = new Date().toISOString();
-  const expires = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-
+  const subId = generateId();
   await db.insert(subscriptions).values({
-    id: generateId(),
+    id: subId,
     subscriber_id: auth.user.userId,
     creator_id,
     status: "active",
-    amount: settings?.subscription_price ?? 0,
+    tier,
+    amount: price > 0 ? price : (settings?.subscription_price ?? 0),
     started_at: now,
     expires_at: expires,
   });
 
-  return created({ subscribed: true });
+  return created({ subscribed: true, subscription_id: subId, tier });
 }

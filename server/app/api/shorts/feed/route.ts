@@ -27,6 +27,8 @@ export async function GET(req: NextRequest) {
       caption: posts.caption,
       title: posts.title,
       visibility: posts.visibility,
+      tier: posts.tier,
+      thumbnail_url: posts.thumbnail_url,
       unlock_price: posts.unlock_price,
       view_count: posts.view_count,
       like_count: posts.like_count,
@@ -60,17 +62,22 @@ export async function GET(req: NextRequest) {
         .then((r) => new Set(r.map((x) => x.post_id)))
     : new Set();
 
-  const subscribedSet: Set<string> = userId
-    ? await db.select({ creator_id: subscriptions.creator_id }).from(subscriptions)
+  // Map of creator_id → subscription tier
+  const subscriptionMap: Map<string, string | null> = userId
+    ? await db
+        .select({ creator_id: subscriptions.creator_id, tier: subscriptions.tier })
+        .from(subscriptions)
         .where(and(eq(subscriptions.subscriber_id, userId), eq(subscriptions.status, "active")))
-        .then((r) => new Set(r.map((x) => x.creator_id)))
-    : new Set();
+        .then((r) => new Map(r.map((x) => [x.creator_id, x.tier])))
+    : new Map();
 
   const mediaByPost = groupMediaByPost(mediaRows);
 
-  const shorts = items.map((p) =>
-    buildShortRow(p, mediaByPost[p.id] ?? [], likedSet.has(p.id), subscribedSet.has(p.creator_id)),
-  );
+  const shorts = items.map((p) => {
+    const isSubscribed = subscriptionMap.has(p.creator_id);
+    const subTier = subscriptionMap.get(p.creator_id) ?? null;
+    return buildShortRow(p, mediaByPost[p.id] ?? [], likedSet.has(p.id), isSubscribed, subTier);
+  });
 
   return ok({
     shorts,

@@ -1,32 +1,36 @@
 ---
 name: MeetSweet API compatibility
-description: Mobile is source of truth for response shapes; covers all schema additions and route fixes made to match the mobile contract.
+description: Mobile-facing API design decisions, content routing rules, and tier system
 ---
 
-# MeetSweet API Compatibility
+# MeetSweet API — content routing & tier system
 
-## Rule
-Mobile app (Expo/React Native) is the source of truth for all response shapes. Every post object returned from ANY endpoint must include `content_type`, `title`, `thumbnail_url`, `tier`, `tags`, `media` (with `id`), and all social counts.
+## Content type routing (critical)
+- `POST /api/posts` **only** accepts `content_type: "post"` (image posts). Returns 422 for video/short/album.
+- Videos → `POST /api/videos`; Shorts → `POST /api/shorts`; Albums → `POST /api/albums`
+- All four content types share the `posts` table (discriminated by `content_type` column).
+- The GET feeds each filter strictly: `/api/posts` GET = content_type='post' only; `/api/videos` GET = 'video' only; etc.
 
-**Why:** The mobile's content routing (shorts vs videos vs posts vs albums) breaks silently if `content_type` is missing or wrong. `tags` is stored as JSON text in DB and must be parsed on read.
+## Subscription tier system
+- Tiers (in order): `bronze < silver < gold < diamond`
+- Tier prices (credits): bronze=200, silver=500, gold=800, diamond=1000
+- `subscriptions.tier` column stores the subscriber's tier (added via migration).
+- Posts/videos/shorts have a `tier` column (access gate): users need subscription.tier >= post.tier to view.
+- Tier enforcement happens in detail routes (`/api/videos/[id]`, `/api/shorts/[id]`) — returns 403 with code TIER_REQUIRED or SUBSCRIPTION_REQUIRED.
+- Feed routes include all content but set `is_locked: true` in the response shape.
 
-## How to apply
-- `tags` column on `posts` table is `TEXT` storing a JSON array string (e.g. `'["comedy","lifestyle"]'`). Always `JSON.parse()` on read; `JSON.stringify()` on write.
-- `thumbnail_url` on the `posts` table holds the creator-supplied custom thumbnail, not the media row thumbnail. Both exist — the posts.thumbnail_url is the preferred one for video/short posts.
-- `post_categories` junction table links posts to categories. Insert with `onConflictDoNothing()`.
-- `content_type` enum: `"post" | "video" | "short" | "album"` — "album" was added in August 2026 to the schema but NOT enforced at the DB level (SQLite text, no hard constraint).
+**Why:** Previously upgrade/downgrade routes used `free/normal/premium/vip` (mismatched with `posts.tier` which uses `bronze/silver/gold/diamond`). Aligned everything to bronze/silver/gold/diamond.
 
-## Schema additions (August 2026)
-- `posts.thumbnail_url` TEXT
-- `posts.tier` TEXT (bronze/silver/gold/diamond)
-- `posts.tags` TEXT (JSON array)
-- New table: `post_categories` (post_id, category_id, unique index)
-- Migration script: `cd server && npx tsx scripts/migrate.ts` — idempotent
+## Thumbnail rules
+- `posts.thumbnail_url` = post-level thumbnail (priority)
+- `media.thumbnail_url` = per-media thumbnail (fallback)
+- `buildVideoRow` / `buildShortRow` in `lib/services/content.ts` read post-level first, then media-level.
 
-## Key route fixes made
-- `POST /api/posts` now stores `content_type`, `title`, `thumbnail_url`, `tier`, `tags`, and wires `categories` → `post_categories`
-- `GET /api/posts` `postRow()` no longer hardcodes `content_type: "post"` — reads from DB
-- `GET /api/posts/:id` returns full field set including `thumbnail_url`, `tier`, `tags` (parsed)
-- `PATCH /api/media/:id` added at `server/app/api/media/[id]/route.ts`
-- Subscriptions POST is now idempotent (returns existing active subscription instead of 409)
-- `creators/[id]/posts` now returns `content_type`, `title`, `thumbnail_url`, `tier`, `tags`
+## Key shared helpers (lib/services/content.ts)
+- `TIER_ORDER`, `tierIndex()`, `hasTierAccess()`, `canViewContent()` — all tier logic lives here
+- `buildVideoRow(row, media, liked, subscribed, comments?, subTier?)` — returns full video shape
+- `buildShortRow(row, media, liked, subscribed, subTier?)` — returns full short shape
+
+## Migration
+- `server/scripts/migrate.ts` is the canonical migration runner. Run `cd server && npx tsx scripts/migrate.ts` after schema changes.
+- It is idempotent (safe to run multiple times). Always add new migrations there.

@@ -31,7 +31,7 @@ const createSchema = z.object({
         width: z.number().int().optional(),
         height: z.number().int().optional(),
         duration_seconds: z.number().optional(),
-        thumbnail_url: z.string().url().optional(),
+        thumbnail_url: z.string().url().nullable().optional(),
       }),
     )
     .max(10)
@@ -61,6 +61,8 @@ export async function GET(req: NextRequest) {
       caption: posts.caption,
       description: posts.description,
       visibility: posts.visibility,
+      tier: posts.tier,
+      thumbnail_url: posts.thumbnail_url,
       unlock_price: posts.unlock_price,
       view_count: posts.view_count,
       like_count: posts.like_count,
@@ -94,17 +96,22 @@ export async function GET(req: NextRequest) {
         .then((r) => new Set(r.map((x) => x.post_id)))
     : new Set();
 
-  const subscribedSet: Set<string> = userId
-    ? await db.select({ creator_id: subscriptions.creator_id }).from(subscriptions)
+  // Map of creator_id → subscription tier (null = subscribed with no tier stored yet)
+  const subscriptionMap: Map<string, string | null> = userId
+    ? await db
+        .select({ creator_id: subscriptions.creator_id, tier: subscriptions.tier })
+        .from(subscriptions)
         .where(and(eq(subscriptions.subscriber_id, userId), eq(subscriptions.status, "active")))
-        .then((r) => new Set(r.map((x) => x.creator_id)))
-    : new Set();
+        .then((r) => new Map(r.map((x) => [x.creator_id, x.tier])))
+    : new Map();
 
   const mediaByPost = groupMediaByPost(mediaRows);
 
-  const videos = items.map((p) =>
-    buildVideoRow(p, mediaByPost[p.id] ?? [], likedSet.has(p.id), subscribedSet.has(p.creator_id)),
-  );
+  const videos = items.map((p) => {
+    const isSubscribed = subscriptionMap.has(p.creator_id);
+    const subTier = subscriptionMap.get(p.creator_id) ?? null;
+    return buildVideoRow(p, mediaByPost[p.id] ?? [], likedSet.has(p.id), isSubscribed, [], subTier);
+  });
 
   return ok({
     videos,

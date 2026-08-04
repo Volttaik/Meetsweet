@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { posts, media, users, profiles, post_likes, subscriptions, comments } from "@/lib/db/schema";
 import { optionalAuth } from "@/middleware/auth";
 import { ok, err } from "@/lib/api/response";
-import { buildVideoRow } from "@/lib/services/content";
+import { buildVideoRow, canViewContent } from "@/lib/services/content";
 
 export async function GET(
   req: NextRequest,
@@ -21,6 +21,8 @@ export async function GET(
       caption: posts.caption,
       description: posts.description,
       visibility: posts.visibility,
+      tier: posts.tier,
+      thumbnail_url: posts.thumbnail_url,
       unlock_price: posts.unlock_price,
       view_count: posts.view_count,
       like_count: posts.like_count,
@@ -41,7 +43,7 @@ export async function GET(
 
   if (!row) return err("Video not found", 404);
 
-  const [mediaRows, liked, subscribed, previewComments] = await Promise.all([
+  const [mediaRows, liked, subscription, previewComments] = await Promise.all([
     db.select().from(media).where(eq(media.post_id, id)),
     userId
       ? db.select({ id: post_likes.id }).from(post_likes)
@@ -49,10 +51,14 @@ export async function GET(
           .then((r) => r.length > 0)
       : false,
     userId
-      ? db.select({ id: subscriptions.id }).from(subscriptions)
-          .where(and(eq(subscriptions.subscriber_id, userId), eq(subscriptions.creator_id, row.creator_id), eq(subscriptions.status, "active")))
-          .then((r) => r.length > 0)
-      : false,
+      ? db.select({ id: subscriptions.id, tier: subscriptions.tier }).from(subscriptions)
+          .where(and(
+            eq(subscriptions.subscriber_id, userId),
+            eq(subscriptions.creator_id, row.creator_id),
+            eq(subscriptions.status, "active"),
+          ))
+          .then((r) => r[0] ?? null)
+      : null,
     db.select({
       id: comments.id,
       body: comments.body,
@@ -70,6 +76,22 @@ export async function GET(
       .limit(2),
   ]);
 
-  const video = buildVideoRow(row, mediaRows, liked, subscribed, previewComments);
+  const isSubscribed = subscription !== null;
+  const subTier = subscription?.tier ?? null;
+  const isOwner = userId === row.creator_id;
+
+  // Enforce access: subscriber-only or tier-gated content
+  if (!canViewContent(row.visibility, row.tier, isSubscribed, subTier, isOwner)) {
+    const code = row.tier ? "TIER_REQUIRED" : "SUBSCRIPTION_REQUIRED";
+    return err(
+      row.tier
+        ? `A ${row.tier}-tier subscription is required to view this video`
+        : "A subscription is required to view this video",
+      403,
+      code,
+    );
+  }
+
+  const video = buildVideoRow(row, mediaRows, liked, isSubscribed, previewComments, subTier);
   return ok({ video });
 }

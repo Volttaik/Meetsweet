@@ -7,31 +7,25 @@ import { requireAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err } from "@/lib/api/response";
 import { generateId } from "@/lib/auth/codes";
+import { TIER_ORDER, tierIndex } from "@/lib/services/content";
 
+// Tier prices in credits — must stay in sync with subscriptions/route.ts
 const TIER_PRICES: Record<string, number> = {
-  free: 0,
-  normal: 200,
-  premium: 500,
-  vip: 1000,
+  bronze: 200,
+  silver: 500,
+  gold: 800,
+  diamond: 1000,
 };
 
-const TIER_ORDER = ["free", "normal", "premium", "vip"];
-
 const schema = z.object({
-  tier: z.enum(["free", "normal", "premium", "vip"]),
+  tier: z.enum(["bronze", "silver", "gold", "diamond"]),
 });
 
 /**
  * POST /api/subscriptions/:id/upgrade
  *
  * Upgrades an existing subscription to a higher tier.
- * Charges the wallet for the tier difference.
- *
- * Request body:
- * - tier: "free" | "normal" | "premium" | "vip"
- *
- * Response:
- * - subscription: { id, creator_id, tier, status, amount, started_at, expires_at }
+ * Charges the wallet for the price difference.
  */
 export async function POST(
   req: NextRequest,
@@ -43,7 +37,7 @@ export async function POST(
   const { id } = await params;
 
   const parsed = await parseBody(req, schema);
-  if ("response" in parsed) return parsed.response;
+  if (!parsed.success) return parsed.response;
 
   const { tier: newTier } = parsed.data;
 
@@ -58,21 +52,22 @@ export async function POST(
     )
     .limit(1);
 
-  if (!sub) {
-    return err("Subscription not found", 404);
+  if (!sub) return err("Subscription not found", 404);
+  if (sub.status !== "active") return err("Subscription is not active", 400);
+
+  // Determine current tier: prefer stored tier column; fall back to amount-based inference
+  const currentTier = sub.tier ?? (
+    TIER_ORDER.find((t) => TIER_PRICES[t] === sub.amount) ??
+    (sub.amount >= 1000 ? "diamond" : sub.amount >= 800 ? "gold" : sub.amount >= 500 ? "silver" : "bronze")
+  );
+
+  if (tierIndex(newTier) <= tierIndex(currentTier)) {
+    return err(`New tier must be higher than current tier (${currentTier})`, 400);
   }
 
-  const currentTierIndex = TIER_ORDER.indexOf(sub.amount > 500 ? "vip" : sub.amount > 200 ? "premium" : sub.amount > 0 ? "normal" : "free");
-  const newTierIndex = TIER_ORDER.indexOf(newTier);
-
-  if (newTierIndex <= currentTierIndex) {
-    return err("New tier must be higher than current tier", 400);
-  }
-
-  const priceDiff = TIER_PRICES[newTier] - (TIER_PRICES[TIER_ORDER[currentTierIndex]] ?? 0);
+  const priceDiff = TIER_PRICES[newTier] - (TIER_PRICES[currentTier] ?? 0);
   const now = new Date().toISOString();
 
-  // Charge wallet for the difference
   if (priceDiff > 0) {
     const [wallet] = await db
       .select({ id: wallets.id, balance: wallets.balance })
@@ -81,7 +76,7 @@ export async function POST(
       .limit(1);
 
     if (!wallet || (wallet.balance ?? 0) < priceDiff) {
-      return err("Insufficient wallet balance", 400);
+      return err("Insufficient wallet balance", 400, "INSUFFICIENT_BALANCE");
     }
 
     await db
@@ -96,7 +91,7 @@ export async function POST(
       amount: priceDiff,
       currency: "NGN",
       status: "success",
-      description: `Subscription upgrade to ${newTier}`,
+      description: `Subscription upgrade: ${currentTier} → ${newTier}`,
     });
   }
 
@@ -104,7 +99,7 @@ export async function POST(
 
   await db
     .update(subscriptions)
-    .set({ amount: TIER_PRICES[newTier], updated_at: now, expires_at: expiresAt })
+    .set({ tier: newTier, amount: TIER_PRICES[newTier], updated_at: now, expires_at: expiresAt })
     .where(eq(subscriptions.id, id));
 
   return ok({
