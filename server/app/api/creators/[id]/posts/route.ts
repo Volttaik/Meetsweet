@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { posts, media, users, profiles, post_likes, saved_posts, subscriptions } from "@/lib/db/schema";
 import { optionalAuth } from "@/middleware/auth";
 import { ok, err } from "@/lib/api/response";
-import { groupMediaByPost } from "@/lib/services/content";
+import { canViewContent, groupMediaByPost } from "@/lib/services/content";
 
 export async function GET(
   req: NextRequest,
@@ -22,15 +22,15 @@ export async function GET(
     .from(users).where(and(condition, eq(users.is_active, true))).limit(1);
   if (!creator || !creator.is_creator) return err("Creator not found", 404);
 
-  const isSubscribed = userId
-    ? await db.select({ id: subscriptions.id }).from(subscriptions)
+  // Look up the viewer's subscription tier to this creator for access gating.
+  const [subRow] = userId
+    ? await db.select({ tier: subscriptions.tier }).from(subscriptions)
         .where(and(eq(subscriptions.subscriber_id, userId), eq(subscriptions.creator_id, creator.id), eq(subscriptions.status, "active")))
-        .then((r) => r.length > 0)
-    : false;
-
-  const visibility = isSubscribed || userId === creator.id
-    ? ["public", "subscribers"]
-    : ["public"];
+        .limit(1)
+    : [];
+  const isSubscribed = !!subRow;
+  const subTier = subRow?.tier ?? null;
+  const isOwner = userId === creator.id;
 
   const rows = await db
     .select({

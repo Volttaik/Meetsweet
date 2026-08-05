@@ -111,7 +111,6 @@ interface PostRow {
   visibility: string;
   tier?: string | null;
   thumbnail_url?: string | null;
-  unlock_price?: number | null;
   view_count: number;
   like_count: number;
   comment_count: number;
@@ -184,8 +183,10 @@ export function buildVideoRow(
     tier: row.tier ?? null,
     thumbnail_url: thumbnailUrl,
     thumbnailUrl,
-    video_url: primary?.url ?? null,
-    videoUrl: primary?.url ?? null,
+    // Omit media URLs when content is locked so subscriber-only content
+    // cannot be accessed by unauthenticated / non-subscribed callers.
+    video_url: isLocked ? null : (primary?.url ?? null),
+    videoUrl: isLocked ? null : (primary?.url ?? null),
     duration_secs: primary?.duration_seconds ?? 0,
     durationSecs: primary?.duration_seconds ?? 0,
     view_count: row.view_count,
@@ -196,8 +197,6 @@ export function buildVideoRow(
     commentCount: row.comment_count,
     share_count: row.share_count ?? 0,
     shareCount: row.share_count ?? 0,
-    is_premium: row.visibility === "subscribers" || !!row.tier,
-    isPremium: row.visibility === "subscribers" || !!row.tier,
     is_locked: isLocked,
     isLocked,
     liked_by_me: likedByMe,
@@ -212,7 +211,7 @@ export function buildVideoRow(
     creator,
     comments_preview: previewComments.map((c) => buildComment(c, null)),
     commentsPreview: previewComments.map((c) => buildComment(c, null)),
-    media: sorted.map((m) => ({
+    media: isLocked ? [] : sorted.map((m) => ({
       url: m.url,
       type: m.type,
       thumbnail_url: m.thumbnail_url,
@@ -250,8 +249,10 @@ export function buildShortRow(
     tier: row.tier ?? null,
     thumbnail_url: thumbnailUrl,
     thumbnailUrl,
-    video_url: primary?.url ?? null,
-    videoUrl: primary?.url ?? null,
+    // Omit media URLs when content is locked so subscriber-only content
+    // cannot be accessed by unauthenticated / non-subscribed callers.
+    video_url: isLocked ? null : (primary?.url ?? null),
+    videoUrl: isLocked ? null : (primary?.url ?? null),
     duration_secs: primary?.duration_seconds ?? 0,
     durationSecs: primary?.duration_seconds ?? 0,
     view_count: row.view_count,
@@ -262,8 +263,6 @@ export function buildShortRow(
     commentCount: row.comment_count,
     share_count: row.share_count ?? 0,
     shareCount: row.share_count ?? 0,
-    is_premium: row.visibility === "subscribers" || !!row.tier,
-    isPremium: row.visibility === "subscribers" || !!row.tier,
     is_locked: isLocked,
     isLocked,
     liked_by_me: likedByMe,
@@ -275,7 +274,7 @@ export function buildShortRow(
     created_at: row.created_at,
     createdAt: row.created_at,
     creator,
-    media: sorted.map((m) => ({
+    media: isLocked ? [] : sorted.map((m) => ({
       url: m.url,
       type: m.type,
       thumbnail_url: m.thumbnail_url,

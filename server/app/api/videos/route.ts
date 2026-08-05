@@ -19,7 +19,6 @@ const createSchema = z.object({
   thumbnail_url: z.string().url().nullable().optional(),
   tags: z.array(z.string().max(50)).max(20).optional(),
   preview_duration: z.number().int().min(1).nullable().optional(),
-  unlock_price: z.number().int().min(0).nullable().optional(),
   media_ids: z.array(z.string()).max(10).optional(),
   media: z
     .array(
@@ -67,7 +66,6 @@ export async function GET(req: NextRequest) {
       visibility: posts.visibility,
       tier: posts.tier,
       thumbnail_url: posts.thumbnail_url,
-      unlock_price: posts.unlock_price,
       view_count: posts.view_count,
       like_count: posts.like_count,
       comment_count: posts.comment_count,
@@ -140,7 +138,7 @@ export async function POST(req: NextRequest) {
   const {
     title, description, caption, visibility,
     tier, thumbnail_url, tags,
-    preview_duration, unlock_price,
+    preview_duration,
     media_ids, media: mediaItems, categories,
   } = parsed.data;
 
@@ -160,7 +158,6 @@ export async function POST(req: NextRequest) {
     visibility: visibility ?? "public",
     status: "published",
     preview_duration: preview_duration ?? null,
-    unlock_price: unlock_price ?? null,
     published_at: now,
   });
 

@@ -2,10 +2,11 @@ import { NextRequest } from "next/server";
 import { eq, and, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { users, profiles, posts, media, post_likes, saved_posts } from "@/lib/db/schema";
+import { users, profiles, posts, media, post_likes, saved_posts, subscriptions } from "@/lib/db/schema";
 import { requireAuth, optionalAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err } from "@/lib/api/response";
+import { canViewContent } from "@/lib/services/content";
 
 const patchSchema = z.object({
   caption: z.string().max(2200).nullable().optional(),
@@ -65,28 +66,34 @@ export async function GET(
 
   if (!row) return err("Post not found", 404);
 
-  const postMedia = await db.select().from(media).where(eq(media.post_id, id));
-
-  let likedByMe = false;
-  let bookmarkedByMe = false;
-
   const authResult = await optionalAuth(req);
-  if (authResult?.userId) {
-    const uid = authResult.userId;
-    const [liked] = await db
-      .select({ id: post_likes.id })
-      .from(post_likes)
-      .where(and(eq(post_likes.user_id, uid), eq(post_likes.post_id, id)))
-      .limit(1);
-    likedByMe = !!liked;
+  const userId = authResult?.userId ?? null;
 
-    const [saved] = await db
-      .select({ id: saved_posts.id })
-      .from(saved_posts)
-      .where(and(eq(saved_posts.user_id, uid), eq(saved_posts.post_id, id)))
-      .limit(1);
-    bookmarkedByMe = !!saved;
-  }
+  // Parallel: fetch media, liked/saved state, and the viewer's subscription to this creator
+  const [postMedia, likedRow, savedRow, subscriptionRow] = await Promise.all([
+    db.select().from(media).where(eq(media.post_id, id)),
+    userId
+      ? db.select({ id: post_likes.id }).from(post_likes)
+          .where(and(eq(post_likes.user_id, userId), eq(post_likes.post_id, id))).limit(1)
+      : Promise.resolve([]),
+    userId
+      ? db.select({ id: saved_posts.id }).from(saved_posts)
+          .where(and(eq(saved_posts.user_id, userId), eq(saved_posts.post_id, id))).limit(1)
+      : Promise.resolve([]),
+    userId
+      ? db.select({ tier: subscriptions.tier }).from(subscriptions)
+          .where(and(
+            eq(subscriptions.subscriber_id, userId),
+            eq(subscriptions.creator_id, row.creator_id),
+            eq(subscriptions.status, "active"),
+          )).limit(1)
+      : Promise.resolve([]),
+  ]);
+
+  const isOwner = userId === row.creator_id;
+  const isSubscribed = subscriptionRow.length > 0;
+  const subTier = (subscriptionRow[0] as { tier: string | null } | undefined)?.tier ?? null;
+  const isLocked = !canViewContent(row.visibility, row.tier, isSubscribed, subTier, isOwner);
 
   return ok({
     id: row.id,
@@ -119,11 +126,13 @@ export async function GET(
     published_at: row.published_at,
     created_at: row.created_at,
     updated_at: row.updated_at,
-    liked_by_me: likedByMe,
-    likedByMe,
-    bookmarked_by_me: bookmarkedByMe,
-    bookmarkedByMe,
-    media: postMedia.map((m) => ({
+    liked_by_me: likedRow.length > 0,
+    likedByMe: likedRow.length > 0,
+    bookmarked_by_me: savedRow.length > 0,
+    bookmarkedByMe: savedRow.length > 0,
+    is_locked: isLocked,
+    isLocked,
+    media: isLocked ? [] : postMedia.map((m) => ({
       id: m.id,
       url: m.url,
       type: m.type,

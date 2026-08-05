@@ -27,7 +27,6 @@ export async function GET(req: NextRequest) {
       caption: posts.caption,
       title: posts.title,
       visibility: posts.visibility,
-      unlock_price: posts.unlock_price,
       view_count: posts.view_count,
       like_count: posts.like_count,
       comment_count: posts.comment_count,

@@ -64,12 +64,20 @@ Acts as a credential broker + full feature API.
 
 ## Migration Note
 
-Run `npx tsx scripts/migrate.ts` once against the Turso database to apply all schema additions.
-The script is idempotent (safe to run multiple times). It adds:
-- `messages`: `caption`, `mime_type`, `file_name`, `file_size`, `audio_duration`, `is_paid`, `paid_price`
+Run `npx tsx scripts/migrate.ts` once against the Turso database to apply all schema changes.
+The script is idempotent (safe to run multiple times).
+
+**August 2026 — Monetisation refactor (legacy unlock system removed):**
+- Drops `post_unlocks` table
+- Drops `message_unlocks` table
+- Removes `unlock_price` column from `posts`
+- Removes `is_paid`, `paid_price` columns from `messages`
+
+Earlier additions (idempotent, already run):
+- `messages`: `caption`, `mime_type`, `file_name`, `file_size`, `audio_duration`
 - `media`: `thumbnail_url`, `file_name`
-- `posts`: `thumbnail_url`, `tier`, `tags` (August 2026)
-- New tables: `message_unlocks`, `post_categories`
+- `posts`: `thumbnail_url`, `tier`, `tags`
+- New tables: `post_categories`
 
 ## User preferences
 

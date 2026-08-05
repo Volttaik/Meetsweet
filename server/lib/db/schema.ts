@@ -177,7 +177,6 @@ export const posts = sqliteTable("posts", {
   status: text("status", { enum: ["draft", "published"] }).notNull().default("draft"),
   is_pinned: integer("is_pinned", { mode: "boolean" }).notNull().default(false),
   preview_duration: integer("preview_duration"),
-  unlock_price: integer("unlock_price"),
   expires_at: text("expires_at"),
   published_at: text("published_at"),
   view_count: integer("view_count").notNull().default(0),
@@ -325,21 +324,6 @@ export const album_unlocks = sqliteTable(
   (table) => [
     uniqueIndex("album_unlocks_album_user_idx").on(table.album_id, table.user_id),
     index("album_unlocks_user_created_idx").on(table.user_id, table.created_at),
-  ],
-);
-
-export const post_unlocks = sqliteTable(
-  "post_unlocks",
-  {
-    id: id(),
-    post_id: text("post_id").notNull().references(() => posts.id, { onDelete: "cascade" }),
-    user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-    credits_spent: integer("credits_spent").notNull().default(0),
-    created_at: createdAt(),
-  },
-  (table) => [
-    uniqueIndex("post_unlocks_post_user_idx").on(table.post_id, table.user_id),
-    index("post_unlocks_user_created_idx").on(table.user_id, table.created_at),
   ],
 );
 
@@ -497,8 +481,6 @@ export const messages = sqliteTable("messages", {
   file_name: text("file_name"),
   file_size: integer("file_size"),
   audio_duration: real("audio_duration"),
-  is_paid: integer("is_paid", { mode: "boolean" }).notNull().default(false),
-  paid_price: integer("paid_price"),
   reactions: text("reactions"),
   is_edited: integer("is_edited", { mode: "boolean" }).notNull().default(false),
   is_recalled: integer("is_recalled", { mode: "boolean" }).notNull().default(false),
@@ -506,20 +488,6 @@ export const messages = sqliteTable("messages", {
   updated_at: updatedAt(),
   deleted_at: text("deleted_at"),
 });
-
-export const message_unlocks = sqliteTable(
-  "message_unlocks",
-  {
-    id: id(),
-    message_id: text("message_id").notNull().references(() => messages.id, { onDelete: "cascade" }),
-    user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-    credits_spent: integer("credits_spent").notNull().default(0),
-    created_at: createdAt(),
-  },
-  (table) => [
-    uniqueIndex("message_unlocks_msg_user_idx").on(table.message_id, table.user_id),
-  ],
-);
 
 export const message_reads = sqliteTable("message_reads", {
   id: id(),

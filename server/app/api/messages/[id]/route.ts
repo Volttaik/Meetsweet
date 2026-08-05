@@ -72,7 +72,6 @@ export async function DELETE(
       caption: null,
       media_url: null,
       file_name: null,
-      is_paid: false,
       deleted_at: new Date().toISOString(),
     })
     .where(eq(messages.id, id));

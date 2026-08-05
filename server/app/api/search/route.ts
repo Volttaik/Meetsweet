@@ -76,7 +76,6 @@ export async function GET(req: NextRequest) {
         like_count: posts.like_count,
         comment_count: posts.comment_count,
         save_count: posts.save_count,
-        unlock_price: posts.unlock_price,
         created_at: posts.created_at,
         published_at: posts.published_at,
       })

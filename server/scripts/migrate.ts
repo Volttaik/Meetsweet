@@ -56,35 +56,6 @@ async function run() {
       name: "messages: add audio_duration",
       sql: `ALTER TABLE messages ADD COLUMN audio_duration REAL`,
     },
-    {
-      name: "messages: add is_paid",
-      sql: `ALTER TABLE messages ADD COLUMN is_paid INTEGER NOT NULL DEFAULT 0`,
-    },
-    {
-      name: "messages: add paid_price",
-      sql: `ALTER TABLE messages ADD COLUMN paid_price INTEGER`,
-    },
-
-    // ── message_unlocks table (new) ────────────────────────────────────────
-    {
-      name: "create message_unlocks",
-      sql: `
-        CREATE TABLE IF NOT EXISTS message_unlocks (
-          id TEXT PRIMARY KEY,
-          message_id TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
-          user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-          credits_spent INTEGER NOT NULL DEFAULT 0,
-          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-        )
-      `,
-    },
-    {
-      name: "message_unlocks: unique index (message_id, user_id)",
-      sql: `
-        CREATE UNIQUE INDEX IF NOT EXISTS message_unlocks_msg_user_idx
-        ON message_unlocks(message_id, user_id)
-      `,
-    },
     // ── album support ──────────────────────────────────────────────────────
     {
       name: "create albums",
@@ -157,27 +128,6 @@ async function run() {
       name: "album_unlocks: user history index",
       sql: `CREATE INDEX IF NOT EXISTS album_unlocks_user_created_idx ON album_unlocks(user_id, created_at)`,
     },
-    {
-      name: "create post_unlocks",
-      sql: `
-        CREATE TABLE IF NOT EXISTS post_unlocks (
-          id TEXT PRIMARY KEY,
-          post_id TEXT NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
-          user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-          credits_spent INTEGER NOT NULL DEFAULT 0,
-          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-        )
-      `,
-    },
-    {
-      name: "post_unlocks: unique post/user index",
-      sql: `CREATE UNIQUE INDEX IF NOT EXISTS post_unlocks_post_user_idx ON post_unlocks(post_id, user_id)`,
-    },
-    {
-      name: "post_unlocks: user history index",
-      sql: `CREATE INDEX IF NOT EXISTS post_unlocks_user_created_idx ON post_unlocks(user_id, created_at)`,
-    },
-
     // ── creator_settings table additions ──────────────────────────────────────
     {
       name: "creator_settings: add who_can_message",
@@ -307,12 +257,8 @@ async function run() {
       sql: `ALTER TABLE subscriptions ADD COLUMN tier TEXT`,
     },
 
-    // ── posts: unlock / pin / preview / expiry columns ─────────────────────
+    // ── posts: pin / preview / expiry columns ──────────────────────────────
     // These may have been absent from the original base posts table in older deployments.
-    {
-      name: "posts: add unlock_price",
-      sql: `ALTER TABLE posts ADD COLUMN unlock_price INTEGER`,
-    },
     {
       name: "posts: add is_pinned",
       sql: `ALTER TABLE posts ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0`,
@@ -397,6 +343,32 @@ async function run() {
       sql: `CREATE INDEX IF NOT EXISTS transactions_status_idx ON transactions(status)`,
     },
 
+    // ── Remove legacy pay-to-unlock system ────────────────────────────────────
+    // Per-post purchasing and paid DMs have been removed. Subscriptions are the
+    // only content gate. Drop dead tables and columns.
+    // SQLite does not support DROP COLUMN IF EXISTS — "no such column/table" errors
+    // are caught below and treated as already-applied (idempotent).
+    {
+      name: "drop post_unlocks table",
+      sql: `DROP TABLE IF EXISTS post_unlocks`,
+    },
+    {
+      name: "drop message_unlocks table",
+      sql: `DROP TABLE IF EXISTS message_unlocks`,
+    },
+    {
+      name: "posts: drop unlock_price column",
+      sql: `ALTER TABLE posts DROP COLUMN unlock_price`,
+    },
+    {
+      name: "messages: drop is_paid column",
+      sql: `ALTER TABLE messages DROP COLUMN is_paid`,
+    },
+    {
+      name: "messages: drop paid_price column",
+      sql: `ALTER TABLE messages DROP COLUMN paid_price`,
+    },
+
     // ── Tier system migration: bronze/silver/gold/diamond → free/subscriber/subscriber_plus ──
     // posts.tier: map old values to new three-tier system
     {
@@ -440,11 +412,16 @@ async function run() {
       console.log(`  ✓  ${m.name}`);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      // "duplicate column name" or "already exists" means migration already applied
+      // These messages all mean the migration was already applied — treat as no-op.
+      // "duplicate column" / "already exists" → ADD COLUMN / CREATE TABLE already ran.
+      // "no such column" → DROP COLUMN already ran (column was already removed).
+      // "no such table" → DROP TABLE already ran (table was already removed).
       if (
         msg.includes("duplicate column") ||
         msg.includes("already exists") ||
-        msg.includes("table already exists")
+        msg.includes("table already exists") ||
+        msg.includes("no such column") ||
+        msg.includes("no such table")
       ) {
         console.log(`  ─  ${m.name} (already applied)`);
       } else {

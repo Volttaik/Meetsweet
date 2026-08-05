@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { eq, and, desc, isNull, inArray, sql } from "drizzle-orm";
+import { eq, and, desc, isNull, inArray, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   users,
@@ -57,6 +57,7 @@ export async function GET(req: NextRequest) {
       title:                posts.title,
       description:          posts.description,
       visibility:           posts.visibility,
+      tier:                 posts.tier,
       like_count:           posts.like_count,
       comment_count:        posts.comment_count,
       save_count:           posts.save_count,
@@ -73,6 +74,8 @@ export async function GET(req: NextRequest) {
         isNull(posts.deleted_at),
         eq(posts.status, "published"),
         eq(posts.visibility, "public"),
+        // Explore shows ONLY free-tier content — subscriber-gated posts must never appear here.
+        or(eq(posts.tier, "free"), isNull(posts.tier)),
         // Shorts are exclusive to the Shorts feed — never appear in Explore.
         // Mobile already skips them client-side, but the backend should not send them.
         inArray(posts.content_type, ["post", "video"]),
@@ -173,7 +176,8 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // post
+    // post — Explore only returns free-tier content (filtered at query level),
+    // so is_locked is always false here. tier is included for client contract compliance.
     const postMedia = rawMedia.map((m) => ({
       url: m.url,
       type: m.type,
@@ -192,6 +196,9 @@ export async function GET(req: NextRequest) {
       creator_is_verified:  r.creator_is_verified,
       caption:              r.caption,
       visibility:           r.visibility,
+      tier:                 r.tier ?? null,
+      is_locked:            false,
+      isLocked:             false,
       like_count:           r.like_count,
       comment_count:        r.comment_count,
       save_count:           r.save_count,

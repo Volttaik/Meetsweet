@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { eq, and, desc, isNull, sql } from "drizzle-orm";
+import { eq, and, desc, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { users, profiles, posts, media, post_likes, saved_posts, post_categories, subscriptions } from "@/lib/db/schema";
@@ -26,7 +26,6 @@ const createSchema = z.object({
   thumbnail_url: z.string().url().nullable().optional(),
   tags: z.array(z.string().max(50)).max(20).optional(),
   preview_duration: z.number().int().min(1).nullable().optional(),
-  unlock_price: z.number().int().min(0).nullable().optional(),
   expires_at: z.string().optional(),
   // media_ids: IDs of pre-uploaded media records (from POST /api/media)
   media_ids: z.array(z.string()).max(10).optional(),
@@ -100,7 +99,6 @@ function postRow(
     bookmarked_by_me: bookmarked,
     is_locked: isLocked,
     isLocked,
-    is_premium: p.visibility === "subscribers" || !!p.tier,
     media: isLocked ? [] : mediaItems.map(mediaShape),
   };
 }
@@ -112,6 +110,8 @@ export async function GET(req: NextRequest) {
   const cursor = searchParams.get("cursor");
   const page = Math.max(1, Number(searchParams.get("page") ?? 1));
   const limit = Math.min(Number(searchParams.get("limit") ?? 20), 50);
+  // feed=home: authenticated home feed — shows subscribed creators' content
+  const feedMode = searchParams.get("feed");
   // Optional content_type filter: short | video | post | album
   // When omitted, ALL published content types are returned so the mobile can
   // filter client-side (video feed, posts feed etc. all query this endpoint).
@@ -122,11 +122,168 @@ export async function GET(req: NextRequest) {
   const authResult = await optionalAuth(req);
   if (authResult?.userId) userId = authResult.userId;
 
-  if (bookmarked) {
+  if (bookmarked || feedMode === "home") {
     if (!userId) {
       const authReq = await requireAuth(req);
       if ("response" in authReq) return authReq.response;
     }
+  }
+
+  // ── Home feed: subscription-aware query ─────────────────────────────────
+  // Returns free + subscriber posts only from creators the user subscribes to,
+  // respecting tier gating (subscriber vs subscriber_plus).
+  if (feedMode === "home" && userId) {
+    const [allSubs, plusSubs] = await Promise.all([
+      db
+        .select({ creator_id: subscriptions.creator_id })
+        .from(subscriptions)
+        .where(and(eq(subscriptions.subscriber_id, userId), eq(subscriptions.status, "active"))),
+      db
+        .select({ creator_id: subscriptions.creator_id })
+        .from(subscriptions)
+        .where(
+          and(
+            eq(subscriptions.subscriber_id, userId),
+            eq(subscriptions.status, "active"),
+            eq(subscriptions.tier, "subscriber_plus"),
+          ),
+        ),
+    ]);
+
+    const subscribedIds = allSubs.map((s) => s.creator_id);
+    const plusIds = plusSubs.map((s) => s.creator_id);
+
+    if (subscribedIds.length === 0) {
+      return ok({ posts: [], next_cursor: null, nextCursor: null, page, limit });
+    }
+
+    const subIdList = sql.join(subscribedIds.map((id) => sql`${id}`), sql`, `);
+    const plusIdList = plusIds.length > 0
+      ? sql.join(plusIds.map((id) => sql`${id}`), sql`, `)
+      : sql`NULL`;
+
+    // Tier-aware filter:
+    //   free (or null tier) posts from any subscribed creator
+    //   subscriber posts from any subscribed creator
+    //   subscriber_plus posts only from subscriber_plus subscriptions
+    const tierCondition = or(
+      or(eq(posts.tier, "free"), isNull(posts.tier)),
+      eq(posts.tier, "subscriber"),
+      plusIds.length > 0
+        ? and(eq(posts.tier, "subscriber_plus"), sql`${posts.creator_id} IN (${plusIdList})`)
+        : sql`0`,
+    );
+
+    let homeCond = and(
+      isNull(posts.deleted_at),
+      eq(posts.status, "published"),
+      sql`${posts.creator_id} IN (${subIdList})`,
+      tierCondition,
+      contentTypeFilter
+        ? eq(posts.content_type, contentTypeFilter)
+        : sql`${posts.content_type} IN ('post', 'video')`,
+    );
+
+    if (cursor) {
+      const sepIdx = cursor.lastIndexOf("__");
+      if (sepIdx !== -1) {
+        const cursorTs = cursor.slice(0, sepIdx);
+        const cursorId = cursor.slice(sepIdx + 2);
+        homeCond = and(
+          homeCond,
+          sql`(${posts.published_at} < ${cursorTs} OR (${posts.published_at} = ${cursorTs} AND ${posts.id} < ${cursorId}))`,
+        );
+      } else {
+        homeCond = and(homeCond, sql`${posts.published_at} < ${cursor}`);
+      }
+    }
+
+    const homeRows = await db
+      .select({
+        id: posts.id,
+        content_type: posts.content_type,
+        creator_id: posts.creator_id,
+        creator_username: users.username,
+        creator_display_name: profiles.display_name,
+        creator_avatar: profiles.avatar_url,
+        creator_is_verified: users.is_verified,
+        caption: posts.caption,
+        title: posts.title,
+        description: posts.description,
+        thumbnail_url: posts.thumbnail_url,
+        tier: posts.tier,
+        tags: posts.tags,
+        visibility: posts.visibility,
+        status: posts.status,
+        is_pinned: posts.is_pinned,
+        preview_duration: posts.preview_duration,
+        like_count: posts.like_count,
+        comment_count: posts.comment_count,
+        save_count: posts.save_count,
+        view_count: posts.view_count,
+        published_at: posts.published_at,
+        created_at: posts.created_at,
+        updated_at: posts.updated_at,
+      })
+      .from(posts)
+      .innerJoin(users, eq(users.id, posts.creator_id))
+      .leftJoin(profiles, eq(profiles.user_id, posts.creator_id))
+      .where(homeCond)
+      .orderBy(desc(posts.published_at), desc(posts.id))
+      .limit(limit + 1)
+      .offset(cursor ? 0 : (page - 1) * limit);
+
+    const homeHasMore = homeRows.length > limit;
+    const homeItems = homeHasMore ? homeRows.slice(0, limit) : homeRows;
+    const homePostIds = homeItems.map((p) => p.id);
+
+    if (homePostIds.length === 0) {
+      return ok({ posts: [], next_cursor: null, nextCursor: null, page, limit });
+    }
+
+    const homeMedia = await db
+      .select()
+      .from(media)
+      .where(sql`${media.post_id} IN (${sql.join(homePostIds.map((id) => sql`${id}`), sql`, `)})`);
+
+    const homeMediaByPost = homeMedia.reduce((acc, m) => {
+      if (!m.post_id) return acc;
+      if (!acc[m.post_id]) acc[m.post_id] = [];
+      acc[m.post_id].push(m as Record<string, unknown>);
+      return acc;
+    }, {} as Record<string, Record<string, unknown>[]>);
+
+    const [homeLiked, homeSaved] = await Promise.all([
+      db.select({ post_id: post_likes.post_id }).from(post_likes)
+        .where(and(eq(post_likes.user_id, userId), sql`${post_likes.post_id} IN (${sql.join(homePostIds.map((id) => sql`${id}`), sql`, `)})`)),
+      db.select({ post_id: saved_posts.post_id }).from(saved_posts)
+        .where(and(eq(saved_posts.user_id, userId), sql`${saved_posts.post_id} IN (${sql.join(homePostIds.map((id) => sql`${id}`), sql`, `)})`)),
+    ]);
+    const homeLikedSet = new Set(homeLiked.map((l) => l.post_id));
+    const homeSavedSet = new Set(homeSaved.map((s) => s.post_id));
+
+    // Build subscription map for is_locked calculation
+    const homeSubMap = new Map<string, string | null>(
+      allSubs.map((s) => [
+        s.creator_id,
+        plusIds.includes(s.creator_id) ? "subscriber_plus" : "subscriber",
+      ]),
+    );
+
+    const homeResult = homeItems.map((p) => {
+      const isOwner = userId === (p.creator_id as string);
+      const isSubscribed = homeSubMap.has(p.creator_id as string);
+      const subTier = homeSubMap.get(p.creator_id as string) ?? null;
+      const isLocked = !canViewContent(p.visibility as string, p.tier as string | null, isSubscribed, subTier, isOwner);
+      return postRow(p as Record<string, unknown>, homeMediaByPost[p.id] ?? [], homeLikedSet.has(p.id), homeSavedSet.has(p.id), isLocked);
+    });
+
+    const homeLastItem = homeItems[homeItems.length - 1];
+    const homeNextCursor = homeHasMore && homeLastItem
+      ? `${homeLastItem.published_at ?? homeLastItem.created_at}__${homeLastItem.id}`
+      : null;
+
+    return ok({ posts: homeResult, next_cursor: homeNextCursor, nextCursor: homeNextCursor, page, limit });
   }
 
   const baseSelect = db
@@ -320,7 +477,6 @@ export async function POST(req: NextRequest) {
     thumbnail_url,
     tags,
     preview_duration,
-    unlock_price,
     expires_at,
     media: mediaItems,
     media_ids,
@@ -342,7 +498,6 @@ export async function POST(req: NextRequest) {
     visibility: visibility ?? "public",
     status: "published",
     preview_duration: preview_duration ?? null,
-    unlock_price: unlock_price ?? null,
     expires_at: expires_at ?? null,
     published_at: now,
   });

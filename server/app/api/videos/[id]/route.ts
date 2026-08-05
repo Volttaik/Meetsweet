@@ -23,7 +23,6 @@ export async function GET(
       visibility: posts.visibility,
       tier: posts.tier,
       thumbnail_url: posts.thumbnail_url,
-      unlock_price: posts.unlock_price,
       view_count: posts.view_count,
       like_count: posts.like_count,
       comment_count: posts.comment_count,

@@ -1,11 +1,18 @@
 import { NextRequest } from "next/server";
 import { eq, and, desc, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { users, profiles, posts, media, post_likes, saved_posts } from "@/lib/db/schema";
+import { users, profiles, posts, media, post_likes, saved_posts, subscriptions } from "@/lib/db/schema";
 import { optionalAuth } from "@/middleware/auth";
 import { ok, err } from "@/lib/api/response";
+import { canViewContent } from "@/lib/services/content";
 
-function postRow(p: Record<string, unknown>, mediaItems: unknown[], liked: boolean, bookmarked: boolean) {
+function postRow(
+  p: Record<string, unknown>,
+  mediaItems: unknown[],
+  liked: boolean,
+  bookmarked: boolean,
+  isLocked: boolean,
+) {
   return {
     id: p.id,
     creator_id: p.creator_id,
@@ -15,10 +22,10 @@ function postRow(p: Record<string, unknown>, mediaItems: unknown[], liked: boole
     creator_is_verified: p.creator_is_verified,
     caption: p.caption,
     visibility: p.visibility,
+    tier: p.tier ?? null,
     status: p.status,
     is_pinned: p.is_pinned,
     preview_duration: p.preview_duration,
-    unlock_price: p.unlock_price,
     like_count: p.like_count,
     comment_count: p.comment_count,
     save_count: p.save_count,
@@ -28,7 +35,9 @@ function postRow(p: Record<string, unknown>, mediaItems: unknown[], liked: boole
     updated_at: p.updated_at,
     liked_by_me: liked,
     bookmarked_by_me: bookmarked,
-    media: mediaItems,
+    is_locked: isLocked,
+    isLocked,
+    media: isLocked ? [] : mediaItems,
   };
 }
 
@@ -68,10 +77,10 @@ export async function GET(
       creator_is_verified: users.is_verified,
       caption: posts.caption,
       visibility: posts.visibility,
+      tier: posts.tier,
       status: posts.status,
       is_pinned: posts.is_pinned,
       preview_duration: posts.preview_duration,
-      unlock_price: posts.unlock_price,
       like_count: posts.like_count,
       comment_count: posts.comment_count,
       save_count: posts.save_count,
@@ -94,26 +103,34 @@ export async function GET(
 
   const postIds = items.map((p) => p.id);
 
-  const allMedia = await db
-    .select()
-    .from(media)
-    .where(sql`${media.post_id} IN (${sql.join(postIds.map((id) => sql`${id}`), sql`, `)})`);
+  // Fetch media, liked/saved state, and the viewer's subscription to this creator in parallel.
+  // All posts on this page share the same creator (user.id).
+  const [allMedia, likedRows, savedRows, subscriptionRow] = await Promise.all([
+    db.select().from(media)
+      .where(sql`${media.post_id} IN (${sql.join(postIds.map((id) => sql`${id}`), sql`, `)})`),
+    userId
+      ? db.select({ post_id: post_likes.post_id }).from(post_likes)
+          .where(and(eq(post_likes.user_id, userId), sql`${post_likes.post_id} IN (${sql.join(postIds.map((id) => sql`${id}`), sql`, `)})`))
+      : Promise.resolve([]),
+    userId
+      ? db.select({ post_id: saved_posts.post_id }).from(saved_posts)
+          .where(and(eq(saved_posts.user_id, userId), sql`${saved_posts.post_id} IN (${sql.join(postIds.map((id) => sql`${id}`), sql`, `)})`))
+      : Promise.resolve([]),
+    userId
+      ? db.select({ tier: subscriptions.tier }).from(subscriptions)
+          .where(and(
+            eq(subscriptions.subscriber_id, userId),
+            eq(subscriptions.creator_id, user.id),
+            eq(subscriptions.status, "active"),
+          )).limit(1)
+      : Promise.resolve([]),
+  ]);
 
-  let likedSet = new Set<string>();
-  let savedSet = new Set<string>();
-  if (userId) {
-    const liked = await db
-      .select({ post_id: post_likes.post_id })
-      .from(post_likes)
-      .where(and(eq(post_likes.user_id, userId), sql`${post_likes.post_id} IN (${sql.join(postIds.map((id) => sql`${id}`), sql`, `)})`));
-    likedSet = new Set(liked.map((l) => l.post_id));
-
-    const saved = await db
-      .select({ post_id: saved_posts.post_id })
-      .from(saved_posts)
-      .where(and(eq(saved_posts.user_id, userId), sql`${saved_posts.post_id} IN (${sql.join(postIds.map((id) => sql`${id}`), sql`, `)})`));
-    savedSet = new Set(saved.map((s) => s.post_id));
-  }
+  const likedSet = new Set((likedRows as { post_id: string }[]).map((l) => l.post_id));
+  const savedSet = new Set((savedRows as { post_id: string }[]).map((s) => s.post_id));
+  const isOwner = userId === user.id;
+  const isSubscribed = subscriptionRow.length > 0;
+  const subTier = (subscriptionRow[0] as { tier: string | null } | undefined)?.tier ?? null;
 
   const mediaByPost = allMedia.reduce(
     (acc, m) => {
