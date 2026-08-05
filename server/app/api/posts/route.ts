@@ -2,11 +2,12 @@ import { NextRequest } from "next/server";
 import { eq, and, desc, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { users, profiles, posts, media, post_likes, saved_posts, post_categories } from "@/lib/db/schema";
+import { users, profiles, posts, media, post_likes, saved_posts, post_categories, subscriptions } from "@/lib/db/schema";
 import { requireAuth, optionalAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err, created } from "@/lib/api/response";
 import { generateId } from "@/lib/auth/codes";
+import { canViewContent } from "@/lib/services/content";
 
 const createSchema = z.object({
   caption: z.string().max(2200).nullable().optional(),
@@ -20,7 +21,8 @@ const createSchema = z.object({
   //   "album" → Albums (legacy path; prefer POST /api/albums for full album features)
   content_type: z.enum(["post", "video", "short", "album"]).default("post"),
   visibility: z.enum(["public", "subscribers", "draft"]).default("public"),
-  tier: z.enum(["bronze", "silver", "gold", "diamond"]).nullable().optional(),
+  // "free" = public/explore, "subscriber" = any subscriber, "subscriber_plus" = exclusive tier
+  tier: z.enum(["free", "subscriber", "subscriber_plus"]).nullable().optional(),
   thumbnail_url: z.string().url().nullable().optional(),
   tags: z.array(z.string().max(50)).max(20).optional(),
   preview_duration: z.number().int().min(1).nullable().optional(),
@@ -67,6 +69,7 @@ function postRow(
   mediaItems: Record<string, unknown>[],
   liked: boolean,
   bookmarked: boolean,
+  isLocked: boolean,
 ) {
   return {
     id: p.id,
@@ -95,7 +98,10 @@ function postRow(
     updated_at: p.updated_at,
     liked_by_me: liked,
     bookmarked_by_me: bookmarked,
-    media: mediaItems.map(mediaShape),
+    is_locked: isLocked,
+    isLocked,
+    is_premium: p.visibility === "subscribers" || !!p.tier,
+    media: isLocked ? [] : mediaItems.map(mediaShape),
   };
 }
 
@@ -154,11 +160,12 @@ export async function GET(req: NextRequest) {
     .innerJoin(users, eq(users.id, posts.creator_id))
     .leftJoin(profiles, eq(profiles.user_id, posts.creator_id));
 
-  // Base conditions: published + not deleted + public visibility (for unauthenticated callers)
+  // Include ALL published posts (public + subscriber-gated).
+  // Subscriber-locked items are included so subscribers can see them; is_locked is set per-item.
   let conditions = and(
     isNull(posts.deleted_at),
     eq(posts.status, "published"),
-    eq(posts.visibility, "public"),
+    sql`${posts.visibility} != 'draft'`,
   );
 
   // Apply content_type filter.
@@ -226,6 +233,8 @@ export async function GET(req: NextRequest) {
 
   let likedSet = new Set<string>();
   let savedSet = new Set<string>();
+  // Map of creator_id → subscription tier (for is_locked calculation)
+  let subscriptionMap = new Map<string, string | null>();
   if (userId) {
     const liked = await db
       .select({ post_id: post_likes.post_id })
@@ -238,6 +247,22 @@ export async function GET(req: NextRequest) {
       .from(saved_posts)
       .where(and(eq(saved_posts.user_id, userId), sql`${saved_posts.post_id} IN (${sql.join(postIds.map((id) => sql`${id}`), sql`, `)})`));
     savedSet = new Set(saved.map((s) => s.post_id));
+
+    // Look up active subscriptions for all creators in this page
+    const creatorIds = [...new Set(items.map((p) => p.creator_id as string))];
+    if (creatorIds.length > 0) {
+      const subs = await db
+        .select({ creator_id: subscriptions.creator_id, tier: subscriptions.tier })
+        .from(subscriptions)
+        .where(
+          and(
+            eq(subscriptions.subscriber_id, userId),
+            eq(subscriptions.status, "active"),
+            sql`${subscriptions.creator_id} IN (${sql.join(creatorIds.map((id) => sql`${id}`), sql`, `)})`,
+          ),
+        );
+      subscriptionMap = new Map(subs.map((s) => [s.creator_id, s.tier]));
+    }
   }
 
   const mediaByPost = allMedia.reduce(
@@ -250,9 +275,19 @@ export async function GET(req: NextRequest) {
     {} as Record<string, Record<string, unknown>[]>,
   );
 
-  const result = items.map((p) =>
-    postRow(p as Record<string, unknown>, mediaByPost[p.id] ?? [], likedSet.has(p.id), savedSet.has(p.id)),
-  );
+  const result = items.map((p) => {
+    const isOwner = userId === (p.creator_id as string);
+    const isSubscribed = subscriptionMap.has(p.creator_id as string);
+    const subTier = subscriptionMap.get(p.creator_id as string) ?? null;
+    const isLocked = !canViewContent(
+      p.visibility as string,
+      p.tier as string | null,
+      isSubscribed,
+      subTier,
+      isOwner,
+    );
+    return postRow(p as Record<string, unknown>, mediaByPost[p.id] ?? [], likedSet.has(p.id), savedSet.has(p.id), isLocked);
+  });
 
   const lastItem = items[items.length - 1];
   const nextCursor = hasMore && lastItem

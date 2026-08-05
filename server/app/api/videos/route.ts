@@ -14,7 +14,8 @@ const createSchema = z.object({
   description: z.string().max(5000).nullable().optional(),
   caption: z.string().max(2200).nullable().optional(),
   visibility: z.enum(["public", "subscribers", "draft"]).default("public"),
-  tier: z.enum(["bronze", "silver", "gold", "diamond"]).nullable().optional(),
+  // "free" = public/explore, "subscriber" = any subscriber, "subscriber_plus" = exclusive tier
+  tier: z.enum(["free", "subscriber", "subscriber_plus"]).nullable().optional(),
   thumbnail_url: z.string().url().nullable().optional(),
   tags: z.array(z.string().max(50)).max(20).optional(),
   preview_duration: z.number().int().min(1).nullable().optional(),
@@ -45,11 +46,14 @@ export async function GET(req: NextRequest) {
   const limit = Math.min(Math.max(1, Number(params.get("limit") ?? 20)), 50);
   const userId = (await optionalAuth(req))?.userId ?? null;
 
+  // Include ALL published videos (public + subscriber-gated).
+  // is_locked is set per-item based on the viewer's subscriptions.
+  // Draft content is always excluded.
   const conditions = and(
     isNull(posts.deleted_at),
     eq(posts.status, "published"),
     eq(posts.content_type, "video"),
-    eq(posts.visibility, "public"),
+    sql`${posts.visibility} != 'draft'`,
     cursor ? sql`${posts.created_at} < ${cursor}` : undefined,
   );
 

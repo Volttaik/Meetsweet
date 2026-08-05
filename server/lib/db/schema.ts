@@ -169,8 +169,8 @@ export const posts = sqliteTable("posts", {
   description: text("description"),
   // thumbnail_url: custom thumbnail for video/short posts
   thumbnail_url: text("thumbnail_url"),
-  // tier: subscription tier required to view (bronze/silver/gold/diamond)
-  tier: text("tier", { enum: ["bronze", "silver", "gold", "diamond"] }),
+  // tier: content access gate — "free" (public), "subscriber", or "subscriber_plus"
+  tier: text("tier", { enum: ["free", "subscriber", "subscriber_plus"] }),
   // tags: JSON array of tag strings, e.g. '["comedy","lifestyle"]'
   tags: text("tags"),
   visibility: text("visibility", { enum: ["public", "subscribers", "draft"] }).notNull().default("public"),
@@ -573,8 +573,8 @@ export const subscriptions = sqliteTable("subscriptions", {
   subscriber_id: text("subscriber_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   creator_id: text("creator_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   status: text("status").notNull().default("pending"),
-  // tier: subscription level that gates access to tiered content (bronze < silver < gold < diamond)
-  tier: text("tier", { enum: ["bronze", "silver", "gold", "diamond"] }),
+  // tier: subscription level (subscriber < subscriber_plus)
+  tier: text("tier", { enum: ["subscriber", "subscriber_plus"] }),
   amount: real("amount").notNull(),
   currency: text("currency").notNull().default("NGN"),
   started_at: text("started_at"),

@@ -83,9 +83,10 @@ export async function GET(
   // Enforce access: subscriber-only or tier-gated content
   if (!canViewContent(row.visibility, row.tier, isSubscribed, subTier, isOwner)) {
     const code = row.tier ? "TIER_REQUIRED" : "SUBSCRIPTION_REQUIRED";
+    const tierLabel = row.tier === "subscriber_plus" ? "Subscriber Plus" : "Subscriber";
     return err(
       row.tier
-        ? `A ${row.tier}-tier subscription is required to view this video`
+        ? `A ${tierLabel} subscription is required to view this video`
         : "A subscription is required to view this video",
       403,
       code,

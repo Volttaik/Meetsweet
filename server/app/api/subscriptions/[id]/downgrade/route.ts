@@ -2,22 +2,20 @@ import { NextRequest } from "next/server";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { subscriptions } from "@/lib/db/schema";
+import { subscriptions, creator_settings } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err } from "@/lib/api/response";
-import { TIER_ORDER, tierIndex } from "@/lib/services/content";
+import { tierIndex } from "@/lib/services/content";
 
-// Tier prices — must stay in sync with subscriptions/route.ts
-const TIER_PRICES: Record<string, number> = {
-  bronze:  0,
-  silver:  500,
-  gold:    1500,
-  diamond: 3000,
+// subscriber_plus costs 2× the creator's subscription_price
+const TIER_MULTIPLIER: Record<string, number> = {
+  subscriber:      1,
+  subscriber_plus: 2,
 };
 
 const schema = z.object({
-  tier: z.enum(["bronze", "silver", "gold", "diamond"]),
+  tier: z.enum(["subscriber", "subscriber_plus"]),
 });
 
 /**
@@ -55,15 +53,21 @@ export async function POST(
   if (!sub) return err("Subscription not found", 404);
   if (sub.status !== "active") return err("Subscription is not active", 400);
 
-  // Determine current tier: prefer stored tier column; fall back to amount-based inference
-  const currentTier = sub.tier ?? (
-    TIER_ORDER.find((t) => TIER_PRICES[t] === sub.amount) ??
-    (sub.amount >= 3000 ? "diamond" : sub.amount >= 1500 ? "gold" : sub.amount >= 500 ? "silver" : "bronze")
-  );
+  // Current tier defaults to "subscriber_plus" if not stored (legacy)
+  const currentTier = sub.tier ?? "subscriber_plus";
 
   if (tierIndex(newTier) >= tierIndex(currentTier)) {
     return err(`New tier must be lower than current tier (${currentTier}) for a downgrade`, 400);
   }
+
+  // Resolve creator price for the new amount
+  const [settings] = await db
+    .select({ subscription_price: creator_settings.subscription_price })
+    .from(creator_settings)
+    .where(eq(creator_settings.user_id, sub.creator_id))
+    .limit(1);
+  const creatorPrice = settings?.subscription_price ?? 0;
+  const newAmount = Math.round(creatorPrice * (TIER_MULTIPLIER[newTier] ?? 1));
 
   const now = new Date().toISOString();
 
@@ -71,7 +75,7 @@ export async function POST(
   // We record the new tier + amount now so the next renewal charges the lower price.
   await db
     .update(subscriptions)
-    .set({ tier: newTier, amount: TIER_PRICES[newTier], updated_at: now })
+    .set({ tier: newTier, amount: newAmount, updated_at: now })
     .where(eq(subscriptions.id, id));
 
   return ok({
@@ -80,7 +84,7 @@ export async function POST(
       creator_id: sub.creator_id,
       tier: newTier,
       status: sub.status,
-      amount: TIER_PRICES[newTier],
+      amount: newAmount,
       started_at: sub.started_at,
       expires_at: sub.expires_at,
     },

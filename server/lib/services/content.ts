@@ -5,10 +5,13 @@
 
 // ─── Tier helpers ────────────────────────────────────────────────────────────
 
-export const TIER_ORDER = ["bronze", "silver", "gold", "diamond"] as const;
+// Content tiers: free (public) → subscriber → subscriber_plus (most exclusive)
+export const TIER_ORDER = ["free", "subscriber", "subscriber_plus"] as const;
 export type ContentTier = typeof TIER_ORDER[number];
+// Subscription tiers (what a subscriber holds): subscriber or subscriber_plus
+export type SubscriptionTier = "subscriber" | "subscriber_plus";
 
-/** Returns the numeric rank of a tier (higher = more access). -1 means no tier. */
+/** Returns the numeric rank of a tier (higher = more access). -1 means no tier/unknown. */
 export function tierIndex(tier: string | null | undefined): number {
   if (!tier) return -1;
   return TIER_ORDER.indexOf(tier as ContentTier);
@@ -19,15 +22,15 @@ export function tierIndex(tier: string | null | undefined): number {
  * that requires `requiredTier`.
  *
  * Rules:
- *   - No required tier → always accessible (subscription still required if visibility = "subscribers")
- *   - Required tier set but subscriber has no tier → locked
- *   - Subscriber tier index >= required tier index → accessible
+ *   - No required tier, or "free" → always accessible
+ *   - subscriber_plus content → only subscriber_plus holders can view
+ *   - subscriber content → any subscription (subscriber or subscriber_plus)
  */
 export function hasTierAccess(
   subscriptionTier: string | null | undefined,
   requiredTier: string | null | undefined,
 ): boolean {
-  if (!requiredTier) return true;
+  if (!requiredTier || requiredTier === "free") return true;
   if (!subscriptionTier) return false;
   return tierIndex(subscriptionTier) >= tierIndex(requiredTier);
 }
@@ -35,18 +38,16 @@ export function hasTierAccess(
 /**
  * Full access check combining visibility + tier.
  *
- * @param visibility  "public" | "subscribers" | "draft"
- * @param requiredTier  tier stored on the post (may be null)
- * @param isSubscribed  whether the viewer has an active subscription to this creator
- * @param subscriptionTier  the tier of that subscription (may be null)
- * @param isOwner  whether the viewer is the content creator
+ * Tier model:
+ *   - "free"  content (or public visibility, no tier): visible to everyone
+ *   - "subscriber" content: any active subscriber can view
+ *   - "subscriber_plus" content: only subscriber_plus tier holders can view
  *
- * Tier enforcement notes:
- *   - The mobile app currently subscribes without sending a tier (flat subscription model).
- *   - When `subscriptionTier` is null/undefined but the user IS subscribed, we grant access
- *     to ALL subscriber content regardless of `requiredTier` — matching the current mobile UX.
- *   - Once the mobile sends a tier on subscribe, set `subscriptionTier` to that value and
- *     this function will enforce proper tier gating automatically.
+ * @param visibility       "public" | "subscribers" | "draft"
+ * @param requiredTier     tier stored on the post: "free" | "subscriber" | "subscriber_plus" | null
+ * @param isSubscribed     whether the viewer has an active subscription to this creator
+ * @param subscriptionTier the viewer's subscription tier ("subscriber" | "subscriber_plus" | null)
+ * @param isOwner          whether the viewer is the content creator
  */
 export function canViewContent(
   visibility: string,
@@ -57,14 +58,20 @@ export function canViewContent(
 ): boolean {
   if (isOwner) return true;
   if (visibility === "draft") return false;
-  // Public content with no tier gate → everyone can view
-  if (visibility === "public" && !requiredTier) return true;
-  // Any subscriber-gated or tiered content requires an active subscription first
+
+  // "free" tier or public with no tier → visible to everyone
+  if (requiredTier === "free" || (visibility === "public" && !requiredTier)) return true;
+
+  // Any subscriber-gated content requires an active subscription
   if (!isSubscribed) return false;
-  // Subscribed with no stored tier → flat subscription; grant access to all subscriber content
-  if (!subscriptionTier) return true;
-  // Subscribed with a stored tier → enforce tier hierarchy
-  return hasTierAccess(subscriptionTier, requiredTier);
+
+  // subscriber_plus content: must hold a subscriber_plus subscription
+  if (requiredTier === "subscriber_plus") {
+    return subscriptionTier === "subscriber_plus";
+  }
+
+  // "subscriber" content: any active subscription qualifies
+  return true;
 }
 
 // ─── Grouping helper ─────────────────────────────────────────────────────────

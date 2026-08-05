@@ -396,6 +396,42 @@ async function run() {
       name: "transactions: status index",
       sql: `CREATE INDEX IF NOT EXISTS transactions_status_idx ON transactions(status)`,
     },
+
+    // ── Tier system migration: bronze/silver/gold/diamond → free/subscriber/subscriber_plus ──
+    // posts.tier: map old values to new three-tier system
+    {
+      name: "posts.tier: bronze → free",
+      sql: `UPDATE posts SET tier = 'free' WHERE tier = 'bronze'`,
+    },
+    {
+      name: "posts.tier: silver → subscriber",
+      sql: `UPDATE posts SET tier = 'subscriber' WHERE tier = 'silver'`,
+    },
+    {
+      name: "posts.tier: gold → subscriber",
+      sql: `UPDATE posts SET tier = 'subscriber' WHERE tier = 'gold'`,
+    },
+    {
+      name: "posts.tier: diamond → subscriber_plus",
+      sql: `UPDATE posts SET tier = 'subscriber_plus' WHERE tier = 'diamond'`,
+    },
+    // subscriptions.tier: map old values to new two-tier system
+    {
+      name: "subscriptions.tier: bronze → subscriber",
+      sql: `UPDATE subscriptions SET tier = 'subscriber' WHERE tier = 'bronze'`,
+    },
+    {
+      name: "subscriptions.tier: silver → subscriber",
+      sql: `UPDATE subscriptions SET tier = 'subscriber' WHERE tier = 'silver'`,
+    },
+    {
+      name: "subscriptions.tier: gold → subscriber",
+      sql: `UPDATE subscriptions SET tier = 'subscriber' WHERE tier = 'gold'`,
+    },
+    {
+      name: "subscriptions.tier: diamond → subscriber_plus",
+      sql: `UPDATE subscriptions SET tier = 'subscriber_plus' WHERE tier = 'diamond'`,
+    },
   ];
 
   for (const m of migrations) {

@@ -8,15 +8,13 @@ import { parseBody } from "@/lib/api/validate";
 import { ok, err, created } from "@/lib/api/response";
 import { generateId } from "@/lib/auth/codes";
 
-// Tier prices in Naira (wallet balance).
-// Bronze is the free/public tier — subscribing without a tier (the mobile default)
-// charges the creator's own subscription_price from creator_settings.
-// Named tiers (silver/gold/diamond) apply a fixed platform price.
-const TIER_PRICES: Record<string, number> = {
-  bronze:  0,     // free entry — charge creator's subscription_price instead
-  silver:  500,
-  gold:    1500,
-  diamond: 3000,
+// Subscription tier pricing:
+//   subscriber      → creator's own subscription_price
+//   subscriber_plus → creator's subscription_price × 2  (exclusive / most premium tier)
+// Actual price is always computed from the creator's settings, not a platform fixed rate.
+const TIER_MULTIPLIER: Record<string, number> = {
+  subscriber:      1,
+  subscriber_plus: 2,
 };
 
 export async function GET(req: NextRequest) {
@@ -82,10 +80,10 @@ export async function POST(req: NextRequest) {
     req,
     z.object({
       creator_id: z.string().min(1),
-      // tier is optional — the mobile app sends only creator_id (flat subscription model).
-      // Named tiers (silver/gold/diamond) apply fixed platform prices.
-      // Omitting tier (or sending "bronze") charges the creator's own subscription_price.
-      tier: z.enum(["bronze", "silver", "gold", "diamond"]).optional(),
+      // tier is optional — defaults to "subscriber".
+      // subscriber      → creator's subscription_price
+      // subscriber_plus → creator's subscription_price × 2 (exclusive tier)
+      tier: z.enum(["subscriber", "subscriber_plus"]).optional(),
     }),
   );
   if (!parsed.success) return parsed.response;
@@ -108,9 +106,9 @@ export async function POST(req: NextRequest) {
     return ok({ subscription_id: existing.id, subscribed: true, tier: existing.tier, subscription: sub });
   }
 
-  // Resolve price:
-  //   - Named tier (silver/gold/diamond) → fixed TIER_PRICES amount
-  //   - No tier or "bronze" → creator's own subscription_price
+  // Resolve price from creator's subscription_price setting.
+  //   subscriber      → 1× creator price
+  //   subscriber_plus → 2× creator price (exclusive premium tier)
   const [settings] = await db
     .select({ subscription_price: creator_settings.subscription_price })
     .from(creator_settings)
@@ -118,9 +116,9 @@ export async function POST(req: NextRequest) {
     .limit(1);
 
   const creatorPrice = settings?.subscription_price ?? 0;
-  const useTier = tier && tier !== "bronze" ? tier : null;
-  const price = useTier ? (TIER_PRICES[useTier] ?? creatorPrice) : creatorPrice;
-  const resolvedTier = useTier ?? "bronze";
+  const resolvedTier: "subscriber" | "subscriber_plus" = tier ?? "subscriber";
+  const multiplier = TIER_MULTIPLIER[resolvedTier] ?? 1;
+  const price = Math.round(creatorPrice * multiplier);
 
   // Charge wallet if subscription has a cost
   if (price > 0) {
@@ -161,7 +159,7 @@ export async function POST(req: NextRequest) {
     subscriber_id: auth.user.userId,
     creator_id,
     status: "active",
-    tier: resolvedTier as "bronze" | "silver" | "gold" | "diamond",
+    tier: resolvedTier,
     amount: price,
     started_at: now,
     expires_at: expires,

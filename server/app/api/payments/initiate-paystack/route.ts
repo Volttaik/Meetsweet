@@ -85,18 +85,23 @@ export async function POST(req: NextRequest) {
   const customerEmail = userRecord?.email ?? `${user.userId}@meetsweet.app`;
 
   try {
-    const response = await fetch("https://api.paystack.co/dedicated_account", {
+    // Use Paystack Initialize Transaction — returns an authorization_url (checkout link)
+    // that the mobile opens in a WebView/browser to complete payment.
+    const response = await fetch("https://api.paystack.co/transaction/initialize", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${secretKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        customer: customerEmail,
-        preferred_bank: "wema-bank",
-        amount: amount * 100, // Convert to kobo
+        email: customerEmail,
+        amount: amount * 100, // convert Naira → kobo
         reference,
         currency: "NGN",
+        metadata: {
+          user_id: user.userId,
+          purpose: "wallet_topup",
+        },
       }),
     });
 
@@ -104,29 +109,24 @@ export async function POST(req: NextRequest) {
       status: boolean;
       message?: string;
       data?: {
-        dedicated_account_number?: string;
-        bank_name?: string;
-        account_number?: string;
-        bank?: { name?: string };
-        customer?: { email?: string };
-        next_action?: { type?: string };
+        authorization_url: string;
+        access_code: string;
+        reference: string;
       };
     };
 
     if (!response.ok || !json.status || !json.data) {
-      return err(json.message ?? "Failed to create payment account", 502);
+      console.error("[initiate-paystack] Paystack error:", json.message);
+      return err(json.message ?? "Failed to initialize payment", 502);
     }
 
-    const accountData = json.data;
     return ok({
       transactionId: txId,
       transaction_id: txId,
-      accountNumber: accountData.account_number ?? accountData.dedicated_account_number ?? "",
-      account_number: accountData.account_number ?? accountData.dedicated_account_number ?? "",
-      bankName: accountData.bank?.name ?? accountData.bank_name ?? "Paystack Bank",
-      bank_name: accountData.bank?.name ?? accountData.bank_name ?? "Paystack Bank",
+      reference: json.data.reference,
+      authorization_url: json.data.authorization_url,
+      access_code: json.data.access_code,
       amount,
-      reference,
     });
   } catch (error) {
     console.error("Paystack initiate error:", error);

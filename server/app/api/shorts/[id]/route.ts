@@ -69,7 +69,7 @@ export async function GET(
     const code = row.tier ? "TIER_REQUIRED" : "SUBSCRIPTION_REQUIRED";
     return err(
       row.tier
-        ? `A ${row.tier}-tier subscription is required to view this short`
+        ? `A ${row.tier === "subscriber_plus" ? "Subscriber Plus" : "Subscriber"} subscription is required to view this short`
         : "A subscription is required to view this short",
       403,
       code,

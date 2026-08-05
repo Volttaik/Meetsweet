@@ -15,7 +15,7 @@ const patchSchema = z.object({
   // it must never change type, otherwise it bleeds into the wrong feed and screen.
   // Use the dedicated /api/shorts, /api/videos endpoints to create the correct type.
   visibility: z.enum(["public", "subscribers", "draft"]).optional(),
-  tier: z.enum(["bronze", "silver", "gold", "diamond"]).nullable().optional(),
+  tier: z.enum(["free", "subscriber", "subscriber_plus"]).nullable().optional(),
   thumbnail_url: z.string().url().nullable().optional(),
   tags: z.array(z.string().max(50)).max(20).optional(),
   is_pinned: z.boolean().optional(),
