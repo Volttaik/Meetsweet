@@ -65,7 +65,7 @@ export async function GET(
       isNull(posts.deleted_at),
       eq(posts.status, "published"),
       eq(posts.content_type, "post"),
-      sql`${posts.visibility} IN (${sql.join(visibility.map((v) => sql`${v}`), sql`, `)})`,
+      isOwner ? undefined : eq(posts.visibility, "public"),
       cursor ? sql`${posts.created_at} < ${cursor}` : undefined,
     ))
     .orderBy(desc(posts.published_at))
@@ -95,6 +95,7 @@ export async function GET(
 
   const enriched = items.map((p) => {
     const postMedia = mediaByPost[p.id] ?? [];
+    const isLocked = !canViewContent(p.visibility, p.tier, isSubscribed, subTier, isOwner);
     return {
       id: p.id,
       content_type: p.content_type ?? "post",
@@ -120,7 +121,9 @@ export async function GET(
       liked_by_me: likedSet.has(p.id),
       bookmarked_by_me: savedSet.has(p.id),
       subscribed_to_creator: isSubscribed,
-      media: postMedia.map((m) => ({
+      is_locked: isLocked,
+      isLocked,
+      media: isLocked ? [] : postMedia.map((m) => ({
         id: m.id,
         url: m.url,
         type: m.type,

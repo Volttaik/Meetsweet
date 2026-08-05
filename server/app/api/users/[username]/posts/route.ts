@@ -57,14 +57,16 @@ export async function GET(
   if (!user) return err("User not found", 404);
 
   const userId = await optionalAuth(req).then((a) => a?.userId ?? null);
+  const isOwner = userId === user.id;
 
   const cursor = req.nextUrl.searchParams.get("cursor");
   const limit = Math.min(Number(req.nextUrl.searchParams.get("limit") ?? 20), 50);
 
-  let conditions = and(
+  const conditions = and(
     isNull(posts.deleted_at),
     eq(posts.status, "published"),
     eq(posts.creator_id, user.id),
+    isOwner ? undefined : eq(posts.visibility, "public"),
   );
 
   const rows = await db
@@ -128,7 +130,6 @@ export async function GET(
 
   const likedSet = new Set((likedRows as { post_id: string }[]).map((l) => l.post_id));
   const savedSet = new Set((savedRows as { post_id: string }[]).map((s) => s.post_id));
-  const isOwner = userId === user.id;
   const isSubscribed = subscriptionRow.length > 0;
   const subTier = (subscriptionRow[0] as { tier: string | null } | undefined)?.tier ?? null;
 
@@ -142,9 +143,16 @@ export async function GET(
     {} as Record<string, unknown[]>,
   );
 
-  const result = items.map((p) =>
-    postRow(p as Record<string, unknown>, mediaByPost[p.id] ?? [], likedSet.has(p.id), savedSet.has(p.id)),
-  );
+  const result = items.map((p) => {
+    const isLocked = !canViewContent(
+      p.visibility as string,
+      p.tier as string | null,
+      isSubscribed,
+      subTier,
+      isOwner,
+    );
+    return postRow(p as Record<string, unknown>, mediaByPost[p.id] ?? [], likedSet.has(p.id), savedSet.has(p.id), isLocked);
+  });
 
   const nextCursor = hasMore ? items[items.length - 1]?.created_at ?? null : null;
   return ok({ posts: result, hasMore, next_cursor: nextCursor, nextCursor });
