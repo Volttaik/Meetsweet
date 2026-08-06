@@ -20,7 +20,15 @@ export async function GET(
   const { id } = await params;
   const limit = Math.min(Number(req.nextUrl.searchParams.get("limit") ?? 20), 50);
 
-  const [post] = await db.select({ id: posts.id }).from(posts).where(eq(posts.id, id)).limit(1);
+  const [post] = await db
+    .select({
+      id: posts.id,
+      content_type: posts.content_type,
+      creator_id: posts.creator_id,
+    })
+    .from(posts)
+    .where(eq(posts.id, id))
+    .limit(1);
   if (!post) return err("Post not found", 404);
 
   const rows = await db
@@ -91,7 +99,11 @@ export async function POST(
   const { id } = await params;
 
   const [post] = await db
-    .select({ id: posts.id, creator_id: posts.creator_id })
+    .select({
+      id: posts.id,
+      creator_id: posts.creator_id,
+      content_type: posts.content_type,
+    })
     .from(posts)
     .where(eq(posts.id, id))
     .limit(1);
@@ -126,13 +138,14 @@ export async function POST(
       : parsed.data.body;
     getActorUsername(auth.user.userId).then((actor) =>
       sendPushToUser(post.creator_id!, {
-        title: "New Comment 💬",
+        title: "New Comment",
         body: `${actor}: ${preview}`,
         data: {
           type: "comment",
           post_id: id,
           actor_id: auth.user.userId,
-          content_type: "post",
+          content_type: post.content_type ?? "post",
+          actor_username: actor.replace(/^@/, ""),
         },
       }),
     );

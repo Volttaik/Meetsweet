@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { eq, and, gt } from "drizzle-orm";
+import { eq, and, gt, isNull, or } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { shares } from "@/lib/db/schema";
 import { ok, err } from "@/lib/api/response";
@@ -24,7 +24,9 @@ export async function GET(
     .where(
       and(
         eq(shares.token, token),
-        // Allow expired shares to still resolve (for deep-linking graceful degradation)
+        // Legacy rows without an expiry remain resolvable; generated links
+        // always have an expiry and must not resolve after it.
+        or(isNull(shares.expires_at), gt(shares.expires_at, now)),
       ),
     )
     .limit(1);

@@ -54,10 +54,10 @@ pnpm dev                     # starts at http://localhost:3000
 | `R2_BUCKET_NAME`       | ✅        | R2 bucket name                                 |
 | `JWT_SECRET`           | ✅*       | JWT signing secret (min 32 chars)              |
 | `SESSION_SECRET`       | ✅*       | Fallback if `JWT_SECRET` is not set            |
-| `RESEND_API_KEY`       | ⚠️        | Resend API key (email delivery)                |
-| `RESEND_FROM_EMAIL`    | ⚠️        | Sender email (e.g. `noreply@meetsweet.app`)    |
-| `PAYSTACK_SECRET_KEY`  | ⚠️        | Paystack secret key (server-side only)         |
-| `PAYSTACK_PUBLIC_KEY`  | ⚠️        | Paystack public key (returned via /config)     |
+| `RESEND_API_KEY`       | Optional  | Resend API key (email delivery)                |
+| `RESEND_FROM_EMAIL`    | Optional  | Sender email (e.g. `noreply@meetsweet.app`)    |
+| `PAYSTACK_SECRET_KEY`  | Optional  | Paystack secret key (server-side only)         |
+| `PAYSTACK_PUBLIC_KEY`  | Optional  | Paystack public key (returned via /config)     |
 | `R2_PUBLIC_BASE_URL`   | —         | CDN base URL if bucket has public access       |
 | `APP_URL`              | —         | Public URL of this server                      |
 | `CLIENT_APP_ID`        | —         | Client identifier (default: `meetsweet-mobile`)|

@@ -8,7 +8,7 @@ import { parseBody } from "@/lib/api/validate";
 import { ok, err, created } from "@/lib/api/response";
 import { generateId } from "@/lib/auth/codes";
 import { canViewContent } from "@/lib/services/content";
-import { sendPushToUsers } from "@/lib/services/push";
+import { notifySubscribersOfNewPost } from "@/lib/services/push";
 
 const createSchema = z.object({
   caption: z.string().max(2200).nullable().optional(),
@@ -544,6 +544,16 @@ export async function POST(req: NextRequest) {
       })),
     ).onConflictDoNothing();
   }
+
+  // The post is published inline by this endpoint. Notify subscribers after
+  // all content associations are complete so the tap target is immediately
+  // available to the mobile app.
+  void notifySubscribersOfNewPost({
+    creatorId: auth.user.userId,
+    postId,
+    contentType: content_type ?? "post",
+    title,
+  });
 
   return created({ id: postId });
 }

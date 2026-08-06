@@ -1,9 +1,10 @@
 import { NextRequest } from "next/server";
+import { randomBytes } from "crypto";
 import { eq, and, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { posts, albums, users, shares } from "@/lib/db/schema";
-import { optionalAuth } from "@/middleware/auth";
+import { requireAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err, created } from "@/lib/api/response";
 import { generateId } from "@/lib/auth/codes";
@@ -15,24 +16,20 @@ const createSchema = z.object({
 });
 
 function generateShareToken(): string {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  let token = "";
-  for (let i = 0; i < 12; i++) {
-    token += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return token;
+  return randomBytes(9).toString("base64url");
 }
 
-function getBaseUrl(req: NextRequest): string {
-  const appUrl = config.app.url();
-  if (appUrl) return appUrl;
-  const host = req.headers.get("host") ?? "";
-  const proto = req.headers.get("x-forwarded-proto") ?? "https";
-  return host ? `${proto}://${host}` : "https://meetsweet.app";
+function getBaseUrl(): string {
+  // Share links are public web links, never API-origin links. This also keeps
+  // links correct when the API is reached through an old api.meetsweet.space
+  // alias or a local proxy.
+  return config.app.publicUrl().replace(/\/+$/, "");
 }
 
 export async function POST(req: NextRequest) {
-  const userId = (await optionalAuth(req))?.userId ?? null;
+  const auth = await requireAuth(req);
+  if ("response" in auth) return auth.response;
+  const userId = auth.user.userId;
 
   const parsed = await parseBody(req, createSchema);
   if (!parsed.success) return parsed.response;
@@ -80,7 +77,7 @@ export async function POST(req: NextRequest) {
     expires_at: expiresAt,
   });
 
-  const baseUrl = getBaseUrl(req);
+  const baseUrl = getBaseUrl();
   const url = `${baseUrl}/s/${token}`;
 
   return created({ token, url, share_url: url, expires_at: expiresAt });

@@ -9,6 +9,9 @@ const PUBLIC_BYPASS = new Set([
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
+  const isPublicShareLookup =
+    req.method === "GET" &&
+    (pathname === "/api/shares" || pathname.startsWith("/api/shares/"));
 
   // ── OPTIONS preflight — return CORS headers immediately ─────────────────
   if (req.method === "OPTIONS") {
@@ -30,7 +33,12 @@ export function middleware(req: NextRequest) {
   const clientAppId = process.env.CLIENT_APP_ID ?? "meetsweet-mobile";
   const sentId = req.headers.get("x-client-app-id");
   const hasBearerToken = req.headers.get("authorization")?.startsWith("Bearer ");
-  if (!PUBLIC_BYPASS.has(pathname) && sentId !== clientAppId && !hasBearerToken) {
+  if (
+    !PUBLIC_BYPASS.has(pathname) &&
+    !isPublicShareLookup &&
+    sentId !== clientAppId &&
+    !hasBearerToken
+  ) {
     return new NextResponse(
       JSON.stringify({ error: "Forbidden" }),
       {

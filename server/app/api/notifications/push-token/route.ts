@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { devices } from "@/lib/db/schema";
@@ -24,22 +24,24 @@ export async function POST(req: NextRequest) {
   const { token, platform, device_name } = parsed.data;
   const now = new Date().toISOString();
 
-  // Upsert: update last_seen_at if token already exists, otherwise insert
+  // A token identifies an installation, not a user session. If a user logs
+  // into the same installation, transfer ownership instead of creating a
+  // duplicate delivery row.
   const [existing] = await db
     .select({ id: devices.id })
     .from(devices)
-    .where(
-      and(
-        eq(devices.push_token, token),
-        eq(devices.user_id, auth.user.userId),
-      ),
-    )
+    .where(eq(devices.push_token, token))
     .limit(1);
 
   if (existing) {
     await db
       .update(devices)
-      .set({ last_seen_at: now })
+      .set({
+        user_id: auth.user.userId,
+        platform,
+        device_name: device_name ?? null,
+        last_seen_at: now,
+      })
       .where(eq(devices.id, existing.id));
   } else {
     await db.insert(devices).values({

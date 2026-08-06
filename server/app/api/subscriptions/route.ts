@@ -206,11 +206,12 @@ export async function POST(req: NextRequest) {
 
   getActorUsername(auth.user.userId).then((actor) =>
     sendPushToUser(creator_id, {
-      title: "New Subscriber 🎉",
+      title: "New Subscriber",
       body: `${actor} just subscribed to you`,
       data: {
         type: "subscribe",
         actor_id: auth.user.userId,
+        actor_username: actor.replace(/^@/, ""),
       },
     }),
   );

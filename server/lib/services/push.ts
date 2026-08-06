@@ -5,9 +5,10 @@
  * Automatically cleans up stale / unregistered tokens.
  */
 
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { devices, users, profiles } from "@/lib/db/schema";
+import { devices, users, profiles, subscriptions, notifications } from "@/lib/db/schema";
+import { generateId } from "@/lib/auth/codes";
 
 const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
 
@@ -163,5 +164,73 @@ export async function getActorUsername(userId: string): Promise<string> {
     return row?.username ? `@${row.username}` : "Someone";
   } catch {
     return "Someone";
+  }
+}
+
+/**
+ * Notify every active subscriber when a creator publishes content.
+ * The database notification is written alongside the push fan-out so users
+ * still see the event in-app if push permissions are disabled.
+ */
+export async function notifySubscribersOfNewPost(input: {
+  creatorId: string;
+  postId: string;
+  contentType: "post" | "video" | "short" | "album";
+  title?: string | null;
+}): Promise<void> {
+  try {
+    const [creator] = await db
+      .select({ username: users.username, full_name: users.full_name })
+      .from(users)
+      .where(eq(users.id, input.creatorId))
+      .limit(1);
+
+    const subscribers = await db
+      .select({ user_id: subscriptions.subscriber_id })
+      .from(subscriptions)
+      .where(
+        and(
+          eq(subscriptions.creator_id, input.creatorId),
+          eq(subscriptions.status, "active"),
+        ),
+      );
+
+    const recipientIds = subscribers
+      .map((row) => row.user_id)
+      .filter((id): id is string => Boolean(id) && id !== input.creatorId);
+    if (recipientIds.length === 0) return;
+
+    const creatorName = creator?.username
+      ? `@${creator.username}`
+      : creator?.full_name || "A creator";
+    const contentTitle = input.title?.trim() || `a new ${input.contentType}`;
+    const body = `${creatorName} just posted: ${contentTitle}`;
+    const data = {
+      type: "new_post",
+      post_id: input.postId,
+      content_id: input.postId,
+      ...(input.contentType === "album" ? { album_id: input.postId } : {}),
+      actor_id: input.creatorId,
+      actor_username: creator?.username ?? null,
+      content_type: input.contentType,
+    };
+
+    await Promise.all(
+      recipientIds.map((userId) =>
+        db.insert(notifications).values({
+          id: generateId(),
+          user_id: userId,
+          actor_id: input.creatorId,
+          type: "new_post",
+          entity_type: input.contentType,
+          entity_id: input.postId,
+          body,
+        }).catch(() => {}),
+      ),
+    );
+
+    await sendPushToUsers(recipientIds, { title: "New Post", body, data });
+  } catch {
+    // Publishing must not fail because a notification provider is unavailable.
   }
 }

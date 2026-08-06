@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
-import { headers } from "next/headers";
+import { and, eq, isNull, or } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { albums, media, posts, profiles, users } from "@/lib/db/schema";
 
 type ContentType = "post" | "video" | "short" | "album" | "creator";
 
@@ -10,31 +12,31 @@ type ShareData = {
   expires_at?: string | null;
 };
 
-const CONTENT_META: Record<
-  ContentType,
-  { label: string; icon: string; description: string; deepLinkPath: string }
-> = {
-  post:    { label: "Post",     icon: "📸", description: "someone shared a post with you",     deepLinkPath: "/post"    },
-  video:   { label: "Video",    icon: "🎬", description: "someone shared a video with you",    deepLinkPath: "/videos"  },
-  short:   { label: "Short",   icon: "🎞️", description: "someone shared a short with you",    deepLinkPath: "/shorts"  },
-  album:   { label: "Album",   icon: "🗂️", description: "someone shared an album with you",   deepLinkPath: "/album"   },
-  creator: { label: "Creator", icon: "⭐",  description: "someone shared a creator with you", deepLinkPath: "/creator" },
+const CONTENT_META: Record<ContentType, { label: string; description: string }> = {
+  post: { label: "Post", description: "a post" },
+  video: { label: "Video", description: "a video" },
+  short: { label: "Short", description: "a short" },
+  album: { label: "Album", description: "an album" },
+  creator: { label: "Creator", description: "a creator profile" },
 };
 
 async function resolveShare(token: string): Promise<ShareData | null> {
   try {
-    const h = await headers();
-    const host = h.get("host") ?? "meetsweet.space";
-    const proto = h.get("x-forwarded-proto") ?? "https";
-    const baseUrl = `${proto}://${host}`;
-
-    const res = await fetch(`${baseUrl}/api/shares/${encodeURIComponent(token)}`, {
-      cache: "no-store",
-    });
-    if (!res.ok) return null;
-    const json = (await res.json()) as { ok: boolean; data: ShareData };
-    if (!json.ok) return null;
-    return json.data;
+    const now = new Date().toISOString();
+    const [share] = await db
+      .select({
+        content_type: shares.content_type,
+        content_id: shares.content_id,
+        token: shares.token,
+        expires_at: shares.expires_at,
+      })
+      .from(shares)
+      .where(and(
+        eq(shares.token, token),
+        or(isNull(shares.expires_at), gt(shares.expires_at, now)),
+      ))
+      .limit(1);
+    return share ?? null;
   } catch {
     return null;
   }

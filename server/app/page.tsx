@@ -73,7 +73,6 @@ export default function HomePage() {
           <div style={s.featureGrid}>
             {FEATURES.map((f) => (
               <div key={f.title} style={s.featureCard}>
-                <div style={s.featureIcon}>{f.icon}</div>
                 <h3 style={s.featureTitle}>{f.title}</h3>
                 <p style={s.featureDesc}>{f.desc}</p>
               </div>
@@ -121,32 +120,26 @@ export default function HomePage() {
 
 const FEATURES = [
   {
-    icon: "🎬",
     title: "Exclusive Content",
     desc: "Post photos, videos, short clips, and albums. Set tiers so your biggest fans unlock premium content.",
   },
   {
-    icon: "💳",
     title: "Subscriptions",
     desc: "Earn recurring income from subscribers. Set your own price and upgrade tiers for premium access.",
   },
   {
-    icon: "💬",
     title: "Direct Messages",
     desc: "Chat privately with your fans and subscribers. Send photos, voice notes, and more.",
   },
   {
-    icon: "🔔",
     title: "Real-time Notifications",
     desc: "Stay on top of every like, comment, new subscriber, and message the moment it happens.",
   },
   {
-    icon: "🔒",
     title: "Privacy First",
     desc: "Your data stays yours. No web app means only app users with accounts can access your content.",
   },
   {
-    icon: "💸",
     title: "Easy Payouts",
     desc: "Withdraw your earnings directly to your bank account — powered by Paystack.",
   },

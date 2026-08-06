@@ -17,7 +17,12 @@ export async function POST(
   const { id } = await params;
 
   const [post] = await db
-    .select({ id: posts.id, like_count: posts.like_count, creator_id: posts.creator_id })
+    .select({
+      id: posts.id,
+      like_count: posts.like_count,
+      creator_id: posts.creator_id,
+      content_type: posts.content_type,
+    })
     .from(posts)
     .where(eq(posts.id, id))
     .limit(1);
@@ -49,13 +54,14 @@ export async function POST(
       // Fire push in background — don't await so it never delays the response
       getActorUsername(auth.user.userId).then((actor) =>
         sendPushToUser(post.creator_id!, {
-          title: "New Like ❤️",
+          title: "New Like",
           body: `${actor} liked your post`,
           data: {
             type: "like",
             post_id: id,
             actor_id: auth.user.userId,
-            content_type: "post",
+            content_type: post.content_type ?? "post",
+            actor_username: actor.replace(/^@/, ""),
           },
         }),
       );

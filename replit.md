@@ -33,6 +33,7 @@ Acts as a credential broker + full feature API.
 | `RESEND_API_KEY`       | Resend API key                                  |
 | `VERIFIED_SENDER_EMAIL`| Verified sender email                           |
 | `APP_URL`              | Public URL of this server                       |
+| `PUBLIC_APP_URL`       | Canonical public origin for share links (default: `https://meetsweet.space`) |
 | `CLIENT_APP_ID`        | Client app identifier (default: meetsweet-mobile)|
 
 `SESSION_SECRET` is already configured. `JWT_SECRET` falls back to `SESSION_SECRET` if not set.

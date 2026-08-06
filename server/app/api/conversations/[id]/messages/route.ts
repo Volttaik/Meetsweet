@@ -292,7 +292,7 @@ export async function POST(
     const actor = senderRow?.username ? `@${senderRow.username}` : "Someone";
 
     sendPushToUsers(recipientIds, {
-      title: "New Message 💬",
+      title: "New Message",
       body: `${actor}: ${preview}`,
       data: {
         type: "message",

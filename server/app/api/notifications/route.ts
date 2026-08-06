@@ -11,6 +11,7 @@ function notificationTitle(type: string): string {
     comment: "New Comment",
     follow: "New Follower",
     subscribe: "New Subscriber",
+    new_post: "New Post",
     reply: "New Reply",
     mention: "You were mentioned",
     tip: "New Tip",

@@ -49,6 +49,9 @@ export const config = {
   },
   app: {
     url: () => firstSet("APP_URL"),
+    // Public web/API origin. Keep this separate from APP_URL so an older
+    // deployment value such as api.meetsweet.space cannot leak into share URLs.
+    publicUrl: () => firstSet("PUBLIC_APP_URL") ?? "https://meetsweet.space",
     clientId: () => firstSet("CLIENT_APP_ID") ?? "meetsweet-mobile",
   },
 } as const;

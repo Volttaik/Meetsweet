@@ -7,6 +7,7 @@ import { optionalAuth, requireAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { created, err, ok } from "@/lib/api/response";
 import { generateId } from "@/lib/auth/codes";
+import { notifySubscribersOfNewPost } from "@/lib/services/push";
 
 const createSchema = z.object({
   title: z.string().trim().min(1).max(160),
@@ -215,6 +216,13 @@ export async function POST(req: NextRequest) {
       }
     }
   }
+
+  void notifySubscribersOfNewPost({
+    creatorId: auth.user.userId,
+    postId: albumId,
+    contentType: "album",
+    title: data.title,
+  });
 
   // Mobile's createAlbum() expects { id: string } after envelope unwrap
   return created({ id: albumId });
