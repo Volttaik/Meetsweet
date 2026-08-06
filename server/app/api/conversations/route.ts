@@ -21,6 +21,7 @@ export async function GET(req: NextRequest) {
       is_archived: conversation_members.is_archived,
       is_muted: conversation_members.is_muted,
       last_read_at: conversation_members.last_read_at,
+      cleared_at: conversation_members.cleared_at,
       background: conversation_members.background,
     })
     .from(conversation_members)
@@ -157,12 +158,17 @@ export async function POST(req: NextRequest) {
     return err("userId, user_id, or username is required", 400);
   }
 
-  // Resolve target user — by UUID or username
+  // Resolve target user — by UUID or username.
+  // Strategy: if `username` is explicitly provided, use it. Otherwise try the
+  // raw identifier as a UUID first; if that returns nothing, fall back to a
+  // username match (some clients pass username in the user_id / userId field).
+  const rawId = userId ?? user_id ?? null;
+
   const lookupCondition = username
     ? eq(users.username, username)
-    : eq(users.id, (userId ?? user_id)!);
+    : eq(users.id, rawId!);
 
-  const [targetUser] = await db
+  let [targetUser] = await db
     .select({
       id: users.id,
       username: users.username,
@@ -173,6 +179,22 @@ export async function POST(req: NextRequest) {
     .from(users)
     .where(and(lookupCondition, eq(users.is_active, true)))
     .limit(1);
+
+  // Fallback: if UUID lookup missed, try treating the identifier as a username
+  if (!targetUser && !username && rawId) {
+    const [fallback] = await db
+      .select({
+        id: users.id,
+        username: users.username,
+        full_name: users.full_name,
+        is_creator: users.is_creator,
+        is_verified: users.is_verified,
+      })
+      .from(users)
+      .where(and(eq(users.username, rawId), eq(users.is_active, true)))
+      .limit(1);
+    if (fallback) targetUser = fallback;
+  }
 
   if (!targetUser) return err("User not found", 404);
   if (targetUser.id === auth.user.userId) {

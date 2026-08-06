@@ -510,6 +510,9 @@ export const messages = sqliteTable("messages", {
   body: text("body"),
   caption: text("caption"),
   media_url: text("media_url"),
+  // media_type: explicit "image"|"video"|"audio"|"document" — distinct from `type` which is
+  // the message category ("text"|"media"). Storing both avoids URL-extension guessing on mobile.
+  media_type: text("media_type"),
   media_blob_path: text("media_blob_path"),
   mime_type: text("mime_type"),
   file_name: text("file_name"),

@@ -383,6 +383,214 @@ async function run() {
       sql: `ALTER TABLE conversation_members ADD COLUMN background TEXT`,
     },
 
+    // ── user_settings: privacy + notification columns ────────────────────────
+    {
+      name: "user_settings: add private_account",
+      sql: `ALTER TABLE user_settings ADD COLUMN private_account INTEGER NOT NULL DEFAULT 0`,
+    },
+    {
+      name: "user_settings: add online_status",
+      sql: `ALTER TABLE user_settings ADD COLUMN online_status INTEGER NOT NULL DEFAULT 1`,
+    },
+    {
+      name: "user_settings: add activity_status",
+      sql: `ALTER TABLE user_settings ADD COLUMN activity_status INTEGER NOT NULL DEFAULT 1`,
+    },
+    {
+      name: "user_settings: add typing_indicator",
+      sql: `ALTER TABLE user_settings ADD COLUMN typing_indicator INTEGER NOT NULL DEFAULT 1`,
+    },
+    {
+      name: "user_settings: add read_receipts",
+      sql: `ALTER TABLE user_settings ADD COLUMN read_receipts INTEGER NOT NULL DEFAULT 1`,
+    },
+    {
+      name: "user_settings: add allow_dms",
+      sql: `ALTER TABLE user_settings ADD COLUMN allow_dms INTEGER NOT NULL DEFAULT 1`,
+    },
+    {
+      name: "user_settings: add allow_mentions",
+      sql: `ALTER TABLE user_settings ADD COLUMN allow_mentions INTEGER NOT NULL DEFAULT 1`,
+    },
+    {
+      name: "user_settings: add allow_tags",
+      sql: `ALTER TABLE user_settings ADD COLUMN allow_tags INTEGER NOT NULL DEFAULT 1`,
+    },
+    {
+      name: "user_settings: add search_visible",
+      sql: `ALTER TABLE user_settings ADD COLUMN search_visible INTEGER NOT NULL DEFAULT 1`,
+    },
+    {
+      name: "user_settings: add birthday_visible",
+      sql: `ALTER TABLE user_settings ADD COLUMN birthday_visible INTEGER NOT NULL DEFAULT 0`,
+    },
+    {
+      name: "user_settings: add phone_visible",
+      sql: `ALTER TABLE user_settings ADD COLUMN phone_visible INTEGER NOT NULL DEFAULT 0`,
+    },
+    {
+      name: "user_settings: add sensitive_blur",
+      sql: `ALTER TABLE user_settings ADD COLUMN sensitive_blur INTEGER NOT NULL DEFAULT 1`,
+    },
+    {
+      name: "user_settings: add qr_discovery",
+      sql: `ALTER TABLE user_settings ADD COLUMN qr_discovery INTEGER NOT NULL DEFAULT 1`,
+    },
+    {
+      name: "user_settings: add auto_archive",
+      sql: `ALTER TABLE user_settings ADD COLUMN auto_archive INTEGER NOT NULL DEFAULT 0`,
+    },
+    {
+      name: "user_settings: add notif_messages",
+      sql: `ALTER TABLE user_settings ADD COLUMN notif_messages INTEGER NOT NULL DEFAULT 1`,
+    },
+    {
+      name: "user_settings: add notif_comments",
+      sql: `ALTER TABLE user_settings ADD COLUMN notif_comments INTEGER NOT NULL DEFAULT 1`,
+    },
+    {
+      name: "user_settings: add notif_mentions",
+      sql: `ALTER TABLE user_settings ADD COLUMN notif_mentions INTEGER NOT NULL DEFAULT 1`,
+    },
+    {
+      name: "user_settings: add notif_likes",
+      sql: `ALTER TABLE user_settings ADD COLUMN notif_likes INTEGER NOT NULL DEFAULT 1`,
+    },
+    {
+      name: "user_settings: add notif_new_subscribers",
+      sql: `ALTER TABLE user_settings ADD COLUMN notif_new_subscribers INTEGER NOT NULL DEFAULT 1`,
+    },
+    {
+      name: "user_settings: add notif_creator_updates",
+      sql: `ALTER TABLE user_settings ADD COLUMN notif_creator_updates INTEGER NOT NULL DEFAULT 1`,
+    },
+    {
+      name: "user_settings: add notif_marketing",
+      sql: `ALTER TABLE user_settings ADD COLUMN notif_marketing INTEGER NOT NULL DEFAULT 0`,
+    },
+    {
+      name: "user_settings: add notif_vibration",
+      sql: `ALTER TABLE user_settings ADD COLUMN notif_vibration INTEGER NOT NULL DEFAULT 1`,
+    },
+    {
+      name: "user_settings: add notif_sound",
+      sql: `ALTER TABLE user_settings ADD COLUMN notif_sound INTEGER NOT NULL DEFAULT 1`,
+    },
+    {
+      name: "user_settings: add notif_preview",
+      sql: `ALTER TABLE user_settings ADD COLUMN notif_preview INTEGER NOT NULL DEFAULT 1`,
+    },
+    {
+      name: "user_settings: add notif_quiet_hours",
+      sql: `ALTER TABLE user_settings ADD COLUMN notif_quiet_hours INTEGER NOT NULL DEFAULT 0`,
+    },
+    {
+      name: "user_settings: add notif_quiet_start",
+      sql: `ALTER TABLE user_settings ADD COLUMN notif_quiet_start TEXT NOT NULL DEFAULT '22:00'`,
+    },
+    {
+      name: "user_settings: add notif_quiet_end",
+      sql: `ALTER TABLE user_settings ADD COLUMN notif_quiet_end TEXT NOT NULL DEFAULT '08:00'`,
+    },
+
+    // ── messages: media_type column ──────────────────────────────────────────
+    {
+      name: "messages: add media_type",
+      sql: `ALTER TABLE messages ADD COLUMN media_type TEXT`,
+    },
+
+    // ── hidden_posts table ────────────────────────────────────────────────────
+    {
+      name: "create hidden_posts",
+      sql: `
+        CREATE TABLE IF NOT EXISTS hidden_posts (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          post_id TEXT NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        )
+      `,
+    },
+    {
+      name: "hidden_posts: user index",
+      sql: `CREATE INDEX IF NOT EXISTS hidden_posts_user_idx ON hidden_posts(user_id)`,
+    },
+
+    // ── muted_users table ────────────────────────────────────────────────────
+    {
+      name: "create muted_users",
+      sql: `
+        CREATE TABLE IF NOT EXISTS muted_users (
+          id TEXT PRIMARY KEY,
+          muter_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          muted_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        )
+      `,
+    },
+
+    // ── recent_searches table ─────────────────────────────────────────────────
+    {
+      name: "create recent_searches",
+      sql: `
+        CREATE TABLE IF NOT EXISTS recent_searches (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          query TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        )
+      `,
+    },
+    {
+      name: "recent_searches: user index",
+      sql: `CREATE INDEX IF NOT EXISTS recent_searches_user_idx ON recent_searches(user_id)`,
+    },
+
+    // ── message_reads table ───────────────────────────────────────────────────
+    {
+      name: "create message_reads",
+      sql: `
+        CREATE TABLE IF NOT EXISTS message_reads (
+          id TEXT PRIMARY KEY,
+          message_id TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+          user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        )
+      `,
+    },
+    {
+      name: "message_reads: message index",
+      sql: `CREATE INDEX IF NOT EXISTS message_reads_message_idx ON message_reads(message_id)`,
+    },
+    {
+      name: "message_reads: user index",
+      sql: `CREATE INDEX IF NOT EXISTS message_reads_user_idx ON message_reads(user_id)`,
+    },
+
+    // ── creator_statistics table ──────────────────────────────────────────────
+    {
+      name: "create creator_statistics",
+      sql: `
+        CREATE TABLE IF NOT EXISTS creator_statistics (
+          id TEXT PRIMARY KEY,
+          creator_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          period TEXT NOT NULL,
+          total_subscribers INTEGER NOT NULL DEFAULT 0,
+          new_subscribers INTEGER NOT NULL DEFAULT 0,
+          total_revenue REAL NOT NULL DEFAULT 0,
+          total_views INTEGER NOT NULL DEFAULT 0,
+          total_likes INTEGER NOT NULL DEFAULT 0,
+          total_posts INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+          updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        )
+      `,
+    },
+    {
+      name: "creator_statistics: creator period index",
+      sql: `CREATE INDEX IF NOT EXISTS creator_statistics_creator_period_idx ON creator_statistics(creator_id, period)`,
+    },
+
     // ── Tier system migration: bronze/silver/gold/diamond → free/subscriber/subscriber_plus ──
     // posts.tier: map old values to new three-tier system
     {

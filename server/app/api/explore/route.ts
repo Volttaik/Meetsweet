@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { eq, and, desc, isNull, inArray, or, sql } from "drizzle-orm";
+import { eq, and, desc, isNull, inArray, notInArray, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   users,
@@ -9,6 +9,7 @@ import {
   albums,
   post_likes,
   saved_posts,
+  hidden_posts,
 } from "@/lib/db/schema";
 import { optionalAuth } from "@/middleware/auth";
 import { ok } from "@/lib/api/response";
@@ -39,6 +40,16 @@ export async function GET(req: NextRequest) {
   const offset = (page - 1) * limit;
 
   const userId = await optionalAuth(req).then((a) => a?.userId ?? null);
+
+  // ── Hidden posts: collect IDs the viewer has explicitly hidden ───────────
+  let hiddenPostIds: string[] = [];
+  if (userId) {
+    const hidden = await db
+      .select({ post_id: hidden_posts.post_id })
+      .from(hidden_posts)
+      .where(eq(hidden_posts.user_id, userId));
+    hiddenPostIds = hidden.map((h) => h.post_id);
+  }
 
   // ── Single combined query: post + video + short ─────────────────────────
   // All three types live in the posts table, so one query + one sort gives
@@ -79,6 +90,8 @@ export async function GET(req: NextRequest) {
         // Shorts are exclusive to the Shorts feed — never appear in Explore.
         // Mobile already skips them client-side, but the backend should not send them.
         inArray(posts.content_type, ["post", "video"]),
+        // Exclude posts the viewer has explicitly hidden
+        ...(hiddenPostIds.length > 0 ? [notInArray(posts.id, hiddenPostIds)] : []),
       ),
     )
     // Three-level ordering for full determinism at every page boundary:

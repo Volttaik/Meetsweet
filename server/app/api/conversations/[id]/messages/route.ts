@@ -139,7 +139,7 @@ const MSG_SELECT = {
   body: messages.body,
   caption: messages.caption,
   media_url: messages.media_url,
-  media_type: messages.type,
+  media_type: messages.media_type,
   mime_type: messages.mime_type,
   file_name: messages.file_name,
   file_size: messages.file_size,
@@ -329,6 +329,7 @@ export async function POST(
     body: d.body ?? null,
     caption: d.caption ?? null,
     media_url: mediaUrl,
+    media_type: mediaType,       // explicit image/video/audio/document for mobile normalizer
     reply_to_id: d.reply_to_id ?? null,
     type: msgType,
     mime_type: mimeType,
@@ -351,7 +352,7 @@ export async function POST(
     .limit(1);
 
   // Notify all other conversation members about the new message
-  const otherMembers = await db
+  const notifMembers = await db
     .select({ user_id: conversation_members.user_id })
     .from(conversation_members)
     .where(
@@ -361,7 +362,7 @@ export async function POST(
       ),
     );
 
-  const recipientIds = otherMembers
+  const recipientIds = notifMembers
     .map((m) => m.user_id)
     .filter((uid) => uid !== auth.user.userId);
 

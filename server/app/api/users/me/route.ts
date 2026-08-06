@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { eq, and, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { users, profiles, follows, posts } from "@/lib/db/schema";
+import { users, profiles, follows, posts, subscriptions } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err } from "@/lib/api/response";
@@ -66,6 +66,18 @@ export async function GET(req: NextRequest) {
     .from(posts)
     .where(and(eq(posts.creator_id, auth.user.userId), isNull(posts.deleted_at)));
 
+  // subscriber_count: people actively subscribed to this user as a creator
+  // subscription_count: creators this user is actively subscribed to
+  const [subscriberCount] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(subscriptions)
+    .where(and(eq(subscriptions.creator_id, auth.user.userId), eq(subscriptions.status, "active")));
+
+  const [subscriptionCount] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(subscriptions)
+    .where(and(eq(subscriptions.subscriber_id, auth.user.userId), eq(subscriptions.status, "active")));
+
   // Mobile's normalizeUser(raw) is called directly on the unwrapped data,
   // so we return the user fields at the top level (not wrapped in {user:...}).
   return ok({
@@ -73,6 +85,8 @@ export async function GET(req: NextRequest) {
     follower_count: followerCount?.count ?? 0,
     following_count: followingCount?.count ?? 0,
     post_count: postCount?.count ?? 0,
+    subscriber_count: subscriberCount?.count ?? 0,
+    subscription_count: subscriptionCount?.count ?? 0,
   });
 }
 

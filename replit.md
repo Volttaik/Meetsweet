@@ -68,17 +68,21 @@ Acts as a credential broker + full feature API.
 Run `npx tsx scripts/migrate.ts` once against the Turso database to apply all schema changes.
 The script is idempotent (safe to run multiple times).
 
-**August 2026 — Monetisation refactor (legacy unlock system removed):**
-- Drops `post_unlocks` table
-- Drops `message_unlocks` table
-- Removes `unlock_price` column from `posts`
-- Removes `is_paid`, `paid_price` columns from `messages`
+**August 2026 — Backend bug-fix pass:**
+- New tables added to migration: `hidden_posts`, `muted_users`, `recent_searches`, `message_reads`, `creator_statistics`
+- New columns: `messages.media_type` (explicit image/video/audio/document — separate from `messages.type`)
+- New columns: all privacy + notification preference columns on `user_settings` (private_account, online_status, allow_dms, notif_messages, notif_likes, etc.)
+- `/users/me` and `/users/:username` now return `subscriber_count` + `subscription_count`
+- `/explore` now filters posts the viewer has hidden
+- `/conversations` POST: falls back to username lookup when the provided `user_id` is a username string, not a UUID
+- `/conversations/:id/messages` POST: `media_type` now stored explicitly in messages so mobile doesn't have to guess from URL extension
 
-Earlier additions (idempotent, already run):
+**Earlier additions (idempotent, already run):**
+- Monetisation refactor: drops `post_unlocks`, `message_unlocks`; removes `unlock_price`, `is_paid`, `paid_price`
 - `messages`: `caption`, `mime_type`, `file_name`, `file_size`, `audio_duration`
 - `media`: `thumbnail_url`, `file_name`
 - `posts`: `thumbnail_url`, `tier`, `tags`
-- New tables: `post_categories`
+- New tables: `post_categories`, `albums`, `album_items`, `album_unlocks`, `creator_reviews`, `shares`
 
 ## User preferences
 

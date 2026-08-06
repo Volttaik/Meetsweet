@@ -38,6 +38,7 @@ export async function GET(
       is_archived: conversation_members.is_archived,
       is_muted: conversation_members.is_muted,
       last_read_at: conversation_members.last_read_at,
+      cleared_at: conversation_members.cleared_at,
       background: conversation_members.background,
     })
     .from(conversation_members)
