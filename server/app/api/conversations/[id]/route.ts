@@ -38,6 +38,7 @@ export async function GET(
       is_archived: conversation_members.is_archived,
       is_muted: conversation_members.is_muted,
       last_read_at: conversation_members.last_read_at,
+      background: conversation_members.background,
     })
     .from(conversation_members)
     .where(
@@ -75,27 +76,36 @@ export async function GET(
 
   const otherMember = allMembers.find((m) => m.user_id !== auth.user.userId);
 
-  // Last message
+  // Last message — respect the caller's cleared_at cutoff
+  const lastMsgWhere = membership.cleared_at
+    ? and(
+        eq(messages.conversation_id, id),
+        sql`${messages.created_at} > ${membership.cleared_at}`,
+      )
+    : eq(messages.conversation_id, id);
+
   const [lastMsg] = await db
     .select({ body: messages.body, created_at: messages.created_at })
     .from(messages)
-    .where(eq(messages.conversation_id, id))
+    .where(lastMsgWhere)
     .orderBy(desc(messages.created_at))
     .limit(1);
 
-  // Unread count
+  // Unread count — respect cleared_at so cleared messages don't reappear as unread
+  const unreadConditions = [
+    eq(messages.conversation_id, id),
+    sql`${messages.sender_id} != ${auth.user.userId}`,
+    ...(membership.last_read_at
+      ? [sql`${messages.created_at} > ${membership.last_read_at}`]
+      : []),
+    ...(membership.cleared_at
+      ? [sql`${messages.created_at} > ${membership.cleared_at}`]
+      : []),
+  ];
   const [unreadRow] = await db
     .select({ count: sql<number>`count(*)` })
     .from(messages)
-    .where(
-      and(
-        eq(messages.conversation_id, id),
-        sql`${messages.sender_id} != ${auth.user.userId}`,
-        ...(membership.last_read_at
-          ? [sql`${messages.created_at} > ${membership.last_read_at}`]
-          : []),
-      ),
-    );
+    .where(and(...unreadConditions));
 
   const unread_count = unreadRow?.count ?? 0;
 
@@ -113,6 +123,7 @@ export async function GET(
     is_archived: membership.is_archived,
     unreadCount: unread_count,
     unread_count,
+    background: membership.background ?? null,
     otherUser: otherMember
       ? {
           id: otherMember.user_id,

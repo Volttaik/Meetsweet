@@ -464,6 +464,10 @@ export const conversation_members = sqliteTable("conversation_members", {
   is_pinned: integer("is_pinned", { mode: "boolean" }).notNull().default(false),
   is_archived: integer("is_archived", { mode: "boolean" }).notNull().default(false),
   last_read_at: text("last_read_at"),
+  // cleared_at: messages before this timestamp are hidden for this member only
+  cleared_at: text("cleared_at"),
+  // background: per-member chat background (hex colour, gradient key, or image URL)
+  background: text("background"),
   created_at: createdAt(),
 });
 

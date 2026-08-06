@@ -1,10 +1,18 @@
 import { NextRequest } from "next/server";
-import { eq, and } from "drizzle-orm";
+import { eq, and, or } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { users, blocked_users } from "@/lib/db/schema";
+import { users, blocked_users, conversation_members } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
 import { ok, err } from "@/lib/api/response";
 import { generateId } from "@/lib/auth/codes";
+
+/**
+ * POST /api/users/:username/block   — block a user
+ * DELETE /api/users/:username/block — unblock a user
+ *
+ * Blocking also archives any existing direct conversation between the two
+ * users for the blocker, so the chat disappears from their inbox immediately.
+ */
 
 export async function POST(
   req: NextRequest,
@@ -24,6 +32,7 @@ export async function POST(
   if (!target) return err("User not found", 404);
   if (target.id === auth.user.userId) return err("You cannot block yourself", 400);
 
+  // Insert block record (idempotent)
   const [existing] = await db
     .select({ id: blocked_users.id })
     .from(blocked_users)
@@ -36,6 +45,44 @@ export async function POST(
       blocker_id: auth.user.userId,
       blocked_id: target.id,
     });
+  }
+
+  // Archive any shared direct conversation for the blocker so it leaves the inbox.
+  // Find conversations that both users are members of.
+  const myMemberships = await db
+    .select({ conversation_id: conversation_members.conversation_id })
+    .from(conversation_members)
+    .where(eq(conversation_members.user_id, auth.user.userId));
+
+  const myConvIds = myMemberships.map((m) => m.conversation_id);
+
+  if (myConvIds.length > 0) {
+    for (const convId of myConvIds) {
+      const [theirMembership] = await db
+        .select({ id: conversation_members.id })
+        .from(conversation_members)
+        .where(
+          and(
+            eq(conversation_members.conversation_id, convId),
+            eq(conversation_members.user_id, target.id),
+          ),
+        )
+        .limit(1);
+
+      if (theirMembership) {
+        // Archive the conversation for the blocker only
+        await db
+          .update(conversation_members)
+          .set({ is_archived: true })
+          .where(
+            and(
+              eq(conversation_members.conversation_id, convId),
+              eq(conversation_members.user_id, auth.user.userId),
+            ),
+          );
+        break; // Direct conversations are unique pairs; stop after first match
+      }
+    }
   }
 
   return ok({ blocked: true });

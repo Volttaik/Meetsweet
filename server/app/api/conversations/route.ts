@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { eq, and, desc, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { users, profiles, conversations, conversation_members, messages, creator_settings, subscriptions } from "@/lib/db/schema";
+import { users, profiles, conversations, conversation_members, messages, creator_settings, subscriptions, blocked_users } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err, created } from "@/lib/api/response";
@@ -21,6 +21,7 @@ export async function GET(req: NextRequest) {
       is_archived: conversation_members.is_archived,
       is_muted: conversation_members.is_muted,
       last_read_at: conversation_members.last_read_at,
+      background: conversation_members.background,
     })
     .from(conversation_members)
     .where(
@@ -62,29 +63,38 @@ export async function GET(req: NextRequest) {
 
     const otherMember = allMembers.find((m) => m.user_id !== auth.user.userId);
 
-    // Fetch last message body
+    // Fetch last message body — respect the caller's cleared_at cutoff
+    const lastMsgWhere = membership.cleared_at
+      ? and(
+          eq(messages.conversation_id, convId),
+          sql`${messages.created_at} > ${membership.cleared_at}`,
+        )
+      : eq(messages.conversation_id, convId);
+
     const [lastMsg] = await db
       .select({ body: messages.body, created_at: messages.created_at })
       .from(messages)
-      .where(eq(messages.conversation_id, convId))
+      .where(lastMsgWhere)
       .orderBy(desc(messages.created_at))
       .limit(1);
 
     // Count unread messages (messages after last_read_at from other users)
-    // When last_read_at is null, count all messages from others
+    // Also respect cleared_at — cleared messages don't count as unread.
     let unread_count = 0;
+    const unreadConditions = [
+      eq(messages.conversation_id, convId),
+      sql`${messages.sender_id} != ${auth.user.userId}`,
+      ...(membership.last_read_at
+        ? [sql`${messages.created_at} > ${membership.last_read_at}`]
+        : []),
+      ...(membership.cleared_at
+        ? [sql`${messages.created_at} > ${membership.cleared_at}`]
+        : []),
+    ];
     const [unreadRow] = await db
       .select({ count: sql<number>`count(*)` })
       .from(messages)
-      .where(
-        and(
-          eq(messages.conversation_id, convId),
-          sql`${messages.sender_id} != ${auth.user.userId}`,
-          ...(membership.last_read_at
-            ? [sql`${messages.created_at} > ${membership.last_read_at}`]
-            : []),
-        ),
-      );
+      .where(and(...unreadConditions));
     unread_count = unreadRow?.count ?? 0;
 
     result.push({
@@ -101,6 +111,7 @@ export async function GET(req: NextRequest) {
       is_archived: membership.is_archived,
       unreadCount: unread_count,
       unread_count,
+      background: membership.background ?? null,
       // camelCase for mobile normalizer
       otherUser: otherMember
         ? {
@@ -166,6 +177,29 @@ export async function POST(req: NextRequest) {
   if (!targetUser) return err("User not found", 404);
   if (targetUser.id === auth.user.userId) {
     return err("Cannot start a conversation with yourself", 400);
+  }
+
+  // ── Block check ──────────────────────────────────────────────────────────
+  // If caller blocked the target, or target blocked the caller, messaging is forbidden.
+  const [blockRecord] = await db
+    .select({ id: blocked_users.id })
+    .from(blocked_users)
+    .where(
+      or(
+        and(
+          eq(blocked_users.blocker_id, auth.user.userId),
+          eq(blocked_users.blocked_id, targetUser.id),
+        ),
+        and(
+          eq(blocked_users.blocker_id, targetUser.id),
+          eq(blocked_users.blocked_id, auth.user.userId),
+        ),
+      ),
+    )
+    .limit(1);
+
+  if (blockRecord) {
+    return err("You cannot message this user", 403, { code: "user_blocked" });
   }
 
   // ── Messaging permission check ───────────────────────────────────────────

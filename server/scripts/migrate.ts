@@ -373,6 +373,16 @@ async function run() {
       sql: `ALTER TABLE messages DROP COLUMN paid_price`,
     },
 
+    // ── conversation_members: clear-chat and background support ───────────────
+    {
+      name: "conversation_members: add cleared_at",
+      sql: `ALTER TABLE conversation_members ADD COLUMN cleared_at TEXT`,
+    },
+    {
+      name: "conversation_members: add background",
+      sql: `ALTER TABLE conversation_members ADD COLUMN background TEXT`,
+    },
+
     // ── Tier system migration: bronze/silver/gold/diamond → free/subscriber/subscriber_plus ──
     // posts.tier: map old values to new three-tier system
     {

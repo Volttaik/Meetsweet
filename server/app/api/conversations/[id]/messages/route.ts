@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { eq, and, desc, lt } from "drizzle-orm";
+import { eq, and, or, desc, lt, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import {
@@ -8,6 +8,7 @@ import {
   conversations,
   conversation_members,
   messages,
+  blocked_users,
 } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
@@ -167,18 +168,32 @@ export async function GET(
   if (check === "not_found") return err("Conversation not found", 404);
   if (check === "forbidden") return err("Forbidden", 403);
 
+  // Fetch caller's membership to get cleared_at cutoff
+  const [membership] = await db
+    .select({ cleared_at: conversation_members.cleared_at })
+    .from(conversation_members)
+    .where(
+      and(
+        eq(conversation_members.conversation_id, id),
+        eq(conversation_members.user_id, auth.user.userId),
+      ),
+    )
+    .limit(1);
+
   const before = req.nextUrl.searchParams.get("before");
   const limit = Math.min(
     Number(req.nextUrl.searchParams.get("limit") ?? 20),
     50,
   );
 
-  const whereClause = before
-    ? and(
-        eq(messages.conversation_id, id),
-        lt(messages.created_at, before),
-      )
-    : eq(messages.conversation_id, id);
+  const conditions = [eq(messages.conversation_id, id)];
+  if (before) conditions.push(lt(messages.created_at, before));
+  // Exclude messages that were sent before the caller cleared the chat
+  if (membership?.cleared_at) {
+    conditions.push(sql`${messages.created_at} > ${membership.cleared_at}`);
+  }
+
+  const whereClause = and(...conditions);
 
   const rows = await db
     .select(MSG_SELECT)
@@ -201,6 +216,40 @@ export async function GET(
   });
 }
 
+/**
+ * DELETE /api/conversations/:id/messages
+ *
+ * Clears the chat history for the calling user only — sets cleared_at to now
+ * so that all messages sent before this moment are hidden from their view.
+ * The other participant's history is unaffected.
+ */
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const auth = await requireAuth(req);
+  if ("response" in auth) return auth.response;
+
+  const { id } = await params;
+  const check = await assertMember(id, auth.user.userId);
+  if (check === "not_found") return err("Conversation not found", 404);
+  if (check === "forbidden") return err("Forbidden", 403);
+
+  const now = new Date().toISOString();
+
+  await db
+    .update(conversation_members)
+    .set({ cleared_at: now })
+    .where(
+      and(
+        eq(conversation_members.conversation_id, id),
+        eq(conversation_members.user_id, auth.user.userId),
+      ),
+    );
+
+  return ok({ cleared: true, cleared_at: now });
+}
+
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -212,6 +261,45 @@ export async function POST(
   const check = await assertMember(id, auth.user.userId);
   if (check === "not_found") return err("Conversation not found", 404);
   if (check === "forbidden") return err("Forbidden", 403);
+
+  // ── Block check ──────────────────────────────────────────────────────────
+  // Find the other participant(s) in this conversation.
+  const otherMembers = await db
+    .select({ user_id: conversation_members.user_id })
+    .from(conversation_members)
+    .where(
+      and(
+        eq(conversation_members.conversation_id, id),
+        sql`${conversation_members.user_id} != ${auth.user.userId}`,
+      ),
+    );
+
+  if (otherMembers.length > 0) {
+    const otherIds = otherMembers.map((m) => m.user_id);
+    // Check bidirectional block between sender and any recipient
+    for (const otherId of otherIds) {
+      const [blockRow] = await db
+        .select({ id: blocked_users.id })
+        .from(blocked_users)
+        .where(
+          or(
+            and(
+              eq(blocked_users.blocker_id, auth.user.userId),
+              eq(blocked_users.blocked_id, otherId),
+            ),
+            and(
+              eq(blocked_users.blocker_id, otherId),
+              eq(blocked_users.blocked_id, auth.user.userId),
+            ),
+          ),
+        )
+        .limit(1);
+
+      if (blockRow) {
+        return err("You cannot send messages to this user", 403, { code: "user_blocked" });
+      }
+    }
+  }
 
   const parsed = await parseBody(req, sendSchema);
   if (!parsed.success) return parsed.response;
