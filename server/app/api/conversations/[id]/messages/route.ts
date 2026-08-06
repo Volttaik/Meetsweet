@@ -13,6 +13,7 @@ import { requireAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err } from "@/lib/api/response";
 import { generateId } from "@/lib/auth/codes";
+import { sendPushToUsers, getActorUsername } from "@/lib/services/push";
 
 const sendSchema = z
   .object({
@@ -257,6 +258,50 @@ export async function POST(
     .leftJoin(profiles, eq(profiles.user_id, messages.sender_id))
     .where(eq(messages.id, msgId))
     .limit(1);
+
+  // Notify all other conversation members about the new message
+  const otherMembers = await db
+    .select({ user_id: conversation_members.user_id })
+    .from(conversation_members)
+    .where(
+      and(
+        eq(conversation_members.conversation_id, id),
+        eq(conversation_members.is_muted, false),
+      ),
+    );
+
+  const recipientIds = otherMembers
+    .map((m) => m.user_id)
+    .filter((uid) => uid !== auth.user.userId);
+
+  if (recipientIds.length > 0) {
+    // Fire-and-forget push
+    const preview = d.body
+      ? d.body.length > 60 ? d.body.slice(0, 57) + "…" : d.body
+      : d.caption
+      ? d.caption.slice(0, 60)
+      : "Sent an attachment";
+
+    const senderRow = await db
+      .select({ username: users.username })
+      .from(users)
+      .where(eq(users.id, auth.user.userId))
+      .limit(1)
+      .then((r) => r[0]);
+
+    const actor = senderRow?.username ? `@${senderRow.username}` : "Someone";
+
+    sendPushToUsers(recipientIds, {
+      title: "New Message 💬",
+      body: `${actor}: ${preview}`,
+      data: {
+        type: "message",
+        conversation_id: id,
+        actor_id: auth.user.userId,
+        actor_username: senderRow?.username ?? null,
+      },
+    });
+  }
 
   return ok({
     message: formatMessage(

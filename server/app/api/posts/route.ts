@@ -8,6 +8,7 @@ import { parseBody } from "@/lib/api/validate";
 import { ok, err, created } from "@/lib/api/response";
 import { generateId } from "@/lib/auth/codes";
 import { canViewContent } from "@/lib/services/content";
+import { sendPushToUsers } from "@/lib/services/push";
 
 const createSchema = z.object({
   caption: z.string().max(2200).nullable().optional(),
