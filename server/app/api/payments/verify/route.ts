@@ -16,18 +16,7 @@ export async function GET(req: NextRequest) {
 
   const secretKey = config.paystack.secretKey();
   if (!secretKey) {
-    // Paystack not configured — return a stub for development
-    return ok({
-      status: "success",
-      transaction: {
-        id: generateId(),
-        type: "credit",
-        amount: 0,
-        description: "Payment verified (Paystack not configured)",
-        status: "success",
-        created_at: new Date().toISOString(),
-      },
-    });
+    return err("Paystack is not configured on this server", 503, "PAYSTACK_NOT_CONFIGURED");
   }
 
   // Verify with Paystack

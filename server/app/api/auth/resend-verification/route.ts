@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { eq } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users, verification_codes } from "@/lib/db/schema";
 import { parseBody } from "@/lib/api/validate";
@@ -36,6 +36,19 @@ export async function POST(req: NextRequest) {
 
   if (user && !user.is_verified) {
     const code = generateVerificationCode();
+
+    // Expire all previous unused codes so only the freshly issued one is valid
+    await db
+      .update(verification_codes)
+      .set({ used_at: new Date().toISOString() })
+      .where(
+        and(
+          eq(verification_codes.user_id, user.id),
+          eq(verification_codes.type, "email_verify"),
+          isNull(verification_codes.used_at),
+        ),
+      );
+
     await db.insert(verification_codes).values({
       id: generateId(),
       user_id: user.id,
