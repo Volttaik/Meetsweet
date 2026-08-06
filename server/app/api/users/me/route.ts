@@ -16,6 +16,7 @@ const patchSchema = z.object({
   banner_url: z.string().url().nullable().optional(),
   website: z.string().url().nullable().optional(),
   location: z.string().max(100).nullable().optional(),
+  phone: z.string().max(30).nullable().optional(),
 });
 
 export async function GET(req: NextRequest) {
@@ -82,18 +83,23 @@ export async function PATCH(req: NextRequest) {
   const parsed = await parseBody(req, patchSchema);
   if (!parsed.success) return parsed.response;
 
-  const { full_name, display_name, username, bio, avatar_url, banner_url, website, location } = parsed.data;
+  const { full_name, display_name, username, bio, avatar_url, banner_url, website, location, phone } = parsed.data;
   const now = new Date().toISOString();
 
-  if (full_name !== undefined) {
-    await db.update(users).set({ full_name, updated_at: now }).where(eq(users.id, auth.user.userId));
-  }
+  // Build users-table update (fields that live on the users row)
+  const userUpdates: Record<string, unknown> = { updated_at: now };
+  if (full_name !== undefined) userUpdates.full_name = full_name;
+  if (phone !== undefined) userUpdates.phone = phone;
 
   if (username !== undefined) {
     // Check username uniqueness
     const [taken] = await db.select({ id: users.id }).from(users).where(eq(users.username, username)).limit(1);
     if (taken && taken.id !== auth.user.userId) return err("Username already taken", 409, "USERNAME_TAKEN");
-    await db.update(users).set({ username, updated_at: now }).where(eq(users.id, auth.user.userId));
+    userUpdates.username = username;
+  }
+
+  if (Object.keys(userUpdates).length > 1) {
+    await db.update(users).set(userUpdates).where(eq(users.id, auth.user.userId));
   }
 
   const profileUpdates: Record<string, unknown> = { updated_at: now };
