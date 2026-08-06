@@ -50,6 +50,7 @@ export async function GET(req: NextRequest) {
       .select({
         user_id: conversation_members.user_id,
         full_name: users.full_name,
+        display_name: profiles.display_name,
         username: users.username,
         avatar_url: profiles.avatar_url,
         is_verified: users.is_verified,
@@ -104,7 +105,9 @@ export async function GET(req: NextRequest) {
       otherUser: otherMember
         ? {
             id: otherMember.user_id,
-            name: otherMember.full_name,
+            name: otherMember.display_name ?? otherMember.full_name,
+            display_name: otherMember.display_name ?? otherMember.full_name,
+            displayName: otherMember.display_name ?? otherMember.full_name,
             username: otherMember.username,
             avatar_url: otherMember.avatar_url,
             avatarUrl: otherMember.avatar_url,

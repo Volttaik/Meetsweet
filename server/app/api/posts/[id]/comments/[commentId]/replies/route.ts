@@ -32,6 +32,7 @@ export async function GET(
       updated_at: comment_replies.updated_at,
       author_id: users.id,
       author_name: users.full_name,
+      author_display_name: profiles.display_name,
       author_username: users.username,
       author_avatar: profiles.avatar_url,
     })
@@ -51,9 +52,12 @@ export async function GET(
       updated_at: r.updated_at,
       author: {
         id: r.author_id,
-        name: r.author_name,
+        name: r.author_display_name ?? r.author_name,
+        display_name: r.author_display_name ?? r.author_name,
+        displayName: r.author_display_name ?? r.author_name,
         username: r.author_username,
         avatar_url: r.author_avatar,
+        avatarUrl: r.author_avatar,
       },
     })),
   });
@@ -93,6 +97,7 @@ export async function POST(
       updated_at: comment_replies.updated_at,
       author_id: users.id,
       author_name: users.full_name,
+      author_display_name: profiles.display_name,
       author_username: users.username,
       author_avatar: profiles.avatar_url,
     })
@@ -111,9 +116,12 @@ export async function POST(
       updated_at: row!.updated_at,
       author: {
         id: row!.author_id,
-        name: row!.author_name,
+        name: row!.author_display_name ?? row!.author_name,
+        display_name: row!.author_display_name ?? row!.author_name,
+        displayName: row!.author_display_name ?? row!.author_name,
         username: row!.author_username,
         avatar_url: row!.author_avatar,
+        avatarUrl: row!.author_avatar,
       },
     },
   });

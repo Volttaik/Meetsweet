@@ -123,7 +123,9 @@ function formatMessage(
     reactions: parseReactions(m.reactions),
     sender: {
       id: m.sender_id,
-      name: m.sender_name,
+      name: m.sender_display_name ?? m.sender_name,
+      display_name: m.sender_display_name ?? m.sender_name,
+      displayName: m.sender_display_name ?? m.sender_name,
       username: m.sender_username,
       avatar_url: m.sender_avatar,
       avatarUrl: m.sender_avatar,
@@ -148,6 +150,7 @@ const MSG_SELECT = {
   created_at: messages.created_at,
   sender_id: users.id,
   sender_name: users.full_name,
+  sender_display_name: profiles.display_name,
   sender_username: users.username,
   sender_avatar: profiles.avatar_url,
 };

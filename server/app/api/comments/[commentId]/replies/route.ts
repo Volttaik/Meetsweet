@@ -9,6 +9,7 @@ import { ok, err, created } from "@/lib/api/response";
 import { generateId } from "@/lib/auth/codes";
 
 function formatReply(r: Record<string, unknown>, commentId: string) {
+  const name = (r.author_display_name ?? r.author_name) as string | null;
   return {
     id: r.id,
     body: r.body,
@@ -19,9 +20,18 @@ function formatReply(r: Record<string, unknown>, commentId: string) {
     parent_id: commentId,
     liked_by_me: false,
     author_id: r.author_id,
-    author_display_name: r.author_name,
+    author_display_name: name,
     author_username: r.author_username,
     author_avatar: r.author_avatar,
+    author: {
+      id: r.author_id,
+      name,
+      display_name: name,
+      displayName: name,
+      username: r.author_username,
+      avatar_url: r.author_avatar,
+      avatarUrl: r.author_avatar,
+    },
   };
 }
 
@@ -53,6 +63,7 @@ export async function GET(
       like_count: comment_replies.like_count,
       author_id: users.id,
       author_name: users.full_name,
+      author_display_name: profiles.display_name,
       author_username: users.username,
       author_avatar: profiles.avatar_url,
     })

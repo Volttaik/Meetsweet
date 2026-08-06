@@ -46,6 +46,7 @@ export async function PATCH(
       updated_at: comments.updated_at,
       author_id: users.id,
       author_name: users.full_name,
+      author_display_name: profiles.display_name,
       author_username: users.username,
       author_avatar: profiles.avatar_url,
     })
@@ -67,9 +68,12 @@ export async function PATCH(
       updated_at: row!.updated_at,
       author: {
         id: row!.author_id,
-        name: row!.author_name,
+        name: row!.author_display_name ?? row!.author_name,
+        display_name: row!.author_display_name ?? row!.author_name,
+        displayName: row!.author_display_name ?? row!.author_name,
         username: row!.author_username,
         avatar_url: row!.author_avatar,
+        avatarUrl: row!.author_avatar,
       },
     },
   });
