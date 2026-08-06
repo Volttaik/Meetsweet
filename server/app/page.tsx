@@ -16,7 +16,10 @@ export default function HomePage() {
       {/* Nav */}
       <nav style={s.nav}>
         <div style={s.navInner}>
-          <span style={s.navBrand}>MeetSweet</span>
+          <a href="/" style={s.navBrand}>
+            <span style={s.logoMark}><img src="/meetsweet-logo.png" alt="" style={s.logoImage} /></span>
+            <span>MeetSweet</span>
+          </a>
           <a href="#download" style={s.navCta}>
             Download
           </a>
@@ -108,7 +111,10 @@ export default function HomePage() {
       {/* Footer */}
       <footer style={s.footer}>
         <div style={s.footerInner}>
-          <span style={s.footerBrand}>MeetSweet</span>
+          <a href="/" style={s.footerBrand}>
+            <span style={s.logoMark}><img src="/meetsweet-logo.png" alt="" style={s.logoImage} /></span>
+            <span>MeetSweet</span>
+          </a>
           <span style={s.footerMuted}>
             © {new Date().getFullYear()} MeetSweet. All rights reserved.
           </span>
@@ -198,10 +204,30 @@ const s: Record<string, React.CSSProperties> = {
     alignItems: "center",
   },
   navBrand: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 10,
     fontSize: 20,
     fontWeight: 700,
     letterSpacing: "-0.5px",
     color: "#fff",
+    textDecoration: "none",
+  },
+  logoMark: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    background: "#fff",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+    flexShrink: 0,
+  },
+  logoImage: {
+    width: "100%",
+    height: "100%",
+    objectFit: "cover" as const,
   },
   navCta: {
     background: ACCENT,
@@ -460,6 +486,12 @@ const s: Record<string, React.CSSProperties> = {
     flexWrap: "wrap" as const,
     gap: 12,
   },
-  footerBrand: { fontWeight: 700, fontSize: 15 },
+  footerBrand: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 8,
+    fontWeight: 700,
+    fontSize: 15,
+  },
   footerMuted: { fontSize: 13, color: TEXT_2 },
 };

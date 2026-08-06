@@ -262,3 +262,37 @@ PUBLIC_APP_URL=https://meetsweet.space
 | `/.well-known/assetlinks.json` | Placeholder | Requires production Android SHA-256 fingerprint |
 
 The old `api.meetsweet.space` host should not be used by new mobile builds.
+
+## 10. Server verification and public preview implementation
+
+The current server project has now been checked and updated:
+
+- `POST /api/shares` creates canonical `https://meetsweet.space/s/{token}` links.
+- `GET /api/shares/:token` rejects expired links.
+- `/s/:token` is a public server-rendered fallback page. It shows the shared content type,
+  post/album/creator title and description when available, the creator name, and the
+  first available image or thumbnail for posts, videos, shorts, albums, and creators.
+- The page provides both an app CTA (`meetsweet://s/{token}`) and an Android download CTA.
+  Installed Android builds should open from the HTTPS link through Android App Links;
+  browsers without the app remain on the preview page.
+- The homepage and share preview use the black-and-white MeetSweet logo at
+  `/meetsweet-logo.png`, and public links no longer show the browser's default blue tap
+  highlight. Keyboard users still receive a visible focus ring.
+- Push-token registration, in-app notification listing/read routes, Expo delivery, stale
+  token cleanup, and like/comment/subscription/message/new-post event wiring are present
+  on the server.
+- The server passes TypeScript checking and the Next.js production build.
+
+### Mobile repository availability
+
+The imported archive available alongside this server contains only a server project; it
+does not contain the Expo/mobile files named above. Before the Android release, apply and
+verify the mobile changes in the actual mobile repository:
+
+1. Confirm the API fallback is `https://meetsweet.space/api`.
+2. Confirm the share route resolves `post`, `video`, `short`, `album`, and `creator` to
+   the correct native screens.
+3. Register the Expo token after login and whenever the token refreshes.
+4. Route `new_post` notification taps using `content_type`.
+5. Replace the Android SHA-256 and iOS Team ID placeholders in the association files
+   before production release.

@@ -46,8 +46,14 @@ export default function RootLayout({
             font-family: 'Poppins', ui-sans-serif, system-ui, sans-serif;
             -webkit-font-smoothing: antialiased;
           }
+          * { -webkit-tap-highlight-color: transparent; }
           a { color: inherit; text-decoration: none; }
           button { font-family: inherit; cursor: pointer; }
+          a:focus, button:focus { outline: none; }
+          a:focus-visible, button:focus-visible {
+            outline: 2px solid rgba(255,255,255,0.9);
+            outline-offset: 3px;
+          }
           @keyframes spin { to { transform: rotate(360deg); } }
           @keyframes fadeUp {
             from { opacity: 0; transform: translateY(20px); }
