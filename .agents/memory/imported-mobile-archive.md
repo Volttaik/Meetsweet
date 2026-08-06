@@ -8,3 +8,7 @@ The attached MeetSweet archive available in this workspace contains another serv
 **Why:** Mobile-specific files such as API helpers, notification context, and the share deep-link screen cannot be safely edited or verified from that archive.
 
 **How to apply:** When mobile integration is requested from this workspace, validate the server contract here, then ask for or work in the actual mobile repository before claiming client-side completion.
+
+The finalized mobile handoff is `UPDATE.md`; when the mobile repository is unavailable,
+use that document as the implementation contract and do not make additional backend
+changes unless the mobile developer reports a concrete server-contract gap.
