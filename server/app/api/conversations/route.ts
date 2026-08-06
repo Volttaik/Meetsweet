@@ -152,7 +152,13 @@ export async function POST(req: NextRequest) {
     : eq(users.id, (userId ?? user_id)!);
 
   const [targetUser] = await db
-    .select({ id: users.id, username: users.username, is_creator: users.is_creator })
+    .select({
+      id: users.id,
+      username: users.username,
+      full_name: users.full_name,
+      is_creator: users.is_creator,
+      is_verified: users.is_verified,
+    })
     .from(users)
     .where(and(lookupCondition, eq(users.is_active, true)))
     .limit(1);
@@ -183,6 +189,8 @@ export async function POST(req: NextRequest) {
         code: "dms_disabled",
         creator_id: targetUser.id,
         username: targetUser.username,
+        // Mobile uses this to navigate to the creator profile and show the restriction
+        redirect_to: `creator/${targetUser.username ?? targetUser.id}`,
       });
     }
 
@@ -200,14 +208,39 @@ export async function POST(req: NextRequest) {
         .limit(1);
 
       if (!sub) {
+        const publicAppUrl = process.env.PUBLIC_APP_URL ?? "https://meetsweet.space";
         return err("You must subscribe to message this creator", 403, {
           code: "subscription_required",
           creator_id: targetUser.id,
           username: targetUser.username,
+          // Mobile uses this to navigate directly to the creator's subscribe page
+          redirect_to: `creator/${targetUser.username ?? targetUser.id}`,
+          redirect_url: `${publicAppUrl}/creators/${targetUser.username ?? targetUser.id}`,
         });
       }
     }
   }
+
+  // ── Helper: fetch target user's profile for response ────────────────────
+  const [targetProfile] = await db
+    .select({ display_name: profiles.display_name, avatar_url: profiles.avatar_url })
+    .from(profiles)
+    .where(eq(profiles.user_id, targetUser.id))
+    .limit(1);
+
+  const otherUser = {
+    id: targetUser.id,
+    name: targetProfile?.display_name ?? targetUser.full_name,
+    display_name: targetProfile?.display_name ?? targetUser.full_name,
+    displayName: targetProfile?.display_name ?? targetUser.full_name,
+    username: targetUser.username,
+    avatar_url: targetProfile?.avatar_url ?? null,
+    avatarUrl: targetProfile?.avatar_url ?? null,
+    is_verified: targetUser.is_verified,
+    isVerified: targetUser.is_verified,
+    is_creator: targetUser.is_creator,
+    isCreator: targetUser.is_creator,
+  };
 
   // ── Return existing conversation if one already exists ───────────────────
   const myConvs = await db
@@ -229,7 +262,14 @@ export async function POST(req: NextRequest) {
       )
       .limit(1);
     if (match) {
-      return ok({ conversationId: convId, conversation_id: convId, created: false });
+      // Return full conversation shape so mobile can open it without a second request
+      return ok({
+        conversationId: convId,
+        conversation_id: convId,
+        created: false,
+        otherUser,
+        other_user: otherUser,
+      });
     }
   }
 
@@ -241,5 +281,11 @@ export async function POST(req: NextRequest) {
     { id: generateId(), conversation_id: convId, user_id: targetUser.id },
   ]);
 
-  return created({ conversationId: convId, conversation_id: convId, created: true });
+  return created({
+    conversationId: convId,
+    conversation_id: convId,
+    created: true,
+    otherUser,
+    other_user: otherUser,
+  });
 }

@@ -31,27 +31,66 @@ export function ShareRedirectClient({
     imageUrl: string | null;
   } | null;
 }) {
-  // null = firing deep link, true = show fallback card
+  // Start in fallback mode when we know the app is absent; otherwise attempt launch.
   const [showFallback, setShowFallback] = useState(false);
 
   useEffect(() => {
-    // Fire the deep link immediately — the OS will hand off to the app if installed.
-    // On desktop or when the app is not installed the page stays visible; after the
-    // timeout we reveal the download card.
+    const ua = navigator.userAgent;
+    const isAndroid = /android/i.test(ua);
+    const isIOS = /iPad|iPhone|iPod/.test(ua);
+
+    // ── Android: intent:// with loop-safe fallback ────────────────────────
+    // Chrome processes `browser_fallback_url` when the package is absent. We
+    // append ?noapp=1 to the fallback URL so that when this page remounts after
+    // a failed intent the param is present and we immediately show the download
+    // card — preventing the intent from being re-launched in an infinite loop.
+    if (isAndroid) {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("noapp") === "1") {
+        // Arrived here from the Android fallback redirect — app not installed.
+        setShowFallback(true);
+        return;
+      }
+
+      const intentPath = deepLink.replace(/^[a-z][a-z0-9+\-.]*:\/\//i, "");
+      // Fallback lands on the same page but with noapp=1 to suppress re-launch.
+      const fallbackUrl = `${window.location.origin}${window.location.pathname}?noapp=1`;
+      const launchUrl = `intent://${intentPath}#Intent;scheme=meetsweet;package=com.meetsweet.app;S.browser_fallback_url=${encodeURIComponent(fallbackUrl)};end`;
+      window.location.href = launchUrl;
+
+      const timer = setTimeout(() => setShowFallback(true), 1800);
+      const onHide = () => { if (document.hidden) clearTimeout(timer); };
+      document.addEventListener("visibilitychange", onHide);
+      return () => {
+        clearTimeout(timer);
+        document.removeEventListener("visibilitychange", onHide);
+      };
+    }
+
+    // ── iOS: Universal Links handle the direct-open case before this page ──
+    // When the AASA is configured correctly and the app is installed, iOS
+    // intercepts the HTTPS share URL at the OS level and the user never reaches
+    // this page. Reaching here means the app is absent OR the link was opened
+    // inside a WebView/context where UL is suppressed.
+    // Auto-navigating to meetsweet:// in that situation shows an ugly "Cannot
+    // Open Page" alert on iOS when the app isn't installed. So we skip the
+    // auto-fire on iOS and show the download card immediately — the "Open in
+    // MeetSweet" button (custom-scheme href) is still available for tapping.
+    if (isIOS) {
+      setShowFallback(true);
+      return;
+    }
+
+    // ── Desktop / unknown browser ─────────────────────────────────────────
+    // Fire the custom scheme; if the OS handles it the page gets hidden.
+    // After 1800 ms we reveal the download card for users without the app.
     window.location.href = deepLink;
-
-    const timer = setTimeout(() => setShowFallback(true), 1600);
-
-    // If the user hides the tab (app opened successfully) we can cancel the timer,
-    // but it's harmless if we don't. Cancelling avoids a minor state-update warning.
-    const onVisibilityChange = () => {
-      if (document.hidden) clearTimeout(timer);
-    };
-    document.addEventListener("visibilitychange", onVisibilityChange);
-
+    const timer = setTimeout(() => setShowFallback(true), 1800);
+    const onHide = () => { if (document.hidden) clearTimeout(timer); };
+    document.addEventListener("visibilitychange", onHide);
     return () => {
       clearTimeout(timer);
-      document.removeEventListener("visibilitychange", onVisibilityChange);
+      document.removeEventListener("visibilitychange", onHide);
     };
   }, [deepLink]);
 
