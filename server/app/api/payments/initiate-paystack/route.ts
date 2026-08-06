@@ -36,8 +36,13 @@ export async function POST(req: NextRequest) {
   }
 
   const amount = body?.amount;
-  if (!amount || amount <= 0) {
+  if (typeof amount !== "number" || !Number.isFinite(amount) || amount <= 0) {
     return err("amount is required and must be positive", 400);
+  }
+
+  const secretKey = config.paystack.secretKey();
+  if (!secretKey) {
+    return err("Paystack is not configured", 503, "PAYSTACK_NOT_CONFIGURED");
   }
 
   const reference = `ws_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
@@ -55,24 +60,6 @@ export async function POST(req: NextRequest) {
     reference,
     description: "Wallet top-up - pending",
   });
-
-  const secretKey = config.paystack.secretKey();
-  
-  if (!secretKey) {
-    // Development mode - return mock payment details
-    return ok({
-      transactionId: txId,
-      transaction_id: txId,
-      accountNumber: "8099999999",
-      account_number: "8099999999",
-      bankName: "Wema Bank",
-      bank_name: "Wema Bank",
-      amount,
-      reference,
-      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-      expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-    });
-  }
 
   // Create Paystack virtual account for bank transfer
   const user = auth.user;
@@ -117,6 +104,10 @@ export async function POST(req: NextRequest) {
 
     if (!response.ok || !json.status || !json.data) {
       console.error("[initiate-paystack] Paystack error:", json.message);
+      await db
+        .update(transactions)
+        .set({ status: "failed", updated_at: new Date().toISOString() })
+        .where(eq(transactions.id, txId));
       return err(json.message ?? "Failed to initialize payment", 502);
     }
 
@@ -126,10 +117,17 @@ export async function POST(req: NextRequest) {
       reference: json.data.reference,
       authorization_url: json.data.authorization_url,
       access_code: json.data.access_code,
+      // Hosted checkout is the live Paystack flow. The mobile client should
+      // open this URL; initialize does not create a virtual bank account.
+      authorizationUrl: json.data.authorization_url,
       amount,
     });
   } catch (error) {
     console.error("Paystack initiate error:", error);
+    await db
+      .update(transactions)
+      .set({ status: "failed", updated_at: new Date().toISOString() })
+      .where(eq(transactions.id, txId));
     return err("Payment initiation failed", 502);
   }
 }

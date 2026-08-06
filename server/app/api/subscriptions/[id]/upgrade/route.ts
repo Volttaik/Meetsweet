@@ -62,7 +62,10 @@ export async function POST(
 
   // Resolve creator price for the diff calculation
   const [settings] = await db
-    .select({ subscription_price: creator_settings.subscription_price })
+    .select({
+      subscription_price: creator_settings.subscription_price,
+      subscription_plus_price: creator_settings.subscription_plus_price,
+    })
     .from(creator_settings)
     .where(eq(creator_settings.user_id, sub.creator_id))
     .limit(1);
@@ -70,7 +73,13 @@ export async function POST(
 
   const currentMultiplier = TIER_MULTIPLIER[currentTier] ?? 1;
   const newMultiplier = TIER_MULTIPLIER[newTier] ?? 1;
-  const priceDiff = Math.round(creatorPrice * (newMultiplier - currentMultiplier));
+  const newPrice = newTier === "subscriber_plus"
+    ? Math.round(settings?.subscription_plus_price ?? creatorPrice * newMultiplier)
+    : Math.round(creatorPrice);
+  const currentPrice = currentTier === "subscriber_plus"
+    ? Math.round(settings?.subscription_plus_price ?? creatorPrice * currentMultiplier)
+    : Math.round(creatorPrice);
+  const priceDiff = Math.max(0, newPrice - currentPrice);
   const now = new Date().toISOString();
 
   if (priceDiff > 0) {
@@ -102,7 +111,7 @@ export async function POST(
 
   const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
-  const newAmount = Math.round(creatorPrice * (TIER_MULTIPLIER[newTier] ?? 1));
+  const newAmount = newPrice;
   await db
     .update(subscriptions)
     .set({ tier: newTier, amount: newAmount, updated_at: now, expires_at: expiresAt })

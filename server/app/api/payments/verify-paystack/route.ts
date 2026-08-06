@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { eq } from "drizzle-orm";
+import { eq, or } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { transactions, wallets } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
@@ -44,7 +44,11 @@ export async function POST(req: NextRequest) {
 
   // Look up by Paystack reference first (mobile path), fall back to internal ID (legacy)
   const [tx] = paystackRef
-    ? await db.select().from(transactions).where(eq(transactions.reference, paystackRef)).limit(1)
+    ? await db
+        .select()
+        .from(transactions)
+        .where(or(eq(transactions.reference, paystackRef), eq(transactions.id, paystackRef)))
+        .limit(1)
     : await db.select().from(transactions).where(eq(transactions.id, transactionId!)).limit(1);
 
   if (!tx) {
@@ -72,112 +76,86 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  // Check with Paystack if there's a reference
-  if (tx.reference && tx.reference.startsWith("ws_")) {
-    const secretKey = config.paystack.secretKey();
-    
-    if (secretKey) {
-      try {
-        const response = await fetch(
-          `https://api.paystack.co/transaction/verify/${encodeURIComponent(tx.reference)}`,
-          { headers: { Authorization: `Bearer ${secretKey}` } }
-        );
+  const secretKey = config.paystack.secretKey();
+  if (!secretKey) {
+    return err("Paystack is not configured", 503, "PAYSTACK_NOT_CONFIGURED");
+  }
 
-        const json = await response.json() as {
-          status: boolean;
-          message?: string;
-          data?: {
-            status: string;
-            amount: number;
-          };
-        };
+  if (!tx.reference) return err("Transaction has no Paystack reference", 400);
 
-        if (response.ok && json.status && json.data?.status === "success") {
-          const amount = json.data.amount / 100; // Convert from kobo
+  let json: {
+    status: boolean;
+    message?: string;
+    data?: { status: string; amount: number; currency?: string; reference?: string };
+  };
+  try {
+    const response = await fetch(
+      `https://api.paystack.co/transaction/verify/${encodeURIComponent(tx.reference)}`,
+      { headers: { Authorization: `Bearer ${secretKey}` } },
+    );
+    json = await response.json() as typeof json;
 
-          // Update transaction status (use tx.id — already resolved; transactionId may be undefined)
-          await db
-            .update(transactions)
-            .set({ status: "success", updated_at: now })
-            .where(eq(transactions.id, tx.id));
-
-          // Credit wallet
-          const [wallet] = await db
-            .select({ id: wallets.id, balance: wallets.balance })
-            .from(wallets)
-            .where(eq(wallets.user_id, auth.user.userId))
-            .limit(1);
-
-          let newBalance = 0;
-          if (wallet) {
-            newBalance = (wallet.balance ?? 0) + amount;
-            await db
-              .update(wallets)
-              .set({ balance: newBalance, updated_at: now })
-              .where(eq(wallets.id, wallet.id));
-          } else {
-            newBalance = amount;
-            await db.insert(wallets).values({
-              id: generateId(),
-              user_id: auth.user.userId,
-              balance: amount,
-              currency: "NGN",
-            });
-          }
-
-          return ok({
-            success: true,
-            amountAdded: amount,
-            newBalance,
-            message: "Payment verified successfully",
-          });
-        }
-      } catch (error) {
-        console.error("Paystack verify error:", error);
-      }
+    if (!response.ok || !json.status || !json.data) {
+      return err(json.message ?? "Unable to verify payment with Paystack", 502, "PAYSTACK_VERIFY_FAILED");
     }
+  } catch (error) {
+    console.error("Paystack verify error:", error);
+    return err("Unable to verify payment with Paystack", 502, "PAYSTACK_VERIFY_FAILED");
+  }
 
-    // Development mode - simulate successful payment
-    await db
-      .update(transactions)
-      .set({ status: "success", updated_at: now })
-      .where(eq(transactions.id, tx.id));
-
-    const [wallet] = await db
-      .select({ id: wallets.id, balance: wallets.balance })
-      .from(wallets)
-      .where(eq(wallets.user_id, auth.user.userId))
-      .limit(1);
-
-    let newBalance = 0;
-    if (wallet) {
-      newBalance = (wallet.balance ?? 0) + tx.amount;
-      await db
-        .update(wallets)
-        .set({ balance: newBalance, updated_at: now })
-        .where(eq(wallets.id, wallet.id));
-    } else {
-      newBalance = tx.amount;
-      await db.insert(wallets).values({
-        id: generateId(),
-        user_id: auth.user.userId,
-        balance: tx.amount,
-        currency: "NGN",
-      });
-    }
-
+  if (json.data.status !== "success") {
     return ok({
-      success: true,
-      amountAdded: tx.amount,
-      newBalance,
-      message: "Payment verified (development mode)",
+      success: false,
+      amountAdded: 0,
+      newBalance: 0,
+      message: `Payment status: ${json.data.status}`,
+    });
+  }
+
+  const amount = json.data.amount / 100;
+  if (json.data.currency && json.data.currency !== tx.currency) {
+    return err("Payment currency does not match the transaction", 400, "PAYMENT_MISMATCH");
+  }
+  if (amount !== tx.amount) {
+    return err("Payment amount does not match the transaction", 400, "PAYMENT_MISMATCH");
+  }
+
+  // Mark the transaction before crediting it. The already-successful branch
+  // above makes repeated verification idempotent for normal client retries.
+  await db
+    .update(transactions)
+    .set({
+      status: "success",
+      paystack_ref: json.data.reference ?? tx.reference,
+      updated_at: now,
+    })
+    .where(eq(transactions.id, tx.id));
+
+  const [wallet] = await db
+    .select({ id: wallets.id, balance: wallets.balance })
+    .from(wallets)
+    .where(eq(wallets.user_id, auth.user.userId))
+    .limit(1);
+
+  const newBalance = (wallet?.balance ?? 0) + amount;
+  if (wallet) {
+    await db
+      .update(wallets)
+      .set({ balance: newBalance, updated_at: now })
+      .where(eq(wallets.id, wallet.id));
+  } else {
+    await db.insert(wallets).values({
+      id: generateId(),
+      user_id: auth.user.userId,
+      balance: amount,
+      currency: tx.currency,
     });
   }
 
   return ok({
-    success: false,
-    amountAdded: 0,
-    newBalance: 0,
-    message: "Transaction pending",
+    success: true,
+    amountAdded: amount,
+    newBalance,
+    message: "Payment verified successfully",
   });
 }

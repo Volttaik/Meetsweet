@@ -556,6 +556,9 @@ export const creator_settings = sqliteTable("creator_settings", {
   id: id(),
   user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   subscription_price: real("subscription_price").notNull().default(0),
+  // Optional independent price for the subscriber_plus tier. When null, the
+  // subscription service falls back to 2× subscription_price for legacy creators.
+  subscription_plus_price: real("subscription_plus_price"),
   allow_dms: integer("allow_dms", { mode: "boolean" }).notNull().default(true),
   allow_comments: integer("allow_comments", { mode: "boolean" }).notNull().default(true),
   // who_can_message: 'everyone' | 'subscribers' | 'none'

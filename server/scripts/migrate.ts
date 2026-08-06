@@ -141,6 +141,10 @@ async function run() {
       name: "creator_settings: add verification_status",
       sql: `ALTER TABLE creator_settings ADD COLUMN verification_status TEXT NOT NULL DEFAULT 'none'`,
     },
+    {
+      name: "creator_settings: add subscription_plus_price",
+      sql: `ALTER TABLE creator_settings ADD COLUMN subscription_plus_price REAL`,
+    },
 
     // ── posts table: content_type discriminator (post / video / short) ────────
     {

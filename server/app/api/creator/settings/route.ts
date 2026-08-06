@@ -9,7 +9,8 @@ import { ok } from "@/lib/api/response";
 import { generateId } from "@/lib/auth/codes";
 
 const patchSchema = z.object({
-  subscription_price: z.number().min(0).optional(),
+  subscription_price: z.number().finite().min(0).optional(),
+  subscription_plus_price: z.number().finite().min(0).nullable().optional(),
   allow_dms: z.boolean().optional(),
   allow_comments: z.boolean().optional(),
   // Accept both field names from mobile
@@ -25,6 +26,8 @@ function buildSettingsResponse(
   const who = settings.who_can_message ?? "everyone";
   return {
     subscription_price: settings.subscription_price,
+    subscription_plus_price: settings.subscription_plus_price,
+    subscriptionPlusPrice: settings.subscription_plus_price,
     allow_dms: settings.allow_dms,
     allow_comments: settings.allow_comments,
     who_can_message: who,

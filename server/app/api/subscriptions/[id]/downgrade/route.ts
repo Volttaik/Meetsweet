@@ -62,12 +62,17 @@ export async function POST(
 
   // Resolve creator price for the new amount
   const [settings] = await db
-    .select({ subscription_price: creator_settings.subscription_price })
+    .select({
+      subscription_price: creator_settings.subscription_price,
+      subscription_plus_price: creator_settings.subscription_plus_price,
+    })
     .from(creator_settings)
     .where(eq(creator_settings.user_id, sub.creator_id))
     .limit(1);
   const creatorPrice = settings?.subscription_price ?? 0;
-  const newAmount = Math.round(creatorPrice * (TIER_MULTIPLIER[newTier] ?? 1));
+  const newAmount = newTier === "subscriber_plus"
+    ? Math.round(settings?.subscription_plus_price ?? creatorPrice * (TIER_MULTIPLIER[newTier] ?? 1))
+    : Math.round(creatorPrice);
 
   const now = new Date().toISOString();
 

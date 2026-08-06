@@ -102,8 +102,26 @@ export async function POST(req: NextRequest) {
 
   // Idempotent: return existing active subscription instead of erroring
   if (existing && existing.status === "active") {
-    const sub = { id: existing.id, creator_id, status: "active" as const, amount: 0, started_at: "", expires_at: "" };
-    return ok({ subscription_id: existing.id, subscribed: true, tier: existing.tier, subscription: sub });
+    const [current] = await db
+      .select({
+        id: subscriptions.id,
+        tier: subscriptions.tier,
+        amount: subscriptions.amount,
+        started_at: subscriptions.started_at,
+        expires_at: subscriptions.expires_at,
+      })
+      .from(subscriptions)
+      .where(eq(subscriptions.id, existing.id))
+      .limit(1);
+    const sub = {
+      id: existing.id,
+      creator_id,
+      status: "active" as const,
+      amount: current?.amount ?? 0,
+      started_at: current?.started_at ?? "",
+      expires_at: current?.expires_at ?? "",
+    };
+    return ok({ subscription_id: existing.id, subscribed: true, tier: current?.tier ?? existing.tier, subscription: sub });
   }
 
   // Resolve price from creator's subscription_price setting.
@@ -118,7 +136,14 @@ export async function POST(req: NextRequest) {
   const creatorPrice = settings?.subscription_price ?? 0;
   const resolvedTier: "subscriber" | "subscriber_plus" = tier ?? "subscriber";
   const multiplier = TIER_MULTIPLIER[resolvedTier] ?? 1;
-  const price = Math.round(creatorPrice * multiplier);
+  const [tierSettings] = await db
+    .select({ subscription_plus_price: creator_settings.subscription_plus_price })
+    .from(creator_settings)
+    .where(eq(creator_settings.user_id, creator_id))
+    .limit(1);
+  const price = resolvedTier === "subscriber_plus"
+    ? Math.round(tierSettings?.subscription_plus_price ?? creatorPrice * multiplier)
+    : Math.round(creatorPrice);
 
   // Charge wallet if subscription has a cost
   if (price > 0) {

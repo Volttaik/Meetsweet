@@ -109,6 +109,8 @@ export async function GET(
     albumCount,
     subscription_price: settings?.subscription_price ?? user.subscription_price ?? 0,
     subscriptionPrice: settings?.subscription_price ?? user.subscription_price ?? 0,
+    subscription_plus_price: settings?.subscription_plus_price ?? null,
+    subscriptionPlusPrice: settings?.subscription_plus_price ?? null,
     allow_dms: settings?.allow_dms ?? true,
     allow_comments: settings?.allow_comments ?? true,
     who_can_message: (settings?.who_can_message as 'everyone' | 'subscribers' | 'none') ?? 'everyone',
