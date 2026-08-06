@@ -10,6 +10,7 @@ export type ApiError = {
   ok: false;
   error: string;
   code?: string;
+  [key: string]: unknown;
 };
 
 export function ok<T>(data: T, message?: string, status = 200): NextResponse {
@@ -20,8 +21,18 @@ export function created<T>(data: T, message?: string): NextResponse {
   return ok(data, message, 201);
 }
 
-export function err(error: string, status = 400, code?: string): NextResponse {
-  return NextResponse.json({ ok: false, error, code } satisfies ApiError, { status });
+export function err(
+  error: string,
+  status = 400,
+  extra?: string | Record<string, unknown>,
+): NextResponse {
+  const base: ApiError = { ok: false, error };
+  if (typeof extra === "string") {
+    base.code = extra;
+  } else if (extra) {
+    Object.assign(base, extra);
+  }
+  return NextResponse.json(base, { status });
 }
 
 export function unauthorized(msg = "Unauthorized"): NextResponse {

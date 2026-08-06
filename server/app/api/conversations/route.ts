@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { eq, and, desc, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { users, profiles, conversations, conversation_members, messages } from "@/lib/db/schema";
+import { users, profiles, conversations, conversation_members, messages, creator_settings, subscriptions } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err, created } from "@/lib/api/response";
@@ -131,23 +131,85 @@ export async function POST(req: NextRequest) {
   const auth = await requireAuth(req);
   if ("response" in auth) return auth.response;
 
-  // Accept both camelCase (userId) and snake_case (user_id)
+  // Accept user_id / userId (UUID) OR username — the creator page sends username
   const schema = z.object({
     userId: z.string().min(1).optional(),
     user_id: z.string().min(1).optional(),
+    username: z.string().min(1).optional(),
   });
 
   const parsed = await parseBody(req, schema);
   if (!parsed.success) return parsed.response;
 
-  const targetId = parsed.data.userId ?? parsed.data.user_id;
-  if (!targetId) return err("userId or user_id is required", 400);
+  const { userId, user_id, username } = parsed.data;
+  if (!userId && !user_id && !username) {
+    return err("userId, user_id, or username is required", 400);
+  }
 
-  const [targetUser] = await db.select({ id: users.id }).from(users).where(eq(users.id, targetId)).limit(1);
+  // Resolve target user — by UUID or username
+  const lookupCondition = username
+    ? eq(users.username, username)
+    : eq(users.id, (userId ?? user_id)!);
+
+  const [targetUser] = await db
+    .select({ id: users.id, username: users.username, is_creator: users.is_creator })
+    .from(users)
+    .where(and(lookupCondition, eq(users.is_active, true)))
+    .limit(1);
+
   if (!targetUser) return err("User not found", 404);
-  if (targetId === auth.user.userId) return err("Cannot start a conversation with yourself", 400);
+  if (targetUser.id === auth.user.userId) {
+    return err("Cannot start a conversation with yourself", 400);
+  }
 
-  // Check if direct conversation already exists between the two users
+  // ── Messaging permission check ───────────────────────────────────────────
+  // Applies when the target is a creator. Regular users (is_creator=false) can
+  // always receive DMs — only creators gate their inbox.
+  if (targetUser.is_creator) {
+    const [settings] = await db
+      .select({
+        allow_dms: creator_settings.allow_dms,
+        who_can_message: creator_settings.who_can_message,
+      })
+      .from(creator_settings)
+      .where(eq(creator_settings.user_id, targetUser.id))
+      .limit(1);
+
+    const allowDms = settings?.allow_dms ?? true;
+    const whoCanMessage = settings?.who_can_message ?? "everyone";
+
+    if (!allowDms || whoCanMessage === "none") {
+      return err("This creator has disabled direct messages", 403, {
+        code: "dms_disabled",
+        creator_id: targetUser.id,
+        username: targetUser.username,
+      });
+    }
+
+    if (whoCanMessage === "subscribers") {
+      const [sub] = await db
+        .select({ id: subscriptions.id })
+        .from(subscriptions)
+        .where(
+          and(
+            eq(subscriptions.subscriber_id, auth.user.userId),
+            eq(subscriptions.creator_id, targetUser.id),
+            eq(subscriptions.status, "active"),
+          ),
+        )
+        .limit(1);
+
+      if (!sub) {
+        return err("You must subscribe to message this creator", 403, {
+          code: "subscription_required",
+          creator_id: targetUser.id,
+          username: targetUser.username,
+        });
+      }
+    }
+  }
+
+  // ── Return existing conversation if one already exists ───────────────────
   const myConvs = await db
     .select({ conversation_id: conversation_members.conversation_id })
     .from(conversation_members)
@@ -159,18 +221,24 @@ export async function POST(req: NextRequest) {
     const [match] = await db
       .select({ id: conversation_members.id })
       .from(conversation_members)
-      .where(and(eq(conversation_members.conversation_id, convId), eq(conversation_members.user_id, targetId)))
+      .where(
+        and(
+          eq(conversation_members.conversation_id, convId),
+          eq(conversation_members.user_id, targetUser.id),
+        ),
+      )
       .limit(1);
     if (match) {
       return ok({ conversationId: convId, conversation_id: convId, created: false });
     }
   }
 
+  // ── Create new conversation ──────────────────────────────────────────────
   const convId = generateId();
   await db.insert(conversations).values({ id: convId, type: "direct", created_by: auth.user.userId });
   await db.insert(conversation_members).values([
     { id: generateId(), conversation_id: convId, user_id: auth.user.userId },
-    { id: generateId(), conversation_id: convId, user_id: targetId },
+    { id: generateId(), conversation_id: convId, user_id: targetUser.id },
   ]);
 
   return created({ conversationId: convId, conversation_id: convId, created: true });
