@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { and, asc, eq, gt, isNull, or } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { albums, media, posts, profiles, shares, users } from "@/lib/db/schema";
+import { ShareRedirectClient } from "./redirect-client";
 
 type ContentType = "post" | "video" | "short" | "album" | "creator";
 
@@ -191,297 +192,178 @@ export default async function SharePage({
   const meta = CONTENT_META[share.content_type] ?? CONTENT_META.post;
   const preview = await loadPreview(share);
 
-  // Deep link URI — opens the app if installed
-  let deepLink = `meetsweet://s/${token}`;
+  // Deep link URI — the OS hands this off to the app if installed.
+  // The client component fires it automatically on mount; this page is only
+  // visible if the app is not installed (or on desktop).
+  const deepLink = `meetsweet://s/${token}`;
 
   return (
-    <main style={s.page}>
+    <main style={pageStyle}>
       {/* Ambient background */}
-      <div style={s.gradient} aria-hidden="true" />
+      <div style={gradientStyle} aria-hidden="true" />
 
       {/* Nav */}
-      <nav style={s.nav}>
-        <a href="/" style={s.brand}>
-          <span style={s.logoMark}><img src="/meetsweet-logo.png" alt="" style={s.logoImage} /></span>
+      <nav style={navStyle}>
+        <a href="/" style={brandStyle}>
+          <span style={logoMarkStyle}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/meetsweet-logo.png" alt="" style={logoImageStyle} />
+          </span>
           <span>MeetSweet</span>
         </a>
       </nav>
 
-      <section style={s.center}>
-        {/* Content card */}
-        <div style={s.card}>
-          <div style={s.iconWrap}>
-            <span style={s.icon}>{meta.icon}</span>
-          </div>
+      {/* Spinner keyframe — injected once, server-side safe */}
+      <style>{`@keyframes ms-spin { to { transform: rotate(360deg); } }`}</style>
 
-          <span style={s.contentTypeBadge}>{meta.label}</span>
-          {preview?.imageUrl ? (
-            <img src={preview.imageUrl} alt="" style={s.previewImage} />
-          ) : null}
-          <h1 style={s.cardTitle}>
-            {preview?.title ?? `Someone shared ${meta.description} with you`}
-          </h1>
-          {preview?.authorName ? <p style={s.author}>By {preview.authorName}</p> : null}
-          <p style={s.cardSub}>
-            {preview?.description ??
-              `Open MeetSweet to see this ${meta.label.toLowerCase()} and interact with the creator.`}
-          </p>
-
-          {/* Primary CTA — deep link, opens app if installed */}
-          <a href={deepLink} style={s.btnPrimary}>
-            Open in MeetSweet
-          </a>
-
-          {/* Divider */}
-          <div style={s.divider}>
-            <div style={s.dividerLine} />
-            <span style={s.dividerText}>Don't have the app?</span>
-            <div style={s.dividerLine} />
-          </div>
-
-          {/* Download CTA */}
-          <a href="/#download" style={s.btnGhost}>
-            Download MeetSweet
-          </a>
-        </div>
-
-        {/* What you'll get */}
-        <div style={s.perks}>
-          {PERKS.map((p) => (
-            <div key={p.text} style={s.perk}>
-              <span style={s.perkIcon}>{p.icon}</span>
-              <span style={s.perkText}>{p.text}</span>
-            </div>
-          ))}
-        </div>
-      </section>
+      {/* Client component handles auto-redirect and fallback UI */}
+      <ShareRedirectClient deepLink={deepLink} meta={meta} preview={preview} />
     </main>
   );
 }
 
 function NotFound() {
   return (
-    <main style={s.page}>
-      <div style={s.gradient} aria-hidden="true" />
-      <nav style={s.nav}>
-        <a href="/" style={s.brand}>
-          <span style={s.logoMark}><img src="/meetsweet-logo.png" alt="" style={s.logoImage} /></span>
+    <main style={pageStyle}>
+      <div style={gradientStyle} aria-hidden="true" />
+      <nav style={navStyle}>
+        <a href="/" style={brandStyle}>
+          <span style={logoMarkStyle}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/meetsweet-logo.png" alt="" style={logoImageStyle} />
+          </span>
           <span>MeetSweet</span>
         </a>
       </nav>
-      <section style={s.center}>
-        <div style={s.card}>
-          <div style={s.iconWrap}>
-            <span style={s.icon}>🔗</span>
-          </div>
-          <h1 style={s.cardTitle}>Link not found</h1>
-          <p style={s.cardSub}>
+      <section style={centerStyle}>
+        <div style={cardStyle}>
+          <div style={iconWrapStyle}><span style={{ fontSize: 32 }}>🔗</span></div>
+          <h1 style={cardTitleStyle}>Link not found</h1>
+          <p style={cardSubStyle}>
             This MeetSweet link has expired or no longer exists. Ask the creator to share it again.
           </p>
-          <a href="/" style={s.btnPrimary}>Go to MeetSweet</a>
+          <a href="/" style={btnPrimaryStyle}>Go to MeetSweet</a>
         </div>
       </section>
     </main>
   );
 }
 
-const PERKS = [
-  { icon: "🎬", text: "Exclusive creator content" },
-  { icon: "💳", text: "Subscribe to your favourites" },
-  { icon: "💬", text: "Direct messages with creators" },
-];
-
 const ACCENT = "#C45A72";
 const BG = "#0C0C0F";
 const SURFACE = "#161619";
-const SURFACE_2 = "#1E1E24";
 const TEXT_2 = "rgba(255,255,255,0.55)";
-const TEXT_3 = "rgba(255,255,255,0.32)";
 
-const s: Record<string, React.CSSProperties> = {
-  page: {
-    minHeight: "100vh",
-    background: BG,
-    color: "#fff",
-    fontFamily: "'Poppins', ui-sans-serif, system-ui, sans-serif",
-    position: "relative",
-    overflow: "hidden",
-  },
-  gradient: {
-    position: "fixed",
-    inset: 0,
-    background:
-      "radial-gradient(ellipse 80% 50% at 50% -10%, rgba(196,90,114,0.2) 0%, transparent 60%)",
-    pointerEvents: "none",
-    zIndex: 0,
-  },
-  nav: {
-    position: "relative",
-    zIndex: 10,
-    padding: "20px 24px",
-    borderBottom: "1px solid rgba(255,255,255,0.05)",
-    backdropFilter: "blur(12px)",
-    backgroundColor: "rgba(12,12,15,0.6)",
-  },
-  brand: {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 10,
-    fontSize: 20,
-    fontWeight: 700,
-    color: "#fff",
-    textDecoration: "none",
-    letterSpacing: "-0.5px",
-  },
-  logoMark: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    background: "#fff",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden",
-    flexShrink: 0,
-  },
-  logoImage: {
-    width: "100%",
-    height: "100%",
-    objectFit: "contain" as const,
-  },
-  center: {
-    position: "relative",
-    zIndex: 1,
-    minHeight: "calc(100vh - 65px)",
-    display: "flex",
-    flexDirection: "column" as const,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: "48px 24px",
-    gap: 24,
-  },
-  card: {
-    background: SURFACE,
-    border: "1px solid rgba(255,255,255,0.07)",
-    borderRadius: 28,
-    padding: "40px 32px",
-    maxWidth: 420,
-    width: "100%",
-    display: "flex",
-    flexDirection: "column" as const,
-    alignItems: "center",
-    textAlign: "center" as const,
-    gap: 16,
-    boxShadow: "0 24px 64px rgba(0,0,0,0.4), 0 0 0 1px rgba(196,90,114,0.08)",
-  },
-  iconWrap: {
-    width: 72,
-    height: 72,
-    borderRadius: 22,
-    background: `linear-gradient(135deg, rgba(196,90,114,0.25) 0%, rgba(196,90,114,0.08) 100%)`,
-    border: "1px solid rgba(196,90,114,0.2)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 4,
-  },
-  icon: { fontSize: 32 },
-  previewImage: {
-    display: "block",
-    width: "100%",
-    maxHeight: 260,
-    objectFit: "cover" as const,
-    borderRadius: 18,
-    border: "1px solid rgba(255,255,255,0.08)",
-  },
-  author: {
-    margin: "-4px 0 0",
-    color: ACCENT,
-    fontSize: 13,
-    fontWeight: 600,
-  },
-  contentTypeBadge: {
-    background: "rgba(196,90,114,0.15)",
-    color: ACCENT,
-    borderRadius: 50,
-    padding: "4px 14px",
-    fontSize: 12,
-    fontWeight: 600,
-    letterSpacing: "0.06em",
-    textTransform: "uppercase" as const,
-  },
-  cardTitle: {
-    margin: 0,
-    fontSize: 22,
-    fontWeight: 700,
-    lineHeight: 1.3,
-    letterSpacing: "-0.3px",
-  },
-  cardSub: {
-    margin: 0,
-    fontSize: 15,
-    lineHeight: 1.65,
-    color: TEXT_2,
-  },
-  btnPrimary: {
-    display: "block",
-    width: "100%",
-    background: ACCENT,
-    color: "#fff",
-    border: "none",
-    borderRadius: 50,
-    padding: "16px 0",
-    fontSize: 15,
-    fontWeight: 600,
-    textDecoration: "none",
-    textAlign: "center" as const,
-    marginTop: 4,
-  },
-  divider: {
-    display: "flex",
-    alignItems: "center",
-    gap: 12,
-    width: "100%",
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    background: "rgba(255,255,255,0.07)",
-  },
-  dividerText: {
-    fontSize: 12,
-    color: TEXT_3,
-    whiteSpace: "nowrap" as const,
-  },
-  btnGhost: {
-    display: "block",
-    width: "100%",
-    background: "rgba(255,255,255,0.06)",
-    color: "#fff",
-    border: "1px solid rgba(255,255,255,0.10)",
-    borderRadius: 50,
-    padding: "16px 0",
-    fontSize: 15,
-    fontWeight: 600,
-    textDecoration: "none",
-    textAlign: "center" as const,
-  },
-  perks: {
-    display: "flex",
-    gap: 12,
-    flexWrap: "wrap" as const,
-    justifyContent: "center",
-    maxWidth: 420,
-  },
-  perk: {
-    background: SURFACE_2,
-    border: "1px solid rgba(255,255,255,0.05)",
-    borderRadius: 50,
-    padding: "8px 16px",
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-  },
-  perkIcon: { fontSize: 15 },
-  perkText: { fontSize: 13, color: TEXT_2, fontWeight: 500 },
+const pageStyle: React.CSSProperties = {
+  minHeight: "100vh",
+  background: BG,
+  color: "#fff",
+  fontFamily: "'Poppins', ui-sans-serif, system-ui, sans-serif",
+  position: "relative",
+  overflow: "hidden",
+};
+const gradientStyle: React.CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  background:
+    "radial-gradient(ellipse 80% 50% at 50% -10%, rgba(196,90,114,0.2) 0%, transparent 60%)",
+  pointerEvents: "none",
+  zIndex: 0,
+};
+const navStyle: React.CSSProperties = {
+  position: "relative",
+  zIndex: 10,
+  padding: "20px 24px",
+  borderBottom: "1px solid rgba(255,255,255,0.05)",
+  backdropFilter: "blur(12px)",
+  backgroundColor: "rgba(12,12,15,0.6)",
+};
+const brandStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 10,
+  fontSize: 20,
+  fontWeight: 700,
+  color: "#fff",
+  textDecoration: "none",
+  letterSpacing: "-0.5px",
+};
+const logoMarkStyle: React.CSSProperties = {
+  width: 34,
+  height: 34,
+  borderRadius: 10,
+  background: "#fff",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  overflow: "hidden",
+  flexShrink: 0,
+};
+const logoImageStyle: React.CSSProperties = {
+  width: "100%",
+  height: "100%",
+  objectFit: "contain",
+};
+const centerStyle: React.CSSProperties = {
+  position: "relative",
+  zIndex: 1,
+  minHeight: "calc(100vh - 65px)",
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: "48px 24px",
+  gap: 24,
+};
+const cardStyle: React.CSSProperties = {
+  background: SURFACE,
+  border: "1px solid rgba(255,255,255,0.07)",
+  borderRadius: 28,
+  padding: "40px 32px",
+  maxWidth: 420,
+  width: "100%",
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  textAlign: "center",
+  gap: 16,
+  boxShadow: "0 24px 64px rgba(0,0,0,0.4), 0 0 0 1px rgba(196,90,114,0.08)",
+};
+const iconWrapStyle: React.CSSProperties = {
+  width: 72,
+  height: 72,
+  borderRadius: 22,
+  background: "linear-gradient(135deg, rgba(196,90,114,0.25) 0%, rgba(196,90,114,0.08) 100%)",
+  border: "1px solid rgba(196,90,114,0.2)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  marginBottom: 4,
+};
+const cardTitleStyle: React.CSSProperties = {
+  margin: 0,
+  fontSize: 22,
+  fontWeight: 700,
+  lineHeight: 1.3,
+  letterSpacing: "-0.3px",
+};
+const cardSubStyle: React.CSSProperties = {
+  margin: 0,
+  fontSize: 15,
+  lineHeight: 1.65,
+  color: TEXT_2,
+};
+const btnPrimaryStyle: React.CSSProperties = {
+  display: "block",
+  width: "100%",
+  background: ACCENT,
+  color: "#fff",
+  border: "none",
+  borderRadius: 50,
+  padding: "16px 0",
+  fontSize: 15,
+  fontWeight: 600,
+  textDecoration: "none",
+  textAlign: "center",
+  marginTop: 4,
 };
