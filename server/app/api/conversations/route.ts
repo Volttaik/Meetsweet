@@ -6,7 +6,10 @@ import { users, profiles, conversations, conversation_members, messages, creator
 import { requireAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err, created } from "@/lib/api/response";
-import { generateId } from "@/lib/auth/codes";
+import {
+  findOrCreateDirectConversation,
+  resolveConversationTarget,
+} from "@/lib/services/conversations";
 
 export async function GET(req: NextRequest) {
   const auth = await requireAuth(req);
@@ -158,43 +161,9 @@ export async function POST(req: NextRequest) {
     return err("userId, user_id, or username is required", 400);
   }
 
-  // Resolve target user — by UUID or username.
-  // Strategy: if `username` is explicitly provided, use it. Otherwise try the
-  // raw identifier as a UUID first; if that returns nothing, fall back to a
-  // username match (some clients pass username in the user_id / userId field).
+  // Resolve every supported recipient identifier to the canonical users.id.
   const rawId = userId ?? user_id ?? null;
-
-  const lookupCondition = username
-    ? eq(users.username, username)
-    : eq(users.id, rawId!);
-
-  let [targetUser] = await db
-    .select({
-      id: users.id,
-      username: users.username,
-      full_name: users.full_name,
-      is_creator: users.is_creator,
-      is_verified: users.is_verified,
-    })
-    .from(users)
-    .where(and(lookupCondition, eq(users.is_active, true)))
-    .limit(1);
-
-  // Fallback: if UUID lookup missed, try treating the identifier as a username
-  if (!targetUser && !username && rawId) {
-    const [fallback] = await db
-      .select({
-        id: users.id,
-        username: users.username,
-        full_name: users.full_name,
-        is_creator: users.is_creator,
-        is_verified: users.is_verified,
-      })
-      .from(users)
-      .where(and(eq(users.username, rawId), eq(users.is_active, true)))
-      .limit(1);
-    if (fallback) targetUser = fallback;
-  }
+  const targetUser = await resolveConversationTarget(rawId, username);
 
   if (!targetUser) return err("User not found", 404);
   if (targetUser.id === auth.user.userId) {
@@ -298,50 +267,17 @@ export async function POST(req: NextRequest) {
     isCreator: targetUser.is_creator,
   };
 
-  // ── Return existing conversation if one already exists ───────────────────
-  const myConvs = await db
-    .select({ conversation_id: conversation_members.conversation_id })
-    .from(conversation_members)
-    .where(eq(conversation_members.user_id, auth.user.userId));
+  // ── Find or create a room ─────────────────────────────────────────────────
+  const { conversationId: convId, created: wasCreated } =
+    await findOrCreateDirectConversation(auth.user.userId, targetUser.id);
 
-  const myConvIds = myConvs.map((m) => m.conversation_id);
-
-  for (const convId of myConvIds) {
-    const [match] = await db
-      .select({ id: conversation_members.id })
-      .from(conversation_members)
-      .where(
-        and(
-          eq(conversation_members.conversation_id, convId),
-          eq(conversation_members.user_id, targetUser.id),
-        ),
-      )
-      .limit(1);
-    if (match) {
-      // Return full conversation shape so mobile can open it without a second request
-      return ok({
-        conversationId: convId,
-        conversation_id: convId,
-        created: false,
-        otherUser,
-        other_user: otherUser,
-      });
-    }
-  }
-
-  // ── Create new conversation ──────────────────────────────────────────────
-  const convId = generateId();
-  await db.insert(conversations).values({ id: convId, type: "direct", created_by: auth.user.userId });
-  await db.insert(conversation_members).values([
-    { id: generateId(), conversation_id: convId, user_id: auth.user.userId },
-    { id: generateId(), conversation_id: convId, user_id: targetUser.id },
-  ]);
-
-  return created({
+  const payload = {
     conversationId: convId,
     conversation_id: convId,
-    created: true,
+    created: wasCreated,
     otherUser,
     other_user: otherUser,
-  });
+  };
+
+  return wasCreated ? created(payload) : ok(payload);
 }
