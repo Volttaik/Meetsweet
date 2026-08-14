@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { eq, and, desc, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { users, profiles, posts, media, post_likes, saved_posts, post_categories, subscriptions } from "@/lib/db/schema";
+import { users, profiles, posts, media, post_likes, saved_posts, post_categories, subscriptions, comment_rooms } from "@/lib/db/schema";
 import { requireAuth, optionalAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err, created } from "@/lib/api/response";
@@ -73,6 +73,7 @@ function postRow(
 ) {
   return {
     id: p.id,
+    comment_room_id: p.id,
     content_type: p.content_type ?? "post",
     creator_id: p.creator_id,
     creator_username: p.creator_username,
@@ -106,13 +107,18 @@ function postRow(
 
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
-  const bookmarked = searchParams.get("bookmarked") === "true";
-  const creatorId = searchParams.get("creator_id");
+  const pathname = req.nextUrl.pathname;
+  // /posts/feed and /posts/bookmarks are static route aliases (see their route.ts
+  // re-exports). Detect them from the path so the same handler can serve both.
+  const bookmarked =
+    searchParams.get("bookmarked") === "true" || pathname.endsWith("/posts/bookmarks");
+  const creatorId = searchParams.get("creator_id") ?? searchParams.get("creatorId");
   const cursor = searchParams.get("cursor");
   const page = Math.max(1, Number(searchParams.get("page") ?? 1));
   const limit = Math.min(Number(searchParams.get("limit") ?? 20), 50);
   // feed=home: authenticated home feed — shows subscribed creators' content
-  const feedMode = searchParams.get("feed");
+  const feedMode =
+    searchParams.get("feed") ?? (pathname.endsWith("/posts/feed") ? "home" : null);
   // Optional content_type filter: short | video | post | album
   // When omitted, ALL published content types are returned so the mobile can
   // filter client-side (video feed, posts feed etc. all query this endpoint).
@@ -502,6 +508,13 @@ export async function POST(req: NextRequest) {
     expires_at: expires_at ?? null,
     published_at: now,
   });
+
+  // Every post gets exactly one Comment Room. Its id === post id so the mobile
+  // app receives a stable comment_room_id without guessing or deriving it.
+  await db
+    .insert(comment_rooms)
+    .values({ id: postId, post_id: postId, comments_enabled: true, comment_count: 0 })
+    .onConflictDoNothing();
 
   // Support inline media objects
   if (mediaItems && mediaItems.length > 0) {

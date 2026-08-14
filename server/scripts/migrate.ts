@@ -56,6 +56,12 @@ async function run() {
       name: "messages: add audio_duration",
       sql: `ALTER TABLE messages ADD COLUMN audio_duration REAL`,
     },
+    // ── profiles: date_of_birth column ────────────────────────────────────
+    {
+      name: "profiles: add date_of_birth",
+      sql: `ALTER TABLE profiles ADD COLUMN date_of_birth TEXT`,
+    },
+
     // ── album support ──────────────────────────────────────────────────────
     {
       name: "create albums",
@@ -492,6 +498,18 @@ async function run() {
       name: "user_settings: add notif_quiet_end",
       sql: `ALTER TABLE user_settings ADD COLUMN notif_quiet_end TEXT NOT NULL DEFAULT '08:00'`,
     },
+    {
+      name: "user_settings: add high_quality_media",
+      sql: `ALTER TABLE user_settings ADD COLUMN high_quality_media INTEGER NOT NULL DEFAULT 1`,
+    },
+    {
+      name: "user_settings: add sensitive_content",
+      sql: `ALTER TABLE user_settings ADD COLUMN sensitive_content INTEGER NOT NULL DEFAULT 0`,
+    },
+    {
+      name: "user_settings: add language",
+      sql: `ALTER TABLE user_settings ADD COLUMN language TEXT NOT NULL DEFAULT 'English'`,
+    },
 
     // ── messages: media_type column ──────────────────────────────────────────
     {
@@ -625,6 +643,107 @@ async function run() {
     {
       name: "subscriptions.tier: diamond → subscriber_plus",
       sql: `UPDATE subscriptions SET tier = 'subscriber_plus' WHERE tier = 'diamond'`,
+    },
+
+    // ── Comment Rooms ──────────────────────────────────────────────────────
+    {
+      name: "create comment_rooms",
+      sql: `
+        CREATE TABLE IF NOT EXISTS comment_rooms (
+          id TEXT PRIMARY KEY,
+          post_id TEXT NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+          comments_enabled INTEGER NOT NULL DEFAULT 1,
+          comment_count INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+          updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        )
+      `,
+    },
+    {
+      name: "comment_rooms: unique post index",
+      sql: `CREATE UNIQUE INDEX IF NOT EXISTS comment_rooms_post_idx ON comment_rooms(post_id)`,
+    },
+
+    // ── Chat Rooms ─────────────────────────────────────────────────────────
+    {
+      name: "create chat_rooms",
+      sql: `
+        CREATE TABLE IF NOT EXISTS chat_rooms (
+          id TEXT PRIMARY KEY,
+          created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+          last_message_at TEXT,
+          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+          updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        )
+      `,
+    },
+    {
+      name: "chat_rooms: last message index",
+      sql: `CREATE INDEX IF NOT EXISTS chat_rooms_last_message_idx ON chat_rooms(last_message_at)`,
+    },
+    {
+      name: "create chat_room_members",
+      sql: `
+        CREATE TABLE IF NOT EXISTS chat_room_members (
+          id TEXT PRIMARY KEY,
+          chat_room_id TEXT NOT NULL REFERENCES chat_rooms(id) ON DELETE CASCADE,
+          user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          context_id TEXT NOT NULL,
+          is_muted INTEGER NOT NULL DEFAULT 0,
+          is_archived INTEGER NOT NULL DEFAULT 0,
+          cleared_at TEXT,
+          last_read_at TEXT,
+          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        )
+      `,
+    },
+    {
+      name: "chat_room_members: add left_at",
+      sql: `ALTER TABLE chat_room_members ADD COLUMN left_at TEXT`,
+    },
+    {
+      name: "chat_room_members: unique room/user index",
+      sql: `CREATE UNIQUE INDEX IF NOT EXISTS chat_room_members_room_user_idx ON chat_room_members(chat_room_id, user_id)`,
+    },
+    {
+      name: "chat_room_members: unique context index",
+      sql: `CREATE UNIQUE INDEX IF NOT EXISTS chat_room_members_context_idx ON chat_room_members(context_id)`,
+    },
+    {
+      name: "chat_room_members: user index",
+      sql: `CREATE INDEX IF NOT EXISTS chat_room_members_user_idx ON chat_room_members(user_id)`,
+    },
+    {
+      name: "create chat_room_messages",
+      sql: `
+        CREATE TABLE IF NOT EXISTS chat_room_messages (
+          id TEXT PRIMARY KEY,
+          chat_room_id TEXT NOT NULL REFERENCES chat_rooms(id) ON DELETE CASCADE,
+          sender_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          reply_to_id TEXT,
+          body TEXT,
+          media_url TEXT,
+          media_type TEXT,
+          caption TEXT,
+          file_name TEXT,
+          file_size INTEGER,
+          mime_type TEXT,
+          audio_duration REAL,
+          file_type TEXT,
+          is_voice_note INTEGER NOT NULL DEFAULT 0,
+          reactions TEXT,
+          deleted_for TEXT,
+          is_edited INTEGER NOT NULL DEFAULT 0,
+          is_recalled INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+          updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+          deleted_at TEXT
+        )
+      `,
+    },
+    {
+      name: "chat_room_messages: room/created index",
+      sql: `CREATE INDEX IF NOT EXISTS chat_room_messages_room_created_idx ON chat_room_messages(chat_room_id, created_at)`,
     },
   ];
 

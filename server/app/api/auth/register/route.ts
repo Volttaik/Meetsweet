@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
   const parsed = await parseBody(req, registerSchema);
   if (!parsed.success) return parsed.response;
 
-  const { full_name, username, email, phone, password } = parsed.data;
+  const { full_name, username, email, phone, password, bio, date_of_birth, dob, avatar_url } = parsed.data;
 
   // ── Duplicate check ──────────────────────────────────────────────────────
   const [existing] = await db
@@ -53,7 +53,9 @@ export async function POST(req: NextRequest) {
     id: generateId(),
     user_id: userId,
     display_name: full_name,
-    avatar_url: null,
+    bio: bio ?? null,
+    date_of_birth: date_of_birth ?? dob ?? null,
+    avatar_url: avatar_url ?? null,
   });
 
   await db.insert(user_settings).values({
@@ -80,6 +82,8 @@ export async function POST(req: NextRequest) {
 
   // ── Return without tokens — user must verify email before logging in ─────
   return created({
+    user_id: userId,
+    id: userId,
     message: "Account created. Please check your email for a verification code.",
     requires_verification: true,
     email,

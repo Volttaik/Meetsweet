@@ -11,8 +11,16 @@ import { generateId } from "@/lib/auth/codes";
 import { config } from "@/lib/config";
 
 const createSchema = z.object({
-  content_type: z.enum(["post", "video", "short", "album", "creator"]),
-  content_id: z.string().min(1),
+  content_type: z.enum(["post", "video", "short", "album", "creator"]).optional(),
+  // Mobile uses `type` / `target_id`.
+  type: z.enum(["post", "video", "short", "album", "creator"]).optional(),
+  content_id: z.string().min(1).optional(),
+  target_id: z.string().min(1).optional(),
+}).transform((d) => ({
+  content_type: d.content_type ?? d.type,
+  content_id: d.content_id ?? d.target_id,
+})).refine((d) => d.content_type && d.content_id, {
+  message: "content_type (or type) and content_id (or target_id) are required",
 });
 
 function generateShareToken(): string {
@@ -33,7 +41,10 @@ export async function POST(req: NextRequest) {
 
   const parsed = await parseBody(req, createSchema);
   if (!parsed.success) return parsed.response;
-  const { content_type, content_id } = parsed.data;
+  const { content_type, content_id } = parsed.data as {
+    content_type: "post" | "video" | "short" | "album" | "creator";
+    content_id: string;
+  };
 
   // Verify the content exists
   switch (content_type) {

@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { eq, and, desc, isNull, inArray, notInArray, or, sql } from "drizzle-orm";
+import { eq, and, desc, isNull, inArray, notInArray, or, sql, count } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   users,
@@ -10,6 +10,7 @@ import {
   post_likes,
   saved_posts,
   hidden_posts,
+  subscriptions,
 } from "@/lib/db/schema";
 import { optionalAuth } from "@/middleware/auth";
 import { ok } from "@/lib/api/response";
@@ -270,6 +271,23 @@ export async function GET(req: NextRequest) {
     .limit(10)
     .offset(offset);
 
+  // ── Active subscriber counts for featured creators (single grouped query) ──
+  const creatorIds = creatorRows.map((u) => u.id);
+  const subCountRows =
+    creatorIds.length > 0
+      ? await db
+          .select({ creator_id: subscriptions.creator_id, n: count() })
+          .from(subscriptions)
+          .where(
+            and(
+              inArray(subscriptions.creator_id, creatorIds),
+              eq(subscriptions.status, "active"),
+            ),
+          )
+          .groupBy(subscriptions.creator_id)
+      : [];
+  const subCountMap = new Map(subCountRows.map((r) => [r.creator_id, r.n]));
+
   return ok({
     // Main paginated items (exactly limit rows, global engagement ranking)
     items,
@@ -291,6 +309,8 @@ export async function GET(req: NextRequest) {
       isVerified:          u.is_verified,
       is_creator:          u.is_creator,
       is_verified_creator: u.is_verified_creator,
+      subscriber_count:    subCountMap.get(u.id) ?? 0,
+      subscriberCount:     subCountMap.get(u.id) ?? 0,
     })),
     // Pagination metadata
     page,

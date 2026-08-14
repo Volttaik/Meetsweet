@@ -9,6 +9,10 @@ export const registerSchema = z.object({
     .regex(/^[a-zA-Z0-9_]+$/, "Username may only contain letters, numbers, and underscores"),
   email: z.string().email(),
   phone: z.string().min(7).max(20).optional(),
+  bio: z.string().max(300).optional(),
+  date_of_birth: z.string().max(10).optional(),
+  dob: z.string().max(10).optional(),
+  avatar_url: z.string().url().optional(),
   password: z.string().min(8).max(128),
   confirm_password: z.string(),
 }).refine((d) => d.password === d.confirm_password, {

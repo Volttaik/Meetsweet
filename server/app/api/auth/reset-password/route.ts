@@ -10,8 +10,14 @@ import { ok, err } from "@/lib/api/response";
 const schema = z.object({
   email: z.string().email(),
   code: z.string().length(6),
-  new_password: z.string().min(8).max(128),
-});
+  new_password: z.string().min(8).max(128).optional(),
+  // Mobile sends `password` (not `new_password`).
+  password: z.string().min(8).max(128).optional(),
+}).transform((d) => ({
+  email: d.email,
+  code: d.code,
+  new_password: d.new_password ?? d.password ?? "",
+}));
 
 export async function POST(req: NextRequest) {
   const parsed = await parseBody(req, schema);

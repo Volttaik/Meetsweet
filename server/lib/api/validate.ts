@@ -8,7 +8,7 @@ export type ValidationResult<T> =
 
 export async function parseBody<T>(
   req: Request,
-  schema: z.ZodType<T>
+  schema: z.ZodType<T, z.ZodTypeDef, any>
 ): Promise<ValidationResult<T>> {
   try {
     const body = await req.json();

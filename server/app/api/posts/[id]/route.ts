@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { eq, and, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { users, profiles, posts, media, post_likes, saved_posts, subscriptions } from "@/lib/db/schema";
+import { users, profiles, posts, media, post_likes, saved_posts, subscriptions, comment_rooms } from "@/lib/db/schema";
 import { requireAuth, optionalAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err } from "@/lib/api/response";
@@ -97,6 +97,7 @@ export async function GET(
 
   return ok({
     id: row.id,
+    comment_room_id: row.id,
     content_type: row.content_type ?? "post",
     creator_id: row.creator_id,
     creator_username: row.creator_username,
@@ -232,4 +233,42 @@ export async function DELETE(
     .where(eq(posts.id, id));
 
   return ok({ deleted: true });
+}
+
+export async function PUT(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const auth = await requireAuth(req);
+  if ("response" in auth) return auth.response;
+
+  const { id } = await params;
+
+  const [post] = await db
+    .select({ id: posts.id, creator_id: posts.creator_id })
+    .from(posts)
+    .where(and(eq(posts.id, id), isNull(posts.deleted_at)))
+    .limit(1);
+
+  if (!post) return err("Post not found", 404);
+  if (post.creator_id !== auth.user.userId) return err("Forbidden", 403);
+
+  const parsed = await parseBody(
+    req,
+    z.object({ enabled: z.boolean() }),
+  );
+  if (!parsed.success) return parsed.response;
+
+  // Ensure the room exists (legacy posts may predate comment_rooms).
+  await db
+    .insert(comment_rooms)
+    .values({ id, post_id: id, comments_enabled: parsed.data.enabled, comment_count: 0 })
+    .onConflictDoNothing();
+
+  await db
+    .update(comment_rooms)
+    .set({ comments_enabled: parsed.data.enabled, updated_at: new Date().toISOString() })
+    .where(eq(comment_rooms.post_id, id));
+
+  return ok({ comments_enabled: parsed.data.enabled, enabled: parsed.data.enabled });
 }

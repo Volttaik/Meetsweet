@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { eq, and } from "drizzle-orm";
+import { eq, and, gte, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { subscriptions, wallets, transactions, creator_settings } from "@/lib/db/schema";
@@ -81,41 +81,53 @@ export async function POST(
     : Math.round(creatorPrice);
   const priceDiff = Math.max(0, newPrice - currentPrice);
   const now = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  const newAmount = newPrice;
 
-  if (priceDiff > 0) {
-    const [wallet] = await db
-      .select({ id: wallets.id, balance: wallets.balance })
-      .from(wallets)
-      .where(eq(wallets.user_id, auth.user.userId))
-      .limit(1);
+  // Atomic debit + transaction + tier update — a failure at any step rolls back
+  // the entire upgrade so the user is never charged without the tier change.
+  try {
+    await db.transaction(async (tx) => {
+      if (priceDiff > 0) {
+        const [wallet] = await tx
+          .select({ id: wallets.id, balance: wallets.balance })
+          .from(wallets)
+          .where(eq(wallets.user_id, auth.user.userId))
+          .limit(1);
 
-    if (!wallet || (wallet.balance ?? 0) < priceDiff) {
+        if (!wallet || (wallet.balance ?? 0) < priceDiff) {
+          throw new Error("INSUFFICIENT_BALANCE");
+        }
+
+        const [debited] = await tx
+          .update(wallets)
+          .set({ balance: sql`${wallets.balance} - ${priceDiff}`, updated_at: now })
+          .where(and(eq(wallets.id, wallet.id), gte(wallets.balance, priceDiff)))
+          .returning({ id: wallets.id });
+        if (!debited) throw new Error("INSUFFICIENT_BALANCE");
+
+        await tx.insert(transactions).values({
+          id: generateId(),
+          user_id: auth.user.userId,
+          type: "debit",
+          amount: priceDiff,
+          currency: "NGN",
+          status: "success",
+          description: `Subscription upgrade: ${currentTier} → ${newTier}`,
+        });
+      }
+
+      await tx
+        .update(subscriptions)
+        .set({ tier: newTier, amount: newAmount, updated_at: now, expires_at: expiresAt })
+        .where(eq(subscriptions.id, id));
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === "INSUFFICIENT_BALANCE") {
       return err("Insufficient wallet balance", 400, "INSUFFICIENT_BALANCE");
     }
-
-    await db
-      .update(wallets)
-      .set({ balance: (wallet.balance ?? 0) - priceDiff, updated_at: now })
-      .where(eq(wallets.id, wallet.id));
-
-    await db.insert(transactions).values({
-      id: generateId(),
-      user_id: auth.user.userId,
-      type: "debit",
-      amount: priceDiff,
-      currency: "NGN",
-      status: "success",
-      description: `Subscription upgrade: ${currentTier} → ${newTier}`,
-    });
+    throw error;
   }
-
-  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-
-  const newAmount = newPrice;
-  await db
-    .update(subscriptions)
-    .set({ tier: newTier, amount: newAmount, updated_at: now, expires_at: expiresAt })
-    .where(eq(subscriptions.id, id));
 
   return ok({
     subscription: {

@@ -14,6 +14,9 @@ const patchSchema = z.object({
   dark_mode: z.boolean().optional(),
   data_saver: z.boolean().optional(),
   autoplay_media: z.boolean().optional(),
+  high_quality_media: z.boolean().optional(),
+  sensitive_content: z.boolean().optional(),
+  language: z.string().max(50).optional(),
   biometric_login: z.boolean().optional(),
 });
 
@@ -39,6 +42,9 @@ export async function GET(req: NextRequest) {
     dark_mode: settings!.dark_mode,
     data_saver: settings!.data_saver,
     autoplay_media: settings!.autoplay_media,
+    high_quality_media: settings!.high_quality_media,
+    sensitive_content: settings!.sensitive_content,
+    language: settings!.language,
     biometric_login: settings!.biometric_login,
   });
 }
@@ -71,6 +77,9 @@ export async function PATCH(req: NextRequest) {
     dark_mode: settings!.dark_mode,
     data_saver: settings!.data_saver,
     autoplay_media: settings!.autoplay_media,
+    high_quality_media: settings!.high_quality_media,
+    sensitive_content: settings!.sensitive_content,
+    language: settings!.language,
     biometric_login: settings!.biometric_login,
   });
 }

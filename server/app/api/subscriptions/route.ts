@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, gte, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { users, profiles, subscriptions, creator_settings, wallets, transactions, notifications } from "@/lib/db/schema";
@@ -95,36 +95,6 @@ export async function POST(req: NextRequest) {
   const [creator] = await db.select({ id: users.id }).from(users).where(eq(users.id, creator_id)).limit(1);
   if (!creator) return err("Creator not found", 404);
 
-  const [existing] = await db
-    .select({ id: subscriptions.id, status: subscriptions.status, tier: subscriptions.tier })
-    .from(subscriptions)
-    .where(and(eq(subscriptions.subscriber_id, auth.user.userId), eq(subscriptions.creator_id, creator_id)))
-    .limit(1);
-
-  // Idempotent: return existing active subscription instead of erroring
-  if (existing && existing.status === "active") {
-    const [current] = await db
-      .select({
-        id: subscriptions.id,
-        tier: subscriptions.tier,
-        amount: subscriptions.amount,
-        started_at: subscriptions.started_at,
-        expires_at: subscriptions.expires_at,
-      })
-      .from(subscriptions)
-      .where(eq(subscriptions.id, existing.id))
-      .limit(1);
-    const sub = {
-      id: existing.id,
-      creator_id,
-      status: "active" as const,
-      amount: current?.amount ?? 0,
-      started_at: current?.started_at ?? "",
-      expires_at: current?.expires_at ?? "",
-    };
-    return ok({ subscription_id: existing.id, subscribed: true, tier: current?.tier ?? existing.tier, subscription: sub });
-  }
-
   // Resolve price from creator's subscription_price setting.
   //   subscriber      → 1× creator price
   //   subscriber_plus → 2× creator price (exclusive premium tier)
@@ -146,50 +116,90 @@ export async function POST(req: NextRequest) {
     ? Math.round(tierSettings?.subscription_plus_price ?? creatorPrice * multiplier)
     : Math.round(creatorPrice);
 
-  // Charge wallet if subscription has a cost
-  if (price > 0) {
-    const [wallet] = await db
-      .select({ id: wallets.id, balance: wallets.balance })
-      .from(wallets)
-      .where(eq(wallets.user_id, auth.user.userId))
-      .limit(1);
-
-    if (!wallet || (wallet.balance ?? 0) < price) {
-      return err("Insufficient wallet balance", 400, "INSUFFICIENT_BALANCE");
-    }
-
-    const now = new Date().toISOString();
-    await db
-      .update(wallets)
-      .set({ balance: (wallet.balance ?? 0) - price, updated_at: now })
-      .where(eq(wallets.id, wallet.id));
-
-    await db.insert(transactions).values({
-      id: generateId(),
-      user_id: auth.user.userId,
-      type: "subscription",
-      amount: price,
-      currency: "NGN",
-      status: "success",
-      description: `Subscription to creator ${creator_id}`,
-      metadata: JSON.stringify({ creator_id, tier: resolvedTier }),
-    });
-  }
-
   const now = new Date().toISOString();
   const expires = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-
   const subId = generateId();
-  await db.insert(subscriptions).values({
-    id: subId,
-    subscriber_id: auth.user.userId,
-    creator_id,
-    status: "active",
-    tier: resolvedTier,
-    amount: price,
-    started_at: now,
-    expires_at: expires,
-  });
+
+  // Atomic debit + transaction + subscription insert (see creators/[id]/subscribe).
+  type Outcome = { kind: "existing" | "created"; id: string; tier: "subscriber" | "subscriber_plus" };
+  let outcome!: Outcome;
+  try {
+    outcome = await db.transaction(async (tx): Promise<Outcome> => {
+      const [existing] = await tx
+        .select({ id: subscriptions.id, tier: subscriptions.tier })
+        .from(subscriptions)
+        .where(
+          and(
+            eq(subscriptions.subscriber_id, auth.user.userId),
+            eq(subscriptions.creator_id, creator_id),
+            eq(subscriptions.status, "active"),
+          ),
+        )
+        .limit(1);
+      if (existing) {
+        return { kind: "existing", id: existing.id, tier: existing.tier ?? resolvedTier };
+      }
+
+      if (price > 0) {
+        const [wallet] = await tx
+          .select({ id: wallets.id, balance: wallets.balance })
+          .from(wallets)
+          .where(eq(wallets.user_id, auth.user.userId))
+          .limit(1);
+        if (!wallet || (wallet.balance ?? 0) < price) {
+          throw new Error("INSUFFICIENT_BALANCE");
+        }
+
+        const [debited] = await tx
+          .update(wallets)
+          .set({ balance: sql`${wallets.balance} - ${price}`, updated_at: now })
+          .where(and(eq(wallets.id, wallet.id), gte(wallets.balance, price)))
+          .returning({ id: wallets.id });
+        if (!debited) throw new Error("INSUFFICIENT_BALANCE");
+
+        await tx.insert(transactions).values({
+          id: generateId(),
+          user_id: auth.user.userId,
+          type: "subscription",
+          amount: price,
+          currency: "NGN",
+          status: "success",
+          description: `Subscription to creator ${creator_id}`,
+          metadata: JSON.stringify({ creator_id, tier: resolvedTier }),
+        });
+      }
+
+      await tx.insert(subscriptions).values({
+        id: subId,
+        subscriber_id: auth.user.userId,
+        creator_id,
+        status: "active",
+        tier: resolvedTier,
+        amount: price,
+        started_at: now,
+        expires_at: expires,
+      });
+
+      return { kind: "created", id: subId, tier: resolvedTier };
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === "INSUFFICIENT_BALANCE") {
+      return err("Insufficient wallet balance", 400, "INSUFFICIENT_BALANCE");
+    }
+    throw error;
+  }
+
+  if (outcome.kind === "existing") {
+    const sub = {
+      id: outcome.id,
+      creator_id,
+      status: "active" as const,
+      amount: price,
+      started_at: now,
+      expires_at: expires,
+    };
+    return ok({ subscription_id: outcome.id, subscribed: true, tier: outcome.tier, subscription: sub });
+  }
 
   const sub = { id: subId, creator_id, status: "active" as const, amount: price, started_at: now, expires_at: expires };
 

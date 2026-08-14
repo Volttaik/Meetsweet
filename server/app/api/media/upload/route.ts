@@ -189,5 +189,11 @@ export async function POST(req: NextRequest) {
       mime_type: mimeType,
       size_bytes: file.size,
     },
+    // Top-level aliases — the mobile uploadMedia reads resp.url / resp.id directly.
+    id: mediaId,
+    media_id: mediaId,
+    url,
+    media_type: category,
+    key,
   });
 }

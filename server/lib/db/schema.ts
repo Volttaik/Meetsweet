@@ -52,6 +52,7 @@ export const profiles = sqliteTable("profiles", {
   banner_url: text("banner_url"),
   website: text("website"),
   location: text("location"),
+  date_of_birth: text("date_of_birth"),
   is_verified_creator: integer("is_verified_creator", { mode: "boolean" }).notNull().default(false),
   subscription_price: real("subscription_price").default(0),
   created_at: createdAt(),
@@ -67,6 +68,9 @@ export const user_settings = sqliteTable("user_settings", {
   dark_mode: integer("dark_mode", { mode: "boolean" }).notNull().default(true),
   data_saver: integer("data_saver", { mode: "boolean" }).notNull().default(false),
   autoplay_media: integer("autoplay_media", { mode: "boolean" }).notNull().default(true),
+  high_quality_media: integer("high_quality_media", { mode: "boolean" }).notNull().default(true),
+  sensitive_content: integer("sensitive_content", { mode: "boolean" }).notNull().default(false),
+  language: text("language").notNull().default("English"),
   biometric_login: integer("biometric_login", { mode: "boolean" }).notNull().default(false),
   // ── Privacy settings ──────────────────────────────────────────────────────
   private_account: integer("private_account", { mode: "boolean" }).default(false),
@@ -460,6 +464,23 @@ export const comment_likes = sqliteTable("comment_likes", {
   created_at: createdAt(),
 });
 
+// ─── Comment Rooms ─────────────────────────────────────────────────────────
+// Every post has exactly one Comment Room. comment_room.id === post.id so the
+// post response can return a stable comment_room_id without a join, and the
+// mobile app never has to derive it.
+export const comment_rooms = sqliteTable(
+  "comment_rooms",
+  {
+    id: id(),
+    post_id: text("post_id").notNull().references(() => posts.id, { onDelete: "cascade" }),
+    comments_enabled: integer("comments_enabled", { mode: "boolean" }).notNull().default(true),
+    comment_count: integer("comment_count").notNull().default(0),
+    created_at: createdAt(),
+    updated_at: updatedAt(),
+  },
+  (table) => [uniqueIndex("comment_rooms_post_idx").on(table.post_id)],
+);
+
 export const reports = sqliteTable("reports", {
   id: id(),
   reporter_id: text("reporter_id").notNull().references(() => users.id, { onDelete: "cascade" }),
@@ -532,6 +553,80 @@ export const message_reads = sqliteTable("message_reads", {
   user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   created_at: createdAt(),
 });
+
+// ─── Chat Rooms (USER → ROOM → CONTENT) ─────────────────────────────────────
+// Replaces the legacy conversations/messages model. One permanent room per
+// user pair (A+B == B+A). Per-member context/archive/mute/clear state lives in
+// chat_room_members; messages live in chat_room_messages.
+export const chat_rooms = sqliteTable(
+  "chat_rooms",
+  {
+    id: id(),
+    created_by: text("created_by").references(() => users.id, { onDelete: "set null" }),
+    last_message_at: text("last_message_at"),
+    created_at: createdAt(),
+    updated_at: updatedAt(),
+  },
+  (table) => [index("chat_rooms_last_message_idx").on(table.last_message_at)],
+);
+
+export const chat_room_members = sqliteTable(
+  "chat_room_members",
+  {
+    id: id(),
+    chat_room_id: text("chat_room_id").notNull().references(() => chat_rooms.id, { onDelete: "cascade" }),
+    user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    // Server-owned per-(room,user) context identifier. The other participant has
+    // a different context_id in the same room.
+    context_id: text("context_id").notNull(),
+    is_muted: integer("is_muted", { mode: "boolean" }).notNull().default(false),
+    is_archived: integer("is_archived", { mode: "boolean" }).notNull().default(false),
+    cleared_at: text("cleared_at"),
+    last_read_at: text("last_read_at"),
+    // Set when the user removes the room from their chat list. The room itself
+    // stays intact so a later re-open reuses the same one-room-per-pair record.
+    left_at: text("left_at"),
+    created_at: createdAt(),
+  },
+  (table) => [
+    uniqueIndex("chat_room_members_room_user_idx").on(table.chat_room_id, table.user_id),
+    uniqueIndex("chat_room_members_context_idx").on(table.context_id),
+    index("chat_room_members_user_idx").on(table.user_id),
+  ],
+);
+
+export const chat_room_messages = sqliteTable(
+  "chat_room_messages",
+  {
+    id: id(),
+    chat_room_id: text("chat_room_id").notNull().references(() => chat_rooms.id, { onDelete: "cascade" }),
+    sender_id: text("sender_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    reply_to_id: text("reply_to_id"),
+    body: text("body"),
+    media_url: text("media_url"),
+    // Message category: image | video | audio | document (distinct from file_type).
+    media_type: text("media_type"),
+    caption: text("caption"),
+    file_name: text("file_name"),
+    file_size: integer("file_size"),
+    mime_type: text("mime_type"),
+    audio_duration: real("audio_duration"),
+    // On-disk file format (jpeg/png/mp4/mp3/pdf/...), preserved from the mobile
+    // request so renderers never guess from the URL.
+    file_type: text("file_type"),
+    is_voice_note: integer("is_voice_note", { mode: "boolean" }).notNull().default(false),
+    // JSON: [{ emoji, user_ids: [userId, ...] }]
+    reactions: text("reactions"),
+    // JSON array of user ids that have delete-for-me'd this message.
+    deleted_for: text("deleted_for"),
+    is_edited: integer("is_edited", { mode: "boolean" }).notNull().default(false),
+    is_recalled: integer("is_recalled", { mode: "boolean" }).notNull().default(false),
+    created_at: createdAt(),
+    updated_at: updatedAt(),
+    deleted_at: text("deleted_at"),
+  },
+  (table) => [index("chat_room_messages_room_created_idx").on(table.chat_room_id, table.created_at)],
+);
 
 // ─── Notifications ────────────────────────────────────────────────────────
 
