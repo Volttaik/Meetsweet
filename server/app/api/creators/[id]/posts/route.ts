@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { posts, media, users, profiles, post_likes, saved_posts, subscriptions } from "@/lib/db/schema";
 import { optionalAuth } from "@/middleware/auth";
 import { ok, err } from "@/lib/api/response";
-import { canViewContent, groupMediaByPost } from "@/lib/services/content";
+import { canViewContent, groupMediaByPost, visibleContentCondition } from "@/lib/services/content";
 
 export async function GET(
   req: NextRequest,
@@ -65,7 +65,7 @@ export async function GET(
       isNull(posts.deleted_at),
       eq(posts.status, "published"),
       eq(posts.content_type, "post"),
-      isOwner ? undefined : eq(posts.visibility, "public"),
+      isOwner ? undefined : visibleContentCondition(posts.visibility, posts.tier, isSubscribed, subTier),
       cursor ? sql`${posts.created_at} < ${cursor}` : undefined,
     ))
     .orderBy(desc(posts.published_at))

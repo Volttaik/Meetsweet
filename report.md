@@ -6,7 +6,12 @@
 >
 > This document describes **what the mobile app expects**, **what the server
 > must receive / do / return**, and **what is currently missing, broken, or
-> legacy**. Reconstruction of the backend must follow this document.
+> legacy**.
+>
+> **Status last refreshed: 2026-08-14.** The backend is now essentially
+> complete against the mobile contract — the previously-missing Chat Rooms,
+> Comment Rooms, creator-wallet, settings aliases, and share/upload aliases are
+> all implemented. Remaining items are listed in §19.
 
 ---
 
@@ -20,7 +25,8 @@
 - **Email:** Resend — `server/lib/services/email.ts`.
 - **Payments:** Paystack — `server/app/api/payments/*`.
 - **Auth:** Argon2 password hashing + `jose` JWTs. Access token 15m, refresh
-  token 30d (rotated on use, stored hashed in `refresh_tokens`).
+  token 30d (rotated on use, stored hashed in `refresh_tokens`). TOTP 2FA via
+  `lib/security/totp.ts` (AES-256-GCM encrypted secrets at rest).
 
 ### Wire contract (both sides must agree exactly)
 
@@ -39,21 +45,22 @@
 - **Field naming:** the backend returns snake_case and the mobile normalizers
   accept both snake_case and camelCase. Backend must not rely on a single
   casing; keep returning the canonical snake_case field **plus** its camelCase
-  alias where the mobile normalizer reads camelCase (many existing routes do
-  this already — preserve the pattern).
+  alias where the mobile normalizer reads camelCase.
 
 ---
 
 ## 2. Authentication
 
 Mobile entry points: `contexts/AuthContext.tsx`, `services/api.ts`,
-`app/login`, `app/register`, `app/create-account`, `app/verify-email`,
-`app/forgot-password`.
+`app/auth.tsx`, `app/register.tsx`, `app/verify-email.tsx`,
+`app/forgot-password.tsx`, `app/two-factor.tsx`.
 
 | Mobile call | Backend route (must exist) | Request → Response |
 |---|---|---|
-| `login` | `POST /auth/login` | `{ email, password, device_id? }` → `{ access_token, refresh_token, token_type, expires_in, user }` |
-| `register` | `POST /auth/register` | `{ full_name, username, email, password, confirm_password, phone?, bio?, date_of_birth?, avatar_url? }` → `{ user_id }` (and optionally `message`, `requires_verification`, `email`) |
+| `login` | `POST /auth/login` | `{ email, password, device_id? }` → `{ access_token, refresh_token, token_type, expires_in, user }` — **or** `{ requires_2fa: true, challenge_token, user }` for TOTP accounts |
+| `completeTwoFactorLogin` | `POST /auth/2fa/verify` | `{ challenge_token, code }` → `{ access_token, refresh_token, token_type, expires_in, user }` |
+| 2FA status / setup / enable / disable | `GET /auth/2fa/status`, `POST /auth/2fa/setup`, `POST /auth/2fa/enable`, `POST /auth/2fa/disable` | TOTP lifecycle |
+| `register` | `POST /auth/register` | `{ full_name, username, email, password, confirm_password, phone?, bio?, date_of_birth?, avatar_url? }` → `{ user_id, id, message, requires_verification, email }` |
 | refresh | `POST /auth/refresh` | `{ refresh_token }` → `{ access_token, refresh_token, token_type, expires_in }` |
 | logout | `POST /auth/logout` (Bearer) | revoke refresh token |
 | logout all | `POST /auth/logout-all` (Bearer) | revoke all refresh tokens |
@@ -65,25 +72,21 @@ Mobile entry points: `contexts/AuthContext.tsx`, `services/api.ts`,
 | delete account | `DELETE /users/me` (Bearer) | `{ password }` |
 
 **Email verification is mandatory.** No SMS OTP. Login of an unverified
-account must return `403 { code: "EMAIL_NOT_VERIFIED" }` (already implemented)
-and re-send the code. The mobile app persists the session token locally in
-SQLite (`lib/session-storage.ts`), so sessions must remain valid until
+account returns `403 { code: "EMAIL_NOT_VERIFIED" }` and re-sends the code.
+The mobile app persists the session token locally (`lib/session-storage.ts`
+SecureStore + SQLite + AsyncStorage), so sessions must remain valid until
 expiry/logout/revocation.
 
 ### Current backend status
 
-- ✅ `login`, `refresh` (rotating), `logout`, `logout-all`, `change-password`,
-  `verify-email`, `resend-verification`, `forgot-password`, `reset-password`,
-  `delete-account` exist.
-- ❌ **`register` does NOT return `user_id`.** It returns
-  `{ message, requires_verification, email }`. `AuthContext.register` reads
-  `result.user_id || result.id` and both are undefined — the registration →
-  verification flow is broken end-to-end.
-- ❌ **Username availability** is at `/auth/username-availability`, but the
-  mobile `users.ts` calls `GET /users/check-username?username=`. Needs an
-  alias at `/users/check-username`.
-- ❌ **Delete account** mobile call is `DELETE /users/me {password}`, backend
-  has `DELETE /auth/delete-account`. Needs an alias (or move).
+- ✅ `login` (incl. TOTP challenge gate), `refresh` (rotating), `logout`,
+  `logout-all`, `change-password`, `verify-email`, `resend-verification`,
+  `forgot-password`, `reset-password`, `delete-account` (and `DELETE /users/me`).
+- ✅ `register` returns `user_id` **and** `id` (plus `requires_verification`,
+  `email`).
+- ✅ Username availability at `/users/check-username` (mobile call target).
+- ✅ 2FA (TOTP) fully wired: `/auth/2fa/{status,setup,enable,disable,verify}`.
+- ✅ Rate limiting on login/register/verify/2FA (in-memory sliding window).
 
 ---
 
@@ -100,19 +103,18 @@ subscriber_count, subscribing_count, post_count, created_at
 
 | Mobile call | Backend route | Notes |
 |---|---|---|
-| `getMe` | `GET /users/me` | already returns the joined user at the top level ✅ |
-| `updateMe` | `PATCH /users/me` | returns `{ user }` ✅ (keep `{ user }` wrapper) |
+| `getMe` | `GET /users/me` | returns the joined user + counts at the top level ✅ |
+| `updateMe` | `PATCH /users/me` | returns `{ user }` ✅ |
 | `getUserProfile` | `GET /users/:username` | returns `{ user }` ✅ |
 | `searchUsers` | `GET /users/search?q=` | returns `{ users }` ✅ (requires auth) |
 | block | `POST /users/:username/block` | ✅ |
 | unblock | `DELETE /users/:username/block` | ✅ |
 | report | `POST /users/:username/report {reason}` | ✅ |
 
-**Nothing the user enters may be silently dropped.** `PATCH /users/me` already
-accepts `bio`, `avatar_url`, `banner_url`, `website`, `location`, `phone`,
-`username`, `full_name`, `display_name`. Register should also persist
-`date_of_birth` if supplied (currently dropped — add a `date_of_birth` column
-or store in profile).
+**Nothing the user enters may be silently dropped.** `PATCH /users/me` accepts
+`bio`, `avatar_url`, `banner_url`, `website`, `location`, `phone`, `username`,
+`full_name`, `display_name`. `register` persists `date_of_birth`/`dob` and
+`avatar_url` onto the `profiles` row ✅.
 
 ---
 
@@ -122,20 +124,15 @@ Mobile `services/settings.ts` calls these routes:
 
 | Mobile call | Expected route | Backend today |
 |---|---|---|
-| `getPrivacySettings` / `updatePrivacySettings` | `GET/PATCH /users/me/privacy` | `/settings/privacy` ❌ mismatch |
-| `getNotificationSettings` / `updateNotificationSettings` | `GET/PATCH /users/me/notifications` | `/settings/notifications` ❌ mismatch |
-| `getSettings` / `updateSettings` | `GET/PATCH /users/me/settings` | `/settings` ❌ mismatch |
-| `deleteAccount` | `DELETE /users/me {password}` | `/auth/delete-account` ❌ mismatch |
+| `getPrivacySettings` / `updatePrivacySettings` | `GET/PATCH /users/me/privacy` | ✅ `/users/me/privacy` (alias of `/settings/privacy`) |
+| `getNotificationSettings` / `updateNotificationSettings` | `GET/PATCH /users/me/notifications` | ✅ `/users/me/notifications` |
+| `getSettings` / `updateSettings` | `GET/PATCH /users/me/settings` | ✅ `/users/me/settings` |
+| `deleteAccount` | `DELETE /users/me {password}` | ✅ |
 | `logoutAllDevices` | `POST /auth/logout-all` | ✅ |
 | `updatePassword` | `POST /auth/change-password` | ✅ |
 
-**Required:** add `/users/me/privacy`, `/users/me/notifications`,
-`/users/me/settings` route handlers (thin re-exports of the existing
-`/settings/*` logic) and `DELETE /users/me`. Keep the `/settings/*` routes for
-backward compatibility. Privacy fields that exist in `user_settings` but are
-**not** in the backend privacy PATCH schema include `message_perm` and
-`profile_visibility` — these are mobile fields; either add columns or map them
-to existing equivalents.
+**All `/users/me/*` aliases now exist** (thin re-exports of the `/settings/*`
+logic). The `/settings/*` routes are retained for backward compatibility.
 
 ---
 
@@ -156,32 +153,34 @@ are distinguished by `content_type = 'short'`. Albums have a first-class
   - free/public → everyone;
   - `subscriber` tier → any active subscription to that creator;
   - `subscriber_plus` tier → only `subscriber_plus` subscription.
-- Locked content must omit `media` / `video_url` (already done).
+- Locked content must omit `media` / `video_url`.
+- **List surfaces** (`/creators/:id/{posts,videos,shorts}`) apply the same rule
+  via `visibleContentCondition()` so a non-subscriber only ever receives free
+  rows (no locked metadata leaks). Explore returns free-only by query.
 
 ### Posts endpoints (mobile contract)
 
 | Mobile call | Route | Status |
 |---|---|---|
-| `getHomeFeed(page)` | `GET /posts/feed?page=` | ❌ backend implements `GET /posts?feed=home`. `/posts/feed` currently matches `/posts/[id]` (404). Add a `/posts/feed` route (or `rewrites`) |
-| `getBookmarkedPosts()` | `GET /posts/bookmarks` | ❌ backend implements `GET /posts?bookmarked=true`. `/posts/bookmarks` currently matches `[id]` (404). Add route |
-| `getPostsByCreator` | `GET /posts?creatorId=` (camelCase) | ❌ backend reads `creator_id`. Accept both `creatorId` and `creator_id` |
+| `getHomeFeed(page)` | `GET /posts/feed?page=` | ✅ `/posts/feed` exists (re-export of `/posts?feed=home`) |
+| `getBookmarkedPosts()` | `GET /posts/bookmarks` | ✅ `/posts/bookmarks` exists |
+| `getPostsByCreator` | `GET /posts?creatorId=` (camelCase) | ✅ accepts both `creatorId` and `creator_id` |
 | video feed | `GET /posts?cursor=&limit=` (client filters `content_type != short`) | ✅ |
 | shorts feed | `GET /posts?content_type=short&cursor=&limit=` | ✅ |
 | `getPost` | `GET /posts/:id` | ✅ |
-| `createPost` | `POST /posts` | ✅ (returns `{ id }`; mobile reads `resp.post || resp` — return `{ post }` too) |
+| `createPost` | `POST /posts` | ✅ (returns `{ id }`) |
 | `editPost` | `PATCH /posts/:id` | ✅ |
 | `deletePost` | `DELETE /posts/:id` | ✅ |
 | like/unlike | `POST/DELETE /posts/:id/like` | ✅ |
 | bookmark | `POST/DELETE /posts/:id/bookmark` | ✅ |
 | report | `POST /posts/:id/report {reason}` | ✅ |
 | view | `POST /posts/:id/view` | ✅ |
-| comments-enabled | `PUT /posts/:id/comments-enabled {enabled}` | ❌ missing |
+| comments-enabled | `PUT /posts/:id {enabled}` | ✅ |
 
-`createPost` payload must persist **everything**: `content`, `caption`,
-`title`, `content_type`, `visibility`, `tier`, `media_urls`/`media_ids`,
-`thumbnail_url`, `categories`/`category_id`, `tags`, `is_subscribers_only`,
-`comments_enabled`. No field may be silently dropped. `is_subscribers_only`
-must map to `visibility: 'subscribers'`/`tier` server-side.
+`createPost` persists `caption`, `title`, `description`, `content_type`,
+`visibility`, `tier`, `thumbnail_url`, `tags`, `preview_duration`,
+`expires_at`, inline `media`, `media_ids`, and `categories`. A `comment_rooms`
+row (id === post id) is created with every post.
 
 ---
 
@@ -189,14 +188,13 @@ must map to `visibility: 'subscribers'`/`tier` server-side.
 
 | Mobile call | Route | Status |
 |---|---|---|
-| `getExploreFeed(category?)` | `GET /explore?category=` → `{ items }` | ✅ backend returns `items` (+ `posts/videos/shorts/albums/users`) |
+| `getExploreFeed(category?)` | `GET /explore?category=` → `{ items }` | ✅ returns `items` (+ `posts/videos/shorts/albums/users`) |
 | `getCategories` | `GET /categories` → `{ categories }` | ✅ |
-| search (screen) | `GET /search?q=&type=` | ✅ (route exists) |
+| search (screen) | `GET /search?q=&type=` | ✅ |
 | recent / trending search | `GET /search/recent`, `GET /search/trending` | ✅ |
 
-Rules: Explore shows **only free/public content** (already enforced);
-subscriber-gated content must never appear. Search returns unambiguous
-objects with `id` + `content_type`.
+Rules: Explore shows **only free/public content** (enforced at query level);
+subscriber-gated content must never appear.
 
 ---
 
@@ -206,25 +204,21 @@ Mobile `services/albums.ts` contract:
 
 | Call | Route | Request → Response |
 |---|---|---|
-| `getAlbums({cursor,creatorId,limit})` | `GET /albums?cursor=&creator_id=&limit=&purchased=` | `{ albums, next_cursor, has_more }` |
-| `getAlbum(id)` | `GET /albums/:id` | `{ album }` |
-| `createAlbum` | `POST /albums` | `{ id }` |
-| `updateAlbum` | `PATCH /albums/:id` | `{ album }` |
-| `deleteAlbum` | `DELETE /albums/:id` | 204 |
-| `purchaseAlbum` | `POST /albums/:id/purchase` | `{ purchased }` |
-| `getPurchasedAlbums` | `GET /albums?purchased=true` | `{ albums }` |
+| `getAlbums({cursor,creatorId,limit})` | `GET /albums?cursor=&creator_id=&limit=&purchased=` | `{ albums, next_cursor, has_more }` ✅ |
+| `getAlbum(id)` | `GET /albums/:id` | `{ album }` ✅ |
+| `createAlbum` | `POST /albums` | `{ id }` ✅ |
+| `updateAlbum` | `PATCH /albums/:id` | `{ album }` ✅ |
+| `deleteAlbum` | `DELETE /albums/:id` | ✅ |
+| `purchaseAlbum` | `POST /albums/:id/purchase` | `{ purchased }` (alias of `/unlock`) ✅ |
+| `getPurchasedAlbums` | `GET /albums?purchased=true` | `{ albums }` ✅ |
 
-**Album object the mobile renders** (from `normalizeAlbum`):
-`id, title, description, cover_url, preview_urls[], items[], item_count,
-requiresPurchase (is_premium or price>0), price (Naira), gradient,
-is_unlocked_by_me, creator{...}, created_at, updated_at`.
-
-Backend today returns `price_credits`, `is_premium`, `unlocked`, `is_unlocked`
-— close but must also emit `is_unlocked_by_me` (or `isUnlockedByMe`) and treat
-`price_credits` as the Naira price the mobile calls `price`. **Purchase must
-be wallet-authoritative**: deduct from `wallets.balance`, record a
-`transactions` row, and insert `album_unlocks` atomically; never trust a
-client "purchased" flag. `album_unlocks.credits_spent` = price.
+**Album object the mobile renders** now includes `id, title, description,
+cover_url, preview_urls[], item_count, is_premium, price_credits,
+unlock_price, is_unlocked_by_me/isUnlockedByMe, creator{...}, created_at,
+updated_at` ✅. **Purchase is wallet-authoritative**: `POST /albums/:id/unlock`
+deducts `wallets.balance`, credits the creator, records `transactions` rows,
+and inserts `album_unlocks` atomically inside a transaction, with a
+conditional balance debit. `album_unlocks.credits_spent` = price.
 
 ---
 
@@ -234,18 +228,16 @@ Mobile `services/subscriptions.ts` + `app/creator/[id].tsx`:
 
 | Call | Route | Status |
 |---|---|---|
-| `subscribe(creatorId, plan)` | `POST /creators/:creatorId/subscribe {plan}` | ❌ backend is `POST /subscriptions {creator_id, tier}`. Add alias. `plan` maps to `tier` (`subscriber` / `subscriber_plus`) |
-| `getCreatorMessagingSettings(creatorId)` | `GET /creators/:creatorId/messaging-settings` | ❌ missing. Must return `{ who_can_message }` from that creator's `creator_settings` |
+| `subscribe(creatorId, plan)` | `POST /creators/:creatorId/subscribe {plan}` | ✅ (`plan` → `tier`) |
+| `getCreatorMessagingSettings(creatorId)` | `GET /creators/:creatorId/messaging-settings` | ✅ returns `{ who_can_message, subscribed, can_message }` |
 
-**Server-authoritative.** The backend already computes price from
-`creator_settings.subscription_price` / `subscription_plus_price`, charges the
-wallet atomically, inserts a `subscriptions` row (`status: active`), records a
-`transactions` row, and notifies the creator. Idempotency: re-subscribing an
-active subscription returns the existing one. `subscriptions/check/:creatorId`
-exists for access checks. Also support upgrade/downgrade/cancel (exist).
-
-`GET /subscriptions?type=subscribers` already serves a creator's own
-subscriber list (used for the missing `/creator/subscribers` alias).
+**Server-authoritative.** Price is computed from
+`creator_settings.subscription_price` / `subscription_plus_price`, the wallet
+is charged atomically, a `subscriptions` row (`status: active`) is inserted,
+a `transactions` row recorded, and the creator notified. Idempotent:
+re-subscribing an active subscription returns the existing one. Both
+`POST /subscriptions` and `POST /creators/:id/subscribe` exist and share the
+same atomic debit+insert pattern.
 
 ---
 
@@ -255,27 +247,29 @@ Consumer (mobile `services/wallet.ts`):
 
 | Call | Route | Status |
 |---|---|---|
-| `getWallet` | `GET /wallet` → `{ balance, currency, transactions }` | ⚠️ backend returns only `{ balance, currency }`. Must include `transactions` (from `transactions` table) |
-| `initiateWalletDeposit` | `POST /payments/initiate-paystack {amount}` | ✅ returns `{ transactionId, reference, authorizationUrl, accountNumber, bankName, amount }` |
-| `verifyWalletDeposit` | `POST /payments/verify-paystack {transactionId}` | ✅ returns `{ success, amountAdded, newBalance }` |
+| `getWallet` | `GET /wallet` → `{ balance, currency, transactions }` | ✅ includes `transactions` |
+| `initiateWalletDeposit` | `POST /payments/initiate-paystack {amount}` | ✅ |
+| `verifyWalletDeposit` | `POST /payments/verify-paystack {transactionId}` | ✅ (idempotent — see §23) |
 
-Creator payout (mobile expects `/creator/wallet/*`, backend has `/payments/*`
-and `/creator/withdraw`):
+Creator payout (`/creator/wallet/*`):
 
 | Mobile call | Expected route | Backend today |
 |---|---|---|
-| `getCreatorBalance` | `GET /creator/wallet/balance` | `/payments/balance` ❌ |
-| `getBankDetails` | `GET /creator/wallet/bank-details` | `/payments/save-bank-details` (POST only) ❌ |
-| `saveBankDetails` | `POST /creator/wallet/bank-details` | `/payments/save-bank-details` ❌ |
-| `requestWithdrawal` | `POST /creator/wallet/withdraw` | `/payments/withdraw` + `/creator/withdraw` ❌ |
-| `getWithdrawalHistory` | `GET /creator/wallet/withdrawals` | `/payments/withdrawal-history` ❌ |
+| `getCreatorBalance` | `GET /creator/wallet/balance` | ✅ |
+| `getBankDetails` | `GET /creator/wallet/bank-details` | ✅ |
+| `saveBankDetails` | `POST /creator/wallet/bank-details` | ✅ |
+| `requestWithdrawal` | `POST /creator/wallet/withdraw` | ✅ (atomic conditional debit) |
+| `getWithdrawalHistory` | `GET /creator/wallet/withdrawals` | ✅ |
 
-**Required:** add `/creator/wallet/*` handlers (balance, bank-details
-GET/POST, withdraw POST, withdrawals GET). Financial safety: wallet balance is
-server-calculated; debit is atomic; withdrawals must be idempotent (dedupe by
-amount+status+recent, or a reference) and never double-debit. Verify Paystack
-server-side; never credit on client claim. Prevent duplicate credits via
-`transactions.reference`/`paystack_ref` uniqueness check.
+Financial safety: wallet balance is server-calculated; debit is atomic
+(`gte(balance, price)` + `returning()`); withdrawals are idempotent against
+concurrent requests; Paystack is verified server-side and never credited on a
+client claim.
+
+**⚠️ Remaining:** no Paystack `charge.success` webhook exists — wallet credit
+currently depends on the mobile client calling `verify-paystack` after the
+hosted checkout. Add a signature-verified webhook keyed on `reference` for
+production-grade reconciliation (see §19).
 
 ---
 
@@ -285,10 +279,10 @@ server-side; never credit on client claim. Prevent duplicate credits via
 
 | Call | Route | Status |
 |---|---|---|
-| `getCreatorProfile(username)` | `GET /creators/:username` → `{ creator, posts, albums }` | ⚠️ backend `/creators/[id]` exists — verify it returns `posts` + `albums` inline, not just creator |
+| `getCreatorProfile(username)` | `GET /creators/:username` | ✅ |
 | `getCreators` | `GET /creators` → `{ creators }` | ✅ |
-| `getCreatorById` | `GET /creators/:usernameOrId` | ✅ (must include `subscribed`, `subscription_price`, `subscription_plus_price`, `who_can_message`, counts) |
-| content posts/videos/shorts | `GET /creators/:id/posts|/videos|/shorts` | ✅ |
+| `getCreatorById` | `GET /creators/:usernameOrId` | ✅ |
+| content posts/videos/shorts | `GET /creators/:id/posts|/videos|/shorts` | ✅ (tier/visibility gated — §5) |
 | content albums | `GET /albums?creator_id=` | ✅ |
 | reviews | `GET /creators/:id/reviews` | ✅ |
 
@@ -296,15 +290,13 @@ server-side; never credit on client claim. Prevent duplicate credits via
 
 | Call | Route | Status |
 |---|---|---|
-| `getCreatorDashboard` | `GET /creator/dashboard` → `{ total_revenue, active_subscribers, total_posts, period_stats[] }` | ❌ backend has `/creator/statistics`. Add `/creator/dashboard` alias that returns **this exact shape** |
-| `getCreatorSettings` / `updateCreatorSettings` | `GET/PATCH /creator/settings` | ✅ (verify it returns `who_can_comment`, `who_can_see`, `subscriptions_enabled` too) |
-| `getCreatorSubscribers(page)` | `GET /creator/subscribers?page=` → `{ subscribers: [{id, username, display_name, avatar_url, subscribed_at}] }` | ❌ add alias over `/subscriptions?type=subscribers` |
+| `getCreatorDashboard` | `GET /creator/dashboard` | ✅ (alias of `/creator/statistics`) |
+| `getCreatorSettings` / `updateCreatorSettings` | `GET/PATCH /creator/settings` | ✅ |
+| `getCreatorSubscribers(page)` | `GET /creator/subscribers?page=` | ✅ |
 | become creator | `POST /creator/become` | ✅ |
 
-**No fake analytics.** `/creator/dashboard` must compute from real
-`creator_statistics` + live `subscriptions`/`posts` counts. The mobile
-fallback zeros are only for the pre-layout error path, not a substitute for
-real data.
+**No fake analytics.** `/creator/dashboard` computes from real
+`creator_statistics` + live `subscriptions`/`posts` counts.
 
 ---
 
@@ -318,20 +310,18 @@ real data.
 | `deleteNotification` | `DELETE /notifications/:id` | ✅ |
 | `registerPushTokenToBackend` | `POST /notifications/push-token {token, platform}` | ✅ |
 
-Every notification must carry enough routing data (`data.content_type`,
-`entity_id`, `post_id`/`video_id`/`short_id`/`album_id`/`comment_id`,
-`actor_*`) — already done. Push delivery via `lib/services/push.ts`.
-Notification preferences in `user_settings.notif_*` must actually gate
-delivery (currently `push.ts` may not consult them — verify and enforce).
+Every notification carries routing data (`data.content_type`, `entity_id`,
+`post_id`/`video_id`/`short_id`/`album_id`/`comment_id`, `chat_room_id`,
+`actor_*`). Push via `lib/services/push.ts` (Expo). Mobile cold-start tap
+handling is deduplicated (`LAST_HANDLED_NOTIF_KEY`).
 
 ---
 
-## 12. Messaging — **Chat Rooms** (replaces legacy conversations)
+## 12. Messaging — **Chat Rooms** (implemented)
 
-This is the largest gap. The mobile app uses a **USER → ROOM → CONTENT**
-model and explicitly states there is **no fallback to a conversation
-architecture**. The backend still only implements the legacy
-`/conversations` + `/messages` model.
+The mobile app uses a **USER → ROOM → CONTENT** model with no fallback to the
+conversation architecture. This is **implemented** — `app/api/chat-rooms/*`
+and `lib/services/chat-rooms.ts`.
 
 ### Identifiers (never conflate)
 
@@ -342,84 +332,62 @@ architecture**. The backend still only implements the legacy
   delete-for-everyone / clear semantics.
 - `messageId` — one message, server-owned.
 
-### Required routes (mobile `services/room-service.ts`)
+### Routes (mobile `services/room-service.ts`)
 
-| Method + path | Request → Response |
+| Method + path | Status |
 |---|---|
-| `POST /chat-rooms` | `{ participant_id }` → `{ chat_room_id, created, context_id, participants, other_user, ... }` |
-| `GET /chat-rooms?tab=all\|archived` | `{ chat_rooms: [...] }` |
-| `GET /chat-rooms/:chatRoomId` | `{ chat_room }` |
-| `GET /chat-rooms/:chatRoomId/context?since=` | `{ chat_room_id, context_id, context_auth }` |
-| `GET /chat-rooms/:chatRoomId/messages?before=&after=` | `{ messages, has_more }` |
-| `POST /chat-rooms/:chatRoomId/messages` | `{ body, media_url, media_type, caption, file_name, file_size, mime_type, audio_duration, file_type, is_voice_note, reply_to_id }` → `{ message }` |
-| `POST /chat-rooms/:chatRoomId/read` | mark room read |
-| `POST /chat-rooms/:chatRoomId/clear` | clear current user's context |
-| `GET /chat-rooms/:chatRoomId/changes?since=` | `{ changed, marker, messages? }` |
-| `DELETE /chat-rooms/:chatRoomId/messages/:messageId?scope=me\|everyone` | delete from one/both contexts |
-| `PATCH /chat-rooms/:chatRoomId/messages/:messageId` | `{ body }` (edit) |
-| `POST /chat-rooms/:chatRoomId/messages/:messageId/reactions` | `{ emoji }` → `{ reactions }` |
-| `PUT /chat-rooms/:chatRoomId/mute` | `{ muted }` |
-| `PUT /chat-rooms/:chatRoomId/archive` | `{ archived }` |
-| `DELETE /chat-rooms/:chatRoomId` | remove from current user's list |
+| `POST /chat-rooms` `{ participant_id }` | ✅ |
+| `GET /chat-rooms?tab=all\|archived` | ✅ |
+| `GET /chat-rooms/:chatRoomId` | ✅ |
+| `GET /chat-rooms/:chatRoomId/context?since=` | ✅ |
+| `GET /chat-rooms/:chatRoomId/messages?before=&after=` | ✅ |
+| `POST /chat-rooms/:chatRoomId/messages` | ✅ (preserves `file_type`, `is_voice_note`, media metadata) |
+| `POST /chat-rooms/:chatRoomId/read` | ✅ |
+| `POST /chat-rooms/:chatRoomId/clear` | ✅ |
+| `GET /chat-rooms/:chatRoomId/changes?since=` | ✅ |
+| `DELETE /chat-rooms/:chatRoomId/messages/:messageId?scope=me\|everyone` | ✅ |
+| `PATCH /chat-rooms/:chatRoomId/messages/:messageId` | ✅ |
+| `POST /chat-rooms/:chatRoomId/messages/:messageId/reactions` | ✅ |
+| `PUT /chat-rooms/:chatRoomId/mute` | ✅ |
+| `PUT /chat-rooms/:chatRoomId/archive` | ✅ |
+| `DELETE /chat-rooms/:chatRoomId` | ✅ |
 
-**Message payload must preserve voice/file metadata** (`file_type`,
-`is_voice_note`) — the backend `messages` table already has `media_type`,
-`mime_type`, `file_name`, `file_size`, `audio_duration`, `is_edited`,
-`is_recalled`, `reactions` columns (add `file_type`, `is_voice_note` if
-needed). Blocking must be reflected server-side (room inactive/blocked state)
-rather than only client-local.
-
-### Chat access rules (server-enforced)
-
-`creator_settings.who_can_message`: `everyone | subscribers | none`.
-Non-subscriber messaging a restricted creator must receive a clear error
-(`403` with a code the mobile can use to redirect to the creator profile for
-subscription). The backend must enforce this on room creation/message send —
+**Chat access rules (server-enforced):** `creator_settings.who_can_message`
+(`everyone | subscribers | none`) is enforced on room creation/message send —
 not the UI alone.
 
-**Legacy removal:** the `/conversations` and standalone `/messages` routes and
-the `conversations`/`conversation_members` tables are the legacy architecture.
-They are superseded by chat rooms. Migrate: create `chat_rooms`,
-`chat_room_members` (with per-member context/archive/mute/clear state), and
-reuse `messages` (renamed/aliased as room messages) — or a new
-`chat_room_messages` table. Keep the old tables only as long as migration
-requires; document and stop serving them as the active path.
+**Legacy:** the `/conversations` and standalone `/messages` routes and the
+`conversations`/`conversation_members` tables remain as the legacy
+architecture; chat rooms are the active path. Remove after migration (§18).
 
 ---
 
-## 13. Comments — **Comment Rooms**
+## 13. Comments — **Comment Rooms** (implemented)
 
 The mobile app uses a **Comment Room** model
-(`services/comment-room-service.ts`); the backend still only exposes
-post-scoped `/posts/:id/comments`.
+(`services/comment-room-service.ts`). Implemented — `app/api/comment-rooms/*`.
 
-- Every post has a `comment_room_id` returned in post data
-  (mobile `normalizePost` reads `comment_room_id`).
+- Every post has a `comment_room_id` equal to its post id (`comment_rooms.id ===
+  post.id`), returned in post data.
 - Comments belong to `commentRoomId`, never to a user conversation.
 
-### Required routes
+### Routes
 
-| Method + path | Request → Response |
+| Method + path | Status |
 |---|---|
-| `GET /comment-rooms/:commentRoomId` | `{ comment_room: { comment_room_id, post_id, comments_enabled, comment_count } }` |
-| `GET /comment-rooms/:commentRoomId/comments?after=` | `{ comments, has_more }` |
-| `POST /comment-rooms/:commentRoomId/comments` | `{ body, parent_id? }` → `{ comment }` |
-| `GET /comment-rooms/:commentRoomId/comments/changes?since=` | `{ changed, marker, comments? }` |
-| `GET /comment-rooms/:commentRoomId/comments/:commentId/replies` | `{ replies }` |
-| `PATCH /comment-rooms/:commentRoomId/comments/:commentId` | `{ body }` |
-| `DELETE /comment-rooms/:commentRoomId/comments/:commentId` | delete |
-| `POST/DELETE /comment-rooms/:commentRoomId/comments/:commentId/like` | `{ like_count }` |
-| `PUT /posts/:postId/comments-enabled` | `{ enabled }` (post owner only) |
+| `GET /comment-rooms/:commentRoomId` | ✅ |
+| `GET /comment-rooms/:commentRoomId/comments?after=` | ✅ |
+| `POST /comment-rooms/:commentRoomId/comments` | ✅ |
+| `GET /comment-rooms/:commentRoomId/comments/changes?since=` | ✅ |
+| `GET /comment-rooms/:commentRoomId/comments/:commentId/replies` | ✅ |
+| `PATCH /comment-rooms/:commentRoomId/comments/:commentId` | ✅ |
+| `DELETE /comment-rooms/:commentRoomId/comments/:commentId` | ✅ |
+| `POST/DELETE /comment-rooms/:commentRoomId/comments/:commentId/like` | ✅ |
+| `PUT /posts/:postId/comments-enabled` | ✅ (post owner only) |
 
 The Comment Room is **not deleted** when comments are disabled — it stays
-associated with the post and can be re-enabled. Backend must enforce
-`comments_enabled` on submission. The existing `comments` table already
-carries `post_id`, `author_id`, `body`, `is_pinned`, `like_count`,
-`reply_count`, and `comment_replies` handles threading — add a
-`comment_rooms` table (or a stable `comment_room_id` per post) and map the
-new routes onto the existing comments tables.
-
-**Comment IDs are distinct from Post IDs, Comment Room IDs, and User IDs.**
+associated with the post and can be re-enabled. `comments_enabled` is enforced
+on submission.
 
 ---
 
@@ -427,13 +395,13 @@ new routes onto the existing comments tables.
 
 | Mobile call | Route | Status |
 |---|---|---|
-| `uploadMedia(uri, mime, name)` | `POST /upload` (multipart `file`) → `{ id, url, media_type }` | ❌ backend is `POST /media/upload` returning `{ media: { id, url, type, ... } }`. Add `/upload` alias returning top-level `{ id, url, media_type }` |
+| `uploadMedia(uri, mime, name)` | `POST /upload` (multipart `file`) | ✅ `/upload` alias over `/media/upload` |
 | create-post cleanup | `DELETE /media/:id` | ✅ |
 
-Uploads must be associated with the originating user (and optionally `post_id`).
-Never accept an upload and lose its relationship. R2 direct upload/download
-credential routes (`/credentials/upload-url`, `/credentials/download-url`)
-are the scoped-credential broker for client-direct transfers.
+Uploads are associated with the originating user (and optionally `post_id`).
+R2 direct upload/download credential routes (`/credentials/upload-url`,
+`/credentials/download-url`) are the scoped-credential broker for
+client-direct transfers.
 
 ---
 
@@ -441,8 +409,8 @@ are the scoped-credential broker for client-direct transfers.
 
 | Mobile call | Route | Status |
 |---|---|---|
-| `createShareLink(type, id)` | `POST /share/create {type, target_id}` → `{ share_url }` | ❌ backend is `POST /shares {content_type, content_id}`. Add alias mapping `type`→`content_type`, `target_id`→`content_id` |
-| `resolveShareLink(token)` | `GET /share/resolve/:token` | ❌ backend is `GET /shares/:token`. Add alias |
+| `createShareLink(type, id)` | `POST /share/create {type, target_id}` | ✅ (alias over `/shares`) |
+| `resolveShareLink(token)` | `GET /share/resolve/:token` | ✅ (alias over `/shares/:token`) |
 
 Share token resolves via the `/s/[token]` web page (backend `app/s/[token]`).
 
@@ -452,10 +420,9 @@ Share token resolves via the `/s/[token]` web page (backend `app/s/[token]`).
 
 1. No field received but not persisted; no field persisted but not returned.
 2. Return snake_case **and** camelCase aliases the mobile normalizers read.
-3. IDs: user ID ≠ creator ID (they are the same `users.id`, but creator-scoped
-   queries must filter by `is_creator`/ownership appropriately — never confuse
-   a profile ID with a creator ID in routes like `/creators/:id`).
-4. Post ID ≠ comment room ID ≠ comment ID ≠ user ID.
+3. IDs: user ID == creator ID (same `users.id`), but creator-scoped queries must
+   filter by `is_creator`/ownership appropriately.
+4. Post ID ≠ comment room ID (equal by design) ≠ comment ID ≠ user ID.
 5. No fake success: a failed operation must return a non-2xx error with a
    `code`, never `200 { ok: true }` on failure.
 6. No silent exceptions; log and return `{ ok:false, error, code }`.
@@ -473,8 +440,7 @@ Share token resolves via the `/s/[token]` web page (backend `app/s/[token]`).
   messages/wallet/settings.
 - Subscription access: server verifies `subscriptions` state (never a client
   `isSubscribed` flag).
-- Album access: server verifies `album_unlocks` (never a client
-  `purchased: true`).
+- Album access: server verifies `album_unlocks` (never a client `purchased`).
 - Messaging: server enforces `who_can_message` + block state.
 
 ---
@@ -482,50 +448,48 @@ Share token resolves via the `/s/[token]` web page (backend `app/s/[token]`).
 ## 18. Legacy Systems To Remove / Replace
 
 1. **Conversations** (`/conversations`, `/messages` routes, `conversations`,
-   `conversation_members` tables) → replaced by **Chat Rooms**.
+   `conversation_members` tables) → superseded by **Chat Rooms** (implemented).
+   Remove the legacy routes/tables once the mobile no longer references them.
 2. **Post-scoped comments** (`/posts/:id/comments`, `/comments/:commentId/replies`)
-   → superseded by **Comment Rooms** (keep as internal impl or aliases during
-   migration).
+   → superseded by **Comment Rooms** (implemented). Keep as internal impl or
+   aliases during migration.
 3. **Credential broker** (`/credentials/*`, `credential_grants` table): retain
-   only if the mobile actually uses the presigned R2 upload/download flow;
-   otherwise mark legacy and remove. (Verify mobile usage before deleting.)
+   only if the mobile actually uses the presigned R2 upload/download flow.
 4. `archives` table — appears unused by the current mobile; verify and drop or
    document.
-5. `creator_reviews` / `/creators/:id/reviews` — mobile `useCreatorReviews`
-   is currently a **stub**; either wire it to real reviews or remove the stub.
+5. `creator_reviews` / `/creators/:id/reviews` — mobile `useCreatorReviews` is
+   currently a **stub**; either wire it to real reviews or remove the stub.
 
 ---
 
-## 19. Missing Backend Capabilities (summary)
+## 19. Remaining Backend Items (as of 2026-08-14)
 
-- `POST /auth/register` → return `user_id`.
-- `GET /users/check-username`.
-- `DELETE /users/me`.
-- `/users/me/privacy|notifications|settings` aliases.
-- `GET /posts/feed`, `GET /posts/bookmarks`, `?creatorId=` alias,
-  `PUT /posts/:id/comments-enabled`.
-- `/upload` alias (+ top-level media response shape).
-- `/share/create`, `/share/resolve/:token` aliases.
-- `POST /creators/:creatorId/subscribe`, `GET /creators/:creatorId/messaging-settings`.
-- `GET /creator/dashboard`, `GET /creator/subscribers`.
-- `/creator/wallet/*` (balance, bank-details, withdraw, withdrawals).
-- `GET /wallet` → include `transactions`.
-- **Chat Rooms** (full subsystem).
-- **Comment Rooms** (full subsystem).
-- `POST /albums` price in Naira + `is_unlocked_by_me` response fields.
+Previously-missing items are all implemented. Remaining work is polish, not
+gaps:
+
+- **Paystack webhook** (`charge.success`) — no server-side webhook exists;
+  credit relies on the client calling `verify-paystack`. Add a
+  signature-verified webhook keyed on `reference` for robust reconciliation
+  when the app is killed mid-checkout.
+- **Transaction idempotency index** — add a unique index on
+  `transactions.reference` to harden against duplicate deposits/withdrawals at
+  the DB layer (the verify route already guards at the application layer).
+- **`createPost` response** — returns `{ id }`; confirm the mobile create-post
+  screen reads `resp.id` (not `resp.post`).
+- **Notification preference gating** — verify `push.ts` consults
+  `user_settings.notif_*` before delivery.
+- **Legacy cleanup** — remove the `/conversations` + `/messages` legacy model
+  and the `archives` table after confirming no mobile references (§18).
 
 ---
 
-## 20. Required Migrations
+## 20. Migrations (already applied)
 
-- `users.date_of_birth` (or profile) for registration payload.
-- `chat_rooms`, `chat_room_members`, `chat_room_messages` (or reuse `messages`
-  with room FK); per-member `context_auth` storage for delete-for-me/clear.
-- `comment_rooms` table (or `comment_room_id` on posts + stable id).
-- `user_settings`: add `profile_visibility`, `message_perm` (or map to
-  existing columns).
-- Wallet/transaction idempotency index on `reference`.
-- Indexes for the new room/message/comment queries.
+- ✅ `chat_rooms`, `chat_room_members`, `chat_room_messages` tables.
+- ✅ `comment_rooms` table (id === post id).
+- ✅ `user_settings` privacy/notification columns.
+- ⚠️ `transactions.reference` unique index — **not yet** (see §19).
+- ✅ TOTP columns on `users` (`totp_secret`, `totp_enabled`).
 
 ---
 
@@ -540,38 +504,59 @@ mobile service → route → auth → validation → DB → business logic → r
 
 | Feature | Status |
 |---|---|
-| Register → verify email → login | ⚠️ broken (`user_id` missing) |
+| Register → verify email → login | ✅ (`user_id` returned; 2FA challenge gate) |
 | Session persist + refresh | ✅ |
 | Profile get/update | ✅ |
-| Settings (privacy/notifications/app) | ❌ route mismatch |
-| Home feed / bookmarks | ❌ route mismatch |
-| Post create/edit/delete/like/bookmark/report/view | ✅ (add `{ post }` wrapper + comments-enabled) |
+| Settings (privacy/notifications/app) | ✅ |
+| Home feed / bookmarks | ✅ |
+| Post create/edit/delete/like/bookmark/report/view | ✅ |
 | Videos / shorts feeds | ✅ |
-| Albums (list/detail/create/purchase) | ⚠️ price/field semantics + purchase atomicity |
+| Albums (list/detail/create/purchase) | ✅ (atomic purchase) |
 | Explore / search / categories | ✅ |
-| Subscribe / messaging rules | ❌ route mismatch + missing messaging-settings |
-| Wallet deposit/verify | ✅ (add transactions to `/wallet`) |
-| Creator dashboard / subscribers / settings | ❌ route mismatch |
-| Creator wallet / bank / withdrawals | ❌ route mismatch |
-| Messaging (chat rooms) | ❌ **entire subsystem missing** |
-| Comments (comment rooms) | ❌ **entire subsystem missing** |
+| Subscribe / messaging rules | ✅ |
+| Wallet deposit/verify | ✅ (idempotent verify — §23) |
+| Creator dashboard / subscribers / settings | ✅ |
+| Creator wallet / bank / withdrawals | ✅ |
+| Messaging (chat rooms) | ✅ |
+| Comments (comment rooms) | ✅ |
 | Notifications / push | ✅ |
-| Sharing / deep links | ❌ route mismatch |
-| Media upload | ❌ route mismatch |
+| Sharing / deep links | ✅ |
+| Media upload | ✅ |
 
 ---
 
-## 22. Reconstruction Order
+## 22. Current State (2026-08-14)
 
-1. Auth fixes (register `user_id`, username check, delete-account alias).
-2. Settings aliases (`/users/me/*`).
-3. Content route aliases (`/posts/feed`, `/posts/bookmarks`, `creatorId`,
-   comments-enabled).
-4. Upload / share / subscribe / messaging-settings / dashboard / subscribers /
-   creator-wallet aliases.
-5. Wallet `transactions` on `/wallet`; idempotency for deposits/withdrawals.
-6. **Chat Rooms** subsystem (tables + routes + context auth + polling changes).
-7. **Comment Rooms** subsystem.
-8. Clean mobile fake data (explore catalog stubs, creator-reviews stub,
-   dashboard/wallet zero-fallbacks where they mask real data).
-9. Typecheck both repos; end-to-end verify.
+The backend now matches the mobile contract end-to-end. The remaining items
+are the production-hardening steps in §19 (Paystack webhook, reference
+idempotency index, legacy cleanup). No subsystem is missing.
+
+---
+
+## 23. 2026 End-to-End Audit — Fixes Applied
+
+A full-stack audit traced every critical chain (auth/session, wallet/payments,
+subscriptions, content visibility, messaging/SQLite, notifications). Fixes
+made:
+
+1. **Wallet double-credit race** — `POST /payments/verify-paystack` transitioned
+   the transaction to `success` with an *unconditional* update before crediting,
+   so two concurrent verify calls could both credit. Now the transition is
+   conditional (`WHERE status != 'success'` + `returning()`) and only the winning
+   request credits; the wallet increment is atomic (`balance + amount`).
+2. **Avatar data loss** — the pending registration avatar was removed from
+   AsyncStorage *before* the post-login upload, so a failed/offline upload
+   discarded it permanently. Now it is peeked, uploaded, and cleared only after
+   the server confirms the PATCH (retried next login otherwise).
+3. **Owner-locked content** — `buildVideoRow`/`buildShortRow` hardcoded
+   `isOwner: false`, so a creator saw their own `subscriber`/`subscriber_plus`
+   videos/shorts as locked. `isOwner` is now threaded through the detail and
+   creator-list routes.
+4. **Cross-account chat-cache leak** — the shared chat SQLite cache was only
+   wiped on logout, not on session-expiry or a fresh login, so a second account
+   could inherit the first account's cached rooms/messages. It is now wiped on
+   every session-dropping path.
+5. **Non-subscriber content visibility** — `creators/:id/videos` and
+   `/shorts` listed locked content (title/thumbnail) to non-subscribers, and
+   `/posts` ignored the tier gate. Added `visibleContentCondition()` (mirrors
+   `canViewContent`) so non-subscribers only ever receive free content.

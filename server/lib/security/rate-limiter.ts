@@ -116,6 +116,11 @@ export function verifyEmailLimit(ip: string) {
   return rateLimit(`verify:ip:${ip}`, 10, 15 * MIN);
 }
 
+/** 2FA verification: 10 attempts / 15 min per IP (brute-force guard) */
+export function twoFactorVerifyLimit(ip: string) {
+  return rateLimit(`2fa:ip:${ip}`, 10, 15 * MIN);
+}
+
 /** Generic API abuse guard: 200 requests / min per IP (all non-auth routes) */
 export function apiLimit(ip: string) {
   return rateLimit(`api:ip:${ip}`, 200, MIN);

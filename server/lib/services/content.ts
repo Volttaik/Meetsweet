@@ -1,3 +1,5 @@
+import { and, eq, isNull, ne, or, type AnyColumn } from "drizzle-orm";
+
 /**
  * Shared helpers for building video / short / comment response shapes.
  * Used by /api/videos/* and /api/shorts/* routes.
@@ -72,6 +74,44 @@ export function canViewContent(
 
   // "subscriber" content: any active subscription qualifies
   return true;
+}
+
+/**
+ * Build a SQL WHERE condition selecting only the posts a viewer may see on a
+ * creator profile, mirroring canViewContent() exactly:
+ *   - owner: everything (the caller skips this condition for the owner)
+ *   - free content (tier "free", or public visibility with no tier): everyone
+ *   - subscriber content: any active subscription
+ *   - subscriber_plus content: subscriber_plus holders only
+ * A non-subscriber therefore only ever receives free content — subscriber-gated
+ * rows are excluded from the list entirely (metadata included).
+ */
+export function visibleContentCondition(
+  visibilityCol: AnyColumn,
+  tierCol: AnyColumn,
+  isSubscribed: boolean,
+  subTier: string | null,
+) {
+  const notDraft = ne(visibilityCol, "draft");
+  const free = or(
+    eq(tierCol, "free"),
+    and(eq(visibilityCol, "public"), isNull(tierCol)),
+  );
+
+  if (!isSubscribed) {
+    return and(notDraft, free);
+  }
+
+  const subscriberGated = or(
+    eq(tierCol, "subscriber"),
+    and(eq(visibilityCol, "subscribers"), isNull(tierCol)),
+  );
+
+  if (subTier === "subscriber_plus") {
+    return and(notDraft, or(free, subscriberGated, eq(tierCol, "subscriber_plus")));
+  }
+
+  return and(notDraft, or(free, subscriberGated));
 }
 
 // ─── Grouping helper ─────────────────────────────────────────────────────────
@@ -158,6 +198,7 @@ export function buildVideoRow(
   subscribedToCreator: boolean,
   previewComments: CommentRow[] = [],
   subscriptionTier?: string | null,
+  isOwner = false,
 ) {
   const sorted = [...mediaRows].sort((a, b) => a.sort_order - b.sort_order);
   const primary = sorted[0];
@@ -170,7 +211,7 @@ export function buildVideoRow(
     row.tier,
     subscribedToCreator,
     subscriptionTier ?? null,
-    false,
+    isOwner,
   );
 
   return {
@@ -226,6 +267,7 @@ export function buildShortRow(
   likedByMe: boolean,
   subscribedToCreator: boolean,
   subscriptionTier?: string | null,
+  isOwner = false,
 ) {
   const sorted = [...mediaRows].sort((a, b) => a.sort_order - b.sort_order);
   const primary = sorted[0];
@@ -238,7 +280,7 @@ export function buildShortRow(
     row.tier,
     subscribedToCreator,
     subscriptionTier ?? null,
-    false,
+    isOwner,
   );
 
   return {

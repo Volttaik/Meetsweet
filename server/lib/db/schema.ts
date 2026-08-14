@@ -36,6 +36,11 @@ export const users = sqliteTable(
     created_at: createdAt(),
     updated_at: updatedAt(),
     deleted_at: text("deleted_at"),
+    // ── Two-factor authentication (TOTP) ──────────────────────────────────
+    // totp_secret is AES-256-GCM encrypted at rest (see lib/security/totp.ts).
+    // It is never returned by any API response after the one-time setup call.
+    totp_secret: text("totp_secret"),
+    totp_enabled: integer("totp_enabled", { mode: "boolean" }).notNull().default(false),
   },
   (table) => [
     uniqueIndex("users_email_idx").on(table.email),

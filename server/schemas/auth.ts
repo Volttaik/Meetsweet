@@ -70,3 +70,17 @@ export const resendVerificationSchema = z.object({
 export const usernameAvailabilitySchema = z.object({
   username: z.string().min(3).max(30),
 });
+
+export const twoFaEnableSchema = z.object({
+  code: z.string().length(6),
+});
+
+export const twoFaDisableSchema = z.object({
+  password: z.string().min(1),
+  code: z.string().length(6).optional(),
+});
+
+export const twoFaVerifySchema = z.object({
+  challenge_token: z.string().min(1),
+  code: z.string().length(6),
+});

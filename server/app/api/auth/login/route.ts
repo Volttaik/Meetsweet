@@ -1,16 +1,16 @@
-import { createHash } from "crypto";
 import { NextRequest } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { users, refresh_tokens, login_history, verification_codes } from "@/lib/db/schema";
+import { users, login_history, verification_codes } from "@/lib/db/schema";
 import { verifyPassword } from "@/lib/auth/password";
-import { signAccessToken, signRefreshToken } from "@/lib/auth/jwt";
+import { signTotpChallenge } from "@/lib/auth/jwt";
 import { generateId, generateVerificationCode, expiresAt } from "@/lib/auth/codes";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err, unauthorized } from "@/lib/api/response";
 import { loginSchema } from "@/schemas/auth";
 import { loginLimit, getClientIp, tooManyRequests } from "@/lib/security/rate-limiter";
 import { sendVerificationEmail } from "@/lib/services/email";
+import { issueSession } from "@/lib/auth/session";
 
 export async function POST(req: NextRequest) {
   const ip = getClientIp(req);
@@ -36,6 +36,7 @@ export async function POST(req: NextRequest) {
       is_creator: users.is_creator,
       is_active: users.is_active,
       is_verified: users.is_verified,
+      totp_enabled: users.totp_enabled,
     })
     .from(users)
     .where(eq(users.email, email))
@@ -92,34 +93,33 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // ── Issue tokens ─────────────────────────────────────────────────────────
-  const tokenPayload = { userId: user.id, role: user.role };
-  const [accessToken, refreshToken] = await Promise.all([
-    signAccessToken(tokenPayload),
-    signRefreshToken(tokenPayload),
-  ]);
+  const publicUser = {
+    id: user.id,
+    full_name: user.full_name,
+    username: user.username,
+    email: user.email,
+    role: user.role,
+    is_creator: user.is_creator,
+  };
 
-  const refreshExpiry = expiresAt(60 * 24 * 30); // 30 days
-  await db.insert(refresh_tokens).values({
-    id: generateId(),
-    user_id: user.id,
-    token_hash: createHash("sha256").update(refreshToken).digest("hex"),
-    device_id: device_id ?? null,
-    expires_at: refreshExpiry,
-  });
+  // ── Two-factor authentication gate ──────────────────────────────────────
+  // A correct password must never produce a session when 2FA is enabled. Issue
+  // a short-lived, single-purpose challenge token instead; the client submits
+  // the authenticator code to /auth/2fa/verify to obtain real tokens.
+  if (user.totp_enabled) {
+    const challengeToken = await signTotpChallenge(user.id);
+    return ok({
+      requires_2fa: true,
+      challenge_token: challengeToken,
+      user: publicUser,
+    });
+  }
+
+  // ── Issue tokens ─────────────────────────────────────────────────────────
+  const session = await issueSession(user.id, user.role, device_id);
 
   return ok({
-    access_token: accessToken,
-    refresh_token: refreshToken,
-    token_type: "Bearer",
-    expires_in: 900,
-    user: {
-      id: user.id,
-      full_name: user.full_name,
-      username: user.username,
-      email: user.email,
-      role: user.role,
-      is_creator: user.is_creator,
-    },
+    ...session,
+    user: publicUser,
   });
 }

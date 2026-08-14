@@ -92,6 +92,6 @@ export async function GET(
     );
   }
 
-  const video = buildVideoRow(row, mediaRows, liked, isSubscribed, previewComments, subTier);
+  const video = buildVideoRow(row, mediaRows, liked, isSubscribed, previewComments, subTier, isOwner);
   return ok({ video });
 }

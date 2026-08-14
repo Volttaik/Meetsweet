@@ -745,6 +745,16 @@ async function run() {
       name: "chat_room_messages: room/created index",
       sql: `CREATE INDEX IF NOT EXISTS chat_room_messages_room_created_idx ON chat_room_messages(chat_room_id, created_at)`,
     },
+
+    // ── Two-factor authentication (TOTP) ────────────────────────────────────
+    {
+      name: "users: add totp_secret",
+      sql: `ALTER TABLE users ADD COLUMN totp_secret TEXT`,
+    },
+    {
+      name: "users: add totp_enabled",
+      sql: `ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0`,
+    },
   ];
 
   for (const m of migrations) {

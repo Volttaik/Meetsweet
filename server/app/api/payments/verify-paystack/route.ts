@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { eq, or } from "drizzle-orm";
+import { eq, or, and, ne, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { transactions, wallets } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
@@ -120,16 +120,33 @@ export async function POST(req: NextRequest) {
     return err("Payment amount does not match the transaction", 400, "PAYMENT_MISMATCH");
   }
 
-  // Mark the transaction before crediting it. The already-successful branch
-  // above makes repeated verification idempotent for normal client retries.
-  await db
+  // Atomically transition the transaction from non-success → success. If another
+  // concurrent request already credited this transaction (double-tap, retry race),
+  // the conditional update matches zero rows and we return the current balance
+  // WITHOUT crediting again. This guarantees a deposit is never double-credited.
+  const [transitioned] = await db
     .update(transactions)
     .set({
       status: "success",
       paystack_ref: json.data.reference ?? tx.reference,
       updated_at: now,
     })
-    .where(eq(transactions.id, tx.id));
+    .where(and(eq(transactions.id, tx.id), ne(transactions.status, "success")))
+    .returning({ id: transactions.id });
+
+  if (!transitioned) {
+    const [alreadyWallet] = await db
+      .select({ balance: wallets.balance })
+      .from(wallets)
+      .where(eq(wallets.user_id, auth.user.userId))
+      .limit(1);
+    return ok({
+      success: true,
+      amountAdded: tx.amount,
+      newBalance: alreadyWallet?.balance ?? 0,
+      message: "Transaction already credited",
+    });
+  }
 
   const [wallet] = await db
     .select({ id: wallets.id, balance: wallets.balance })
@@ -139,9 +156,11 @@ export async function POST(req: NextRequest) {
 
   const newBalance = (wallet?.balance ?? 0) + amount;
   if (wallet) {
+    // Atomic increment (not read-modify-write) so two deposits verified
+    // concurrently can never lose one another's credit.
     await db
       .update(wallets)
-      .set({ balance: newBalance, updated_at: now })
+      .set({ balance: sql`${wallets.balance} + ${amount}`, updated_at: now })
       .where(eq(wallets.id, wallet.id));
   } else {
     await db.insert(wallets).values({

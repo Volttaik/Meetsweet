@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { posts, media, users, profiles, post_likes, subscriptions } from "@/lib/db/schema";
 import { optionalAuth } from "@/middleware/auth";
 import { ok, err } from "@/lib/api/response";
-import { buildVideoRow, groupMediaByPost } from "@/lib/services/content";
+import { buildVideoRow, groupMediaByPost, visibleContentCondition } from "@/lib/services/content";
 
 export async function GET(
   req: NextRequest,
@@ -19,6 +19,17 @@ export async function GET(
   const [creator] = await db.select({ id: users.id, is_creator: users.is_creator })
     .from(users).where(and(condition, eq(users.is_active, true))).limit(1);
   if (!creator || !creator.is_creator) return err("Creator not found", 404);
+
+  const [subscription] = userId
+    ? await db
+        .select({ id: subscriptions.id, tier: subscriptions.tier })
+        .from(subscriptions)
+        .where(and(eq(subscriptions.subscriber_id, userId), eq(subscriptions.creator_id, creator.id), eq(subscriptions.status, "active")))
+        .limit(1)
+    : [];
+  const isSubscribed = !!subscription;
+  const subTier = subscription?.tier ?? null;
+  const isOwner = userId === creator.id;
 
   const rows = await db
     .select({
@@ -49,6 +60,7 @@ export async function GET(
       isNull(posts.deleted_at),
       eq(posts.status, "published"),
       eq(posts.content_type, "video"),
+      isOwner ? undefined : visibleContentCondition(posts.visibility, posts.tier, isSubscribed, subTier),
       cursor ? sql`${posts.created_at} < ${cursor}` : undefined,
     ))
     .orderBy(desc(posts.published_at))
@@ -68,21 +80,10 @@ export async function GET(
         .then((r) => new Set(r.map((x) => x.post_id)))
     : new Set();
 
-  const [subscription] = userId
-    ? await db
-        .select({ id: subscriptions.id, tier: subscriptions.tier })
-        .from(subscriptions)
-        .where(and(eq(subscriptions.subscriber_id, userId), eq(subscriptions.creator_id, creator.id), eq(subscriptions.status, "active")))
-        .limit(1)
-    : [];
-
-  const isSubscribed = !!subscription;
-  const subTier = subscription?.tier ?? null;
-
   const mediaByPost = groupMediaByPost(mediaRows);
 
   const videos = items.map((p) =>
-    buildVideoRow(p, mediaByPost[p.id] ?? [], likedSet.has(p.id), isSubscribed, [], subTier),
+    buildVideoRow(p, mediaByPost[p.id] ?? [], likedSet.has(p.id), isSubscribed, [], subTier, isOwner),
   );
 
   return ok({

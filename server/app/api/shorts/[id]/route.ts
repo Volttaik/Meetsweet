@@ -75,6 +75,6 @@ export async function GET(
     );
   }
 
-  const short = buildShortRow(row, mediaRows, liked, isSubscribed, subTier);
+  const short = buildShortRow(row, mediaRows, liked, isSubscribed, subTier, isOwner);
   return ok({ short });
 }
