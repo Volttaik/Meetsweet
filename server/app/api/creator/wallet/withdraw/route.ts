@@ -2,11 +2,12 @@ import { NextRequest } from "next/server";
 import { eq, and, gte, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { wallets, transactions } from "@/lib/db/schema";
+import { wallets, transactions, users } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err } from "@/lib/api/response";
 import { generateId } from "@/lib/auth/codes";
+import { sendWithdrawalRequestedEmail } from "@/lib/services/email";
 
 const schema = z.object({
   amount: z.number().positive(),
@@ -69,6 +70,28 @@ export async function POST(req: NextRequest) {
       return err("Insufficient wallet balance", 400, "INSUFFICIENT_BALANCE");
     }
     throw error;
+  }
+
+  // Confirmation email — best-effort, never blocks the withdrawal.
+  // Failures are logged inside deliver() and swallowed here.
+  try {
+    const [userRow] = await db
+      .select({ email: users.email, full_name: users.full_name })
+      .from(users)
+      .where(eq(users.id, auth.user.userId))
+      .limit(1);
+    if (userRow?.email) {
+      await sendWithdrawalRequestedEmail({
+        to: userRow.email,
+        name: userRow.full_name ?? userRow.email,
+        amount,
+        currency: "NGN",
+        bankName: bank_name ?? null,
+        accountNumber: account_number ?? null,
+      }).catch(() => null);
+    }
+  } catch {
+    // Non-critical
   }
 
   return ok({

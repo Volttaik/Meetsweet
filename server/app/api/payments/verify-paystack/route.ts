@@ -1,11 +1,12 @@
 import { NextRequest } from "next/server";
 import { eq, or, and, ne, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { transactions, wallets } from "@/lib/db/schema";
+import { transactions, wallets, users } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
 import { ok, err } from "@/lib/api/response";
 import { config } from "@/lib/config";
 import { generateId } from "@/lib/auth/codes";
+import { sendWalletDepositEmail } from "@/lib/services/email";
 
 /**
  * POST /api/payments/verify-paystack
@@ -169,6 +170,27 @@ export async function POST(req: NextRequest) {
       balance: amount,
       currency: tx.currency,
     });
+  }
+
+  // Confirmation email — best-effort, must never block or roll back the credit.
+  // Failures are logged inside deliver() and swallowed here.
+  try {
+    const [userRow] = await db
+      .select({ email: users.email, full_name: users.full_name })
+      .from(users)
+      .where(eq(users.id, auth.user.userId))
+      .limit(1);
+    if (userRow?.email) {
+      await sendWalletDepositEmail({
+        to: userRow.email,
+        name: userRow.full_name ?? userRow.email,
+        amount,
+        currency: tx.currency,
+        newBalance,
+      }).catch(() => null);
+    }
+  } catch {
+    // Non-critical
   }
 
   return ok({
