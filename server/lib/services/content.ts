@@ -218,6 +218,22 @@ export function buildVideoRow(
     id: row.id,
     content_type: "video" as const,
     contentType: "video" as const,
+    // Flat creator fields — kept at the top level (in addition to the nested
+    // `creator` object) so client normalizers that read creator_id /
+    // creator_username / creator_display_name / creator_avatar / creator_is_verified
+    // (Explore previews and normalizePost) can resolve the author. Dropping these
+    // is what caused video posts to be excluded from Explore and video authors to
+    // render as "Anonymous".
+    creator_id: row.creator_id,
+    creatorId: row.creator_id,
+    creator_username: row.creator_username,
+    creatorUsername: row.creator_username,
+    creator_display_name: row.creator_display_name,
+    creatorDisplayName: row.creator_display_name,
+    creator_avatar: row.creator_avatar,
+    creatorAvatar: row.creator_avatar,
+    creator_is_verified: Boolean(row.creator_is_verified),
+    creatorIsVerified: Boolean(row.creator_is_verified),
     title: row.title ?? row.caption ?? "",
     description: row.description ?? row.caption ?? "",
     caption: row.caption ?? null,
@@ -287,6 +303,18 @@ export function buildShortRow(
     id: row.id,
     content_type: "short" as const,
     contentType: "short" as const,
+    // Flat creator fields (see buildVideoRow) so client normalizers can resolve
+    // the author from a short row without relying on the nested `creator` object.
+    creator_id: row.creator_id,
+    creatorId: row.creator_id,
+    creator_username: row.creator_username,
+    creatorUsername: row.creator_username,
+    creator_display_name: row.creator_display_name,
+    creatorDisplayName: row.creator_display_name,
+    creator_avatar: row.creator_avatar,
+    creatorAvatar: row.creator_avatar,
+    creator_is_verified: Boolean(row.creator_is_verified),
+    creatorIsVerified: Boolean(row.creator_is_verified),
     caption: row.caption ?? row.title ?? "",
     tier: row.tier ?? null,
     thumbnail_url: thumbnailUrl,

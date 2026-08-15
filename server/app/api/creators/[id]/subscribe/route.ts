@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { eq, and, gte, sql } from "drizzle-orm";
+import { eq, and, gte, sql, count } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import {
@@ -132,11 +132,21 @@ export async function POST(
     throw error;
   }
 
+  // Authoritative subscriber count AFTER the transaction so the client can
+  // update the creator profile immediately (no stale zero-count after subscribe).
+  const [subCountRow] = await db
+    .select({ n: count() })
+    .from(subscriptions)
+    .where(and(eq(subscriptions.creator_id, creator_id), eq(subscriptions.status, "active")));
+  const subscriber_count = subCountRow?.n ?? 0;
+
   if (outcome.kind === "existing") {
     return ok({
       subscription_id: outcome.id,
       subscribed: true,
       tier: outcome.tier,
+      subscriber_count,
+      subscriberCount: subscriber_count,
       subscription: { id: outcome.id, creator_id, status: "active" },
     });
   }
@@ -165,6 +175,8 @@ export async function POST(
     subscribed: true,
     subscription_id: subId,
     tier,
+    subscriber_count,
+    subscriberCount: subscriber_count,
     subscription: { id: subId, creator_id, status: "active", amount: price, started_at: now, expires_at: expires },
   });
 }

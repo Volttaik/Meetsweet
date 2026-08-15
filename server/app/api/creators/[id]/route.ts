@@ -65,18 +65,23 @@ export async function GET(
         .then((r) => r[0] ?? null),
     ]);
 
-  // Is the viewer following / subscribed?
-  const [isFollowing, isSubscribed] =
+  // Is the viewer following / subscribed? Also expose the viewer's subscription
+  // tier so the client can render the exact subscribed state (subscriber vs
+  // subscriber_plus) without guessing.
+  const [isFollowing, subRow] =
     userId
       ? await Promise.all([
           db.select({ id: follows.id }).from(follows)
             .where(and(eq(follows.follower_id, userId), eq(follows.following_id, user.id)))
             .then((r) => r.length > 0),
-          db.select({ id: subscriptions.id }).from(subscriptions)
+          db.select({ tier: subscriptions.tier }).from(subscriptions)
             .where(and(eq(subscriptions.subscriber_id, userId), eq(subscriptions.creator_id, user.id), eq(subscriptions.status, "active")))
-            .then((r) => r.length > 0),
+            .limit(1)
+            .then((r) => r[0] ?? null),
         ])
-      : [false, false];
+      : [false, null];
+  const isSubscribed = Boolean(subRow);
+  const subscriptionTier = subRow?.tier ?? null;
 
   const creator = {
     id: user.id,
@@ -121,6 +126,8 @@ export async function GET(
     // Mobile normalizer reads raw.subscribed_to_creator
     subscribed_to_creator: isSubscribed,
     subscribedToCreator: isSubscribed,
+    subscription_tier: subscriptionTier,
+    subscriptionTier,
     joined_at: user.created_at,
   };
 
