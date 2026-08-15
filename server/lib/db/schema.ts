@@ -658,20 +658,28 @@ export const wallets = sqliteTable("wallets", {
   updated_at: updatedAt(),
 });
 
-export const transactions = sqliteTable("transactions", {
-  id: id(),
-  user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  type: text("type").notNull(),
-  amount: real("amount").notNull(),
-  currency: text("currency").notNull().default("NGN"),
-  status: text("status").notNull().default("pending"),
-  reference: text("reference"),
-  paystack_ref: text("paystack_ref"),
-  description: text("description"),
-  metadata: text("metadata"),
-  created_at: createdAt(),
-  updated_at: updatedAt(),
-});
+export const transactions = sqliteTable(
+  "transactions",
+  {
+    id: id(),
+    user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    type: text("type").notNull(),
+    amount: real("amount").notNull(),
+    currency: text("currency").notNull().default("NGN"),
+    status: text("status").notNull().default("pending"),
+    reference: text("reference"),
+    paystack_ref: text("paystack_ref"),
+    description: text("description"),
+    metadata: text("metadata"),
+    created_at: createdAt(),
+    updated_at: updatedAt(),
+  },
+  (table) => [
+    uniqueIndex("transactions_reference_idx")
+      .on(table.reference)
+      .where(sql`${table.reference} IS NOT NULL`),
+  ],
+);
 
 export const subscriptions = sqliteTable("subscriptions", {
   id: id(),
