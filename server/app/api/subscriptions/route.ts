@@ -223,7 +223,7 @@ export async function POST(req: NextRequest) {
         actor_id: auth.user.userId,
         actor_username: actor.replace(/^@/, ""),
       },
-    }),
+    }, "notif_new_subscribers"),
   );
 
   return created({ subscribed: true, subscription_id: subId, tier: resolvedTier, subscription: sub });

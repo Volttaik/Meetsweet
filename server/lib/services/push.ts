@@ -7,7 +7,7 @@
 
 import { eq, and } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { devices, users, profiles, subscriptions, notifications } from "@/lib/db/schema";
+import { devices, users, subscriptions, notifications, user_settings } from "@/lib/db/schema";
 import { generateId } from "@/lib/auth/codes";
 
 const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
@@ -32,6 +32,42 @@ type ExpoMessage = {
 type ExpoTicket =
   | { status: "ok"; id: string }
   | { status: "error"; message: string; details?: { error?: string } };
+
+export type NotifPreferenceKey =
+  | "notif_messages"
+  | "notif_comments"
+  | "notif_mentions"
+  | "notif_likes"
+  | "notif_new_subscribers"
+  | "notif_creator_updates"
+  | "notif_marketing";
+
+/**
+ * Whether push delivery is allowed for a user: the master `push_notifications`
+ * switch must be on, and when a category is supplied, that category must also
+ * be on. A missing settings row falls back to the schema defaults (all enabled
+ * except marketing).
+ */
+async function isPushAllowed(
+  userId: string,
+  category?: NotifPreferenceKey,
+): Promise<boolean> {
+  try {
+    const [settings] = await db
+      .select()
+      .from(user_settings)
+      .where(eq(user_settings.user_id, userId))
+      .limit(1);
+
+    if (!settings) return true;
+    if (settings.push_notifications === false) return false;
+    if (!category) return true;
+    return settings[category] !== false;
+  } catch {
+    // Preference lookup must never block delivery on a transient error.
+    return true;
+  }
+}
 
 /**
  * Send a push notification to one or more Expo push tokens.
@@ -97,8 +133,11 @@ export async function sendPushToTokens(
 export async function sendPushToUser(
   userId: string,
   payload: PushPayload,
+  category?: NotifPreferenceKey,
 ): Promise<void> {
   try {
+    if (!(await isPushAllowed(userId, category))) return;
+
     const rows = await db
       .select({ push_token: devices.push_token })
       .from(devices)
@@ -122,33 +161,12 @@ export async function sendPushToUser(
 export async function sendPushToUsers(
   userIds: string[],
   payload: PushPayload,
+  category?: NotifPreferenceKey,
 ): Promise<void> {
   if (userIds.length === 0) return;
-  try {
-    const rows = await db
-      .select({ push_token: devices.push_token })
-      .from(devices)
-      .where(
-        userIds.length === 1
-          ? eq(devices.user_id, userIds[0])
-          : // Use IN via raw SQL for multiple users
-            eq(devices.user_id, userIds[0]), // fallback — will fan out below for >1
-      );
-
-    // For multiple users, query individually to keep it simple with Drizzle's
-    // sqlite-core which doesn't support inArray on text pk in all versions.
-    if (userIds.length > 1) {
-      await Promise.all(userIds.map((uid) => sendPushToUser(uid, payload)));
-      return;
-    }
-
-    const tokens = rows
-      .map((r) => r.push_token)
-      .filter((t): t is string => Boolean(t));
-    if (tokens.length > 0) await sendPushToTokens(tokens, payload);
-  } catch {
-    // Non-critical
-  }
+  await Promise.all(
+    userIds.map((uid) => sendPushToUser(uid, payload, category)),
+  );
 }
 
 /**
@@ -229,7 +247,11 @@ export async function notifySubscribersOfNewPost(input: {
       ),
     );
 
-    await sendPushToUsers(recipientIds, { title: "New Post", body, data });
+    await sendPushToUsers(
+      recipientIds,
+      { title: "New Post", body, data },
+      "notif_creator_updates",
+    );
   } catch {
     // Publishing must not fail because a notification provider is unavailable.
   }

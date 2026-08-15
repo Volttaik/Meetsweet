@@ -142,7 +142,7 @@ export async function POST(
           content_type: post.content_type ?? "post",
           actor_username: actor.replace(/^@/, ""),
         },
-      }),
+      }, "notif_comments"),
     );
   }
 

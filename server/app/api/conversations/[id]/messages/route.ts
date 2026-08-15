@@ -392,7 +392,7 @@ export async function POST(
         actor_id: auth.user.userId,
         actor_username: senderRow?.username ?? null,
       },
-    });
+    }, "notif_messages");
   }
 
   return ok({

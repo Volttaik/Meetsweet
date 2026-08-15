@@ -122,7 +122,7 @@ export async function POST(
         title: "New Message",
         body: d.body ? `${actor}: ${d.body.slice(0, 80)}` : `${actor} sent you a message`,
         data: { type: "message", chat_room_id: chatRoomId, actor_id: auth.user.userId },
-      }),
+      }, "notif_messages"),
     );
   }
 

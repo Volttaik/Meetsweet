@@ -168,7 +168,7 @@ export async function POST(
       title: "New Subscriber",
       body: `${actor} just subscribed to you`,
       data: { type: "subscribe", actor_id: auth.user.userId, actor_username: actor.replace(/^@/, "") },
-    }),
+    }, "notif_new_subscribers"),
   );
 
   return created({
