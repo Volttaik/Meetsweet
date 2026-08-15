@@ -160,6 +160,20 @@ export async function POST(
     .where(eq(chat_room_messages.id, messageId))
     .limit(1);
 
-  const message = await buildMessage(row, auth.user.userId);
+  // Read marker for the just-inserted message: the OTHER participant's
+  // last_read_at (so the sender sees an honest read state for their message).
+  let readThrough: string | null = null;
+  if (other) {
+    const [otherMember] = await db
+      .select({ last_read_at: chat_room_members.last_read_at })
+      .from(chat_room_members)
+      .where(
+        and(eq(chat_room_members.chat_room_id, chatRoomId), eq(chat_room_members.user_id, other.user_id)),
+      )
+      .limit(1);
+    readThrough = otherMember?.last_read_at ?? null;
+  }
+
+  const message = await buildMessage(row, auth.user.userId, undefined, readThrough);
   return created({ message });
 }

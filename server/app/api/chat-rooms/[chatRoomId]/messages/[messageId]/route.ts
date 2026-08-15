@@ -30,13 +30,24 @@ export async function PATCH(
   if (!member) return err("Chat room not found", 404);
 
   const [message] = await db
-    .select({ id: chat_room_messages.id, sender_id: chat_room_messages.sender_id })
+    .select({
+      id: chat_room_messages.id,
+      sender_id: chat_room_messages.sender_id,
+      media_url: chat_room_messages.media_url,
+      media_type: chat_room_messages.media_type,
+    })
     .from(chat_room_messages)
     .where(and(eq(chat_room_messages.id, messageId), eq(chat_room_messages.chat_room_id, chatRoomId)))
     .limit(1);
 
   if (!message) return err("Message not found", 404);
   if (message.sender_id !== auth.user.userId) return err("Forbidden", 403);
+
+  // Only text messages may be edited. Media/audio/voice messages carry no
+  // editable body and must never be modified through this route.
+  if (message.media_url || message.media_type) {
+    return err("Only text messages can be edited", 400);
+  }
 
   const parsed = await parseBody(req, z.object({ body: z.string().min(1).max(5000) }));
   if (!parsed.success) return parsed.response;

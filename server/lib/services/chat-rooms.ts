@@ -212,16 +212,48 @@ export async function buildRoom(chatRoomId: string, viewerId: string): Promise<a
   const others = participants.filter((p) => p.id !== viewerId);
   const other = others[0] ?? null;
 
-  // Latest message (respecting the viewer's clear/delete state) for the preview.
-  const [lastMessage] = await db
-    .select()
+  // Latest messages (newest first) — filter out anything the viewer cleared,
+  // deleted-for-me, or that was recalled so the preview never shows stale
+  // content after Clear Chat / Delete / recall.
+  const recent = await db
+    .select({
+      id: chat_room_messages.id,
+      body: chat_room_messages.body,
+      media_type: chat_room_messages.media_type,
+      sender_id: chat_room_messages.sender_id,
+      created_at: chat_room_messages.created_at,
+      is_recalled: chat_room_messages.is_recalled,
+      deleted_for: chat_room_messages.deleted_for,
+    })
     .from(chat_room_messages)
     .where(eq(chat_room_messages.chat_room_id, chatRoomId))
     .orderBy(desc(chat_room_messages.created_at))
-    .limit(1);
+    .limit(50);
 
-  const unreadCount = await db
-    .select({ count: sql<number>`count(*)` })
+  const viewerDeletedFor = (deletedFor: string | null): string[] => parseJsonArray(deletedFor);
+  const clearedAt = member.cleared_at;
+  const isVisibleToViewer = (r: {
+    is_recalled: boolean | null;
+    deleted_for: string | null;
+    created_at: string;
+  }): boolean => {
+    if (r.is_recalled) return false;
+    if (viewerDeletedFor(r.deleted_for).includes(viewerId)) return false;
+    if (clearedAt && r.created_at <= clearedAt) return false;
+    return true;
+  };
+
+  const lastMessage = recent.find(isVisibleToViewer) ?? null;
+
+  // Unread count: messages from the other participant that are newer than the
+  // viewer's last-read marker AND still visible (not cleared/deleted/recalled).
+  const unreadCandidates = await db
+    .select({
+      id: chat_room_messages.id,
+      created_at: chat_room_messages.created_at,
+      is_recalled: chat_room_messages.is_recalled,
+      deleted_for: chat_room_messages.deleted_for,
+    })
     .from(chat_room_messages)
     .where(
       and(
@@ -230,6 +262,7 @@ export async function buildRoom(chatRoomId: string, viewerId: string): Promise<a
         sql`(${chat_room_messages.created_at} > ${member.last_read_at ?? ""})`,
       ),
     );
+  const unreadCount = unreadCandidates.filter(isVisibleToViewer).length;
 
   const isBlocked = other ? await isBlockedBetween(viewerId, other.id) : false;
 
@@ -244,8 +277,8 @@ export async function buildRoom(chatRoomId: string, viewerId: string): Promise<a
     isArchived: member.is_archived,
     is_blocked: isBlocked,
     isBlocked,
-    unread_count: unreadCount[0]?.count ?? 0,
-    unreadCount: unreadCount[0]?.count ?? 0,
+    unread_count: unreadCount,
+    unreadCount,
     created_at: room.created_at,
     createdAt: room.created_at,
     updated_at: room.updated_at,
@@ -267,10 +300,19 @@ export async function buildRoom(chatRoomId: string, viewerId: string): Promise<a
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function buildMessage(raw: any, viewerId: string, replyLookup?: Map<string, any>): Promise<any> {
+export async function buildMessage(
+  raw: any,
+  viewerId: string,
+  replyLookup?: Map<string, any>,
+  readThrough?: string | null,
+): Promise<any> {
   const reactions = parseReactions(raw.reactions);
   const deletedFor = parseJsonArray(raw.deleted_for);
   const isOwn = raw.sender_id === viewerId;
+  // Honest status: "delivered" = persisted server-side (true for every stored
+  // message); "read" = the OTHER participant's last_read_at has passed this
+  // message's timestamp. Only meaningful for the viewer's own messages.
+  const read = isOwn ? Boolean(readThrough && raw.created_at && raw.created_at <= readThrough) : false;
 
   let replyTo: any = null;
   if (raw.reply_to_id) {
@@ -327,6 +369,8 @@ export async function buildMessage(raw: any, viewerId: string, replyLookup?: Map
     },
     is_own: isOwn,
     isOwn: isOwn,
+    delivered: true,
+    read,
     reactions,
     reply_to: replyTo,
     replyTo,
@@ -411,9 +455,27 @@ export async function listRoomMessages(
     for (const r of replies) replyLookup.set(r.id, r);
   }
 
+  // Read marker for the viewer's outgoing messages: the OTHER participant's
+  // last_read_at. When it has passed a message's timestamp, that message was
+  // read by the recipient.
+  let readThrough: string | null = null;
+  if (member) {
+    const [otherMember] = await db
+      .select({ last_read_at: chat_room_members.last_read_at })
+      .from(chat_room_members)
+      .where(
+        and(
+          eq(chat_room_members.chat_room_id, chatRoomId),
+          sql`${chat_room_members.user_id} != ${viewerId}`,
+        ),
+      )
+      .limit(1);
+    readThrough = otherMember?.last_read_at ?? null;
+  }
+
   const messages = [];
   for (const r of visible) {
-    messages.push(await buildMessage(r, viewerId, replyLookup));
+    messages.push(await buildMessage(r, viewerId, replyLookup, readThrough));
   }
   return messages;
 }

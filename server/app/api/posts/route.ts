@@ -160,10 +160,6 @@ export async function GET(req: NextRequest) {
     const subscribedIds = allSubs.map((s) => s.creator_id);
     const plusIds = plusSubs.map((s) => s.creator_id);
 
-    if (subscribedIds.length === 0) {
-      return ok({ posts: [], next_cursor: null, nextCursor: null, page, limit });
-    }
-
     const subIdList = sql.join(subscribedIds.map((id) => sql`${id}`), sql`, `);
     const plusIdList = plusIds.length > 0
       ? sql.join(plusIds.map((id) => sql`${id}`), sql`, `)
@@ -173,6 +169,8 @@ export async function GET(req: NextRequest) {
     //   free (or null tier) posts from any subscribed creator
     //   subscriber posts from any subscribed creator
     //   subscriber_plus posts only from subscriber_plus subscriptions
+    // Own posts always pass — a creator must never have to subscribe to
+    // themselves to see their own content in their Home feed.
     const tierCondition = or(
       or(eq(posts.tier, "free"), isNull(posts.tier)),
       eq(posts.tier, "subscriber"),
@@ -181,14 +179,24 @@ export async function GET(req: NextRequest) {
         : sql`0`,
     );
 
+    // Feed sources: the user's own published content + posts from creators
+    // the user actively subscribes to. The user's own content must never be
+    // gated behind subscribing to themselves.
+    const creatorCond =
+      subscribedIds.length > 0
+        ? or(eq(posts.creator_id, userId), sql`${posts.creator_id} IN (${subIdList})`)
+        : eq(posts.creator_id, userId);
+
     let homeCond = and(
       isNull(posts.deleted_at),
       eq(posts.status, "published"),
-      sql`${posts.creator_id} IN (${subIdList})`,
-      tierCondition,
+      sql`${posts.visibility} != 'draft'`,
+      creatorCond,
+      // Own posts bypass the tier gate; subscribed creators' posts are tier-gated.
+      or(eq(posts.creator_id, userId), tierCondition),
       contentTypeFilter
         ? eq(posts.content_type, contentTypeFilter)
-        : sql`${posts.content_type} IN ('post', 'video')`,
+        : sql`${posts.content_type} IN ('post', 'video', 'album')`,
     );
 
     if (cursor) {
@@ -333,17 +341,11 @@ export async function GET(req: NextRequest) {
   );
 
   // Apply content_type filter.
-  // When omitted, exclude 'short' and 'album' — shorts belong exclusively in the
-  // Shorts feed (/api/shorts/feed and /api/creators/:id/shorts), and albums are
-  // a first-class content type served by /api/albums.
+  // When omitted, ALL published content types are returned — shorts and albums
+  // are first-class types that surface on their own screens (Shorts feed,
+  // profile tabs), and each client consumer filters by content_type as needed.
   if (contentTypeFilter) {
     conditions = and(conditions, eq(posts.content_type, contentTypeFilter));
-  } else {
-    // Default: return posts + videos only (not shorts or albums)
-    conditions = and(
-      conditions,
-      sql`${posts.content_type} IN ('post', 'video')`,
-    );
   }
 
   if (bookmarked && userId) {
