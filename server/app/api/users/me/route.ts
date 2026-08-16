@@ -1,8 +1,36 @@
 import { NextRequest } from "next/server";
-import { eq, and, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { users, profiles, follows, posts, subscriptions, refresh_tokens, creator_settings } from "@/lib/db/schema";
+import {
+  users,
+  profiles,
+  follows,
+  posts,
+  albums,
+  comments,
+  comment_replies,
+  comment_likes,
+  subscriptions,
+  refresh_tokens,
+  creator_settings,
+  sessions,
+  devices,
+  credential_grants,
+  verification_codes,
+  login_history,
+  chat_room_members,
+  chat_room_messages,
+  blocked_users,
+  muted_users,
+  post_likes,
+  saved_posts,
+  hidden_posts,
+  recent_searches,
+  notifications,
+  user_settings,
+  wallets,
+} from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err } from "@/lib/api/response";
@@ -223,17 +251,81 @@ export async function DELETE(req: NextRequest) {
   const valid = await verifyPassword(user.password_hash, parsed.data.password);
   if (!valid) return err("Password is incorrect", 400, "WRONG_PASSWORD");
 
+  const uid = user.id;
   const now = new Date().toISOString();
 
-  await db
-    .update(refresh_tokens)
-    .set({ revoked_at: now })
-    .where(eq(refresh_tokens.user_id, auth.user.userId));
+  // One atomic transaction: deactivate + free the identity + remove every
+  // account-owned resource so nothing about the deleted account remains
+  // accessible through the application. `transactions` rows are intentionally
+  // kept (financial audit trail); the user row is deactivated/placeholder'd so
+  // no live account can reference them.
+  await db.transaction(async (tx) => {
+    // ── Sessions & tokens — immediate lockout ────────────────────────────
+    await tx.update(refresh_tokens).set({ revoked_at: now }).where(eq(refresh_tokens.user_id, uid));
+    await tx.delete(sessions).where(eq(sessions.user_id, uid));
+    await tx.delete(devices).where(eq(devices.user_id, uid));
+    await tx.delete(credential_grants).where(eq(credential_grants.user_id, uid));
+    await tx.delete(verification_codes).where(eq(verification_codes.user_id, uid));
+    await tx.delete(login_history).where(eq(login_history.user_id, uid));
 
-  await db
-    .update(users)
-    .set({ deleted_at: now, is_active: false, updated_at: now })
-    .where(eq(users.id, auth.user.userId));
+    // ── Account-owned content — soft-delete so it leaves every feed ──────
+    // Covers posts, videos, shorts (content_type on posts) and album rows.
+    await tx.update(posts)
+      .set({ deleted_at: now, updated_at: now })
+      .where(and(eq(posts.creator_id, uid), isNull(posts.deleted_at)));
+    await tx.update(albums)
+      .set({ deleted_at: now, updated_at: now })
+      .where(and(eq(albums.creator_id, uid), isNull(albums.deleted_at)));
+    await tx.update(comments)
+      .set({ deleted_at: now, updated_at: now })
+      .where(and(eq(comments.author_id, uid), isNull(comments.deleted_at)));
+    await tx.update(comment_replies)
+      .set({ deleted_at: now, updated_at: now })
+      .where(and(eq(comment_replies.author_id, uid), isNull(comment_replies.deleted_at)));
+    // Messaging: this account's messages are removed; the room container and
+    // the other participant's membership survive.
+    await tx.delete(chat_room_messages).where(eq(chat_room_messages.sender_id, uid));
+    await tx.delete(chat_room_members).where(eq(chat_room_members.user_id, uid));
+
+    // ── Social graph & preferences ───────────────────────────────────────
+    await tx.delete(follows).where(or(eq(follows.follower_id, uid), eq(follows.following_id, uid)));
+    await tx.delete(blocked_users).where(or(eq(blocked_users.blocker_id, uid), eq(blocked_users.blocked_id, uid)));
+    await tx.delete(muted_users).where(or(eq(muted_users.muter_id, uid), eq(muted_users.muted_id, uid)));
+    await tx.delete(post_likes).where(eq(post_likes.user_id, uid));
+    await tx.delete(comment_likes).where(eq(comment_likes.user_id, uid));
+    await tx.delete(saved_posts).where(eq(saved_posts.user_id, uid));
+    await tx.delete(hidden_posts).where(eq(hidden_posts.user_id, uid));
+    await tx.delete(recent_searches).where(eq(recent_searches.user_id, uid));
+
+    // ── Subscriptions — cancel both directions ───────────────────────────
+    // As a subscriber (to other creators) and as a creator (their subscribers).
+    await tx.update(subscriptions)
+      .set({ status: "cancelled", cancelled_at: now, updated_at: now })
+      .where(and(
+        or(eq(subscriptions.subscriber_id, uid), eq(subscriptions.creator_id, uid)),
+        or(eq(subscriptions.status, "active"), eq(subscriptions.status, "pending")),
+      ));
+
+    // ── Notifications / settings / wallet ────────────────────────────────
+    await tx.delete(notifications).where(eq(notifications.user_id, uid));
+    await tx.delete(user_settings).where(eq(user_settings.user_id, uid));
+    await tx.delete(wallets).where(eq(wallets.user_id, uid));
+
+    // ── Deactivate + free the identity for re-registration ───────────────
+    // email/username become unique placeholders so the ORIGINAL email and
+    // username are immediately reusable by a new registration (the register
+    // route ignores deleted accounts for its duplicate check).
+    await tx.update(users)
+      .set({
+        deleted_at: now,
+        is_active: false,
+        email: `deleted_${uid}@deleted.local`,
+        username: `deleted_${uid}`,
+        phone: null,
+        updated_at: now,
+      })
+      .where(eq(users.id, uid));
+  });
 
   return ok({ deleted: true });
 }

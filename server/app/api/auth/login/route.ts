@@ -37,6 +37,7 @@ export async function POST(req: NextRequest) {
       is_active: users.is_active,
       is_verified: users.is_verified,
       totp_enabled: users.totp_enabled,
+      deleted_at: users.deleted_at,
     })
     .from(users)
     .where(eq(users.email, email))
@@ -63,7 +64,7 @@ export async function POST(req: NextRequest) {
     return unauthorized("Invalid email or password");
   }
 
-  if (!user.is_active) {
+  if (!user.is_active || user.deleted_at) {
     return err("This account has been deactivated", 403);
   }
 

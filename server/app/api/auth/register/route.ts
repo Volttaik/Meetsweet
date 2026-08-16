@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { eq, or } from "drizzle-orm";
+import { and, eq, isNull, or } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users, profiles, user_settings, verification_codes } from "@/lib/db/schema";
 import { hashPassword } from "@/lib/auth/password";
@@ -23,10 +23,14 @@ export async function POST(req: NextRequest) {
   const { full_name, username, email, phone, password, bio, date_of_birth, dob, avatar_url } = parsed.data;
 
   // ── Duplicate check ──────────────────────────────────────────────────────
+  // Soft-deleted accounts are EXCLUDED: once an account is deleted, its email
+  // and username are freed (the DELETE flow replaces them with per-account
+  // placeholders), so the same identity can register again. Only LIVE accounts
+  // block a re-registration.
   const [existing] = await db
     .select({ id: users.id, email: users.email, username: users.username })
     .from(users)
-    .where(or(eq(users.email, email), eq(users.username, username)))
+    .where(and(or(eq(users.email, email), eq(users.username, username)), isNull(users.deleted_at)))
     .limit(1);
 
   if (existing) {
