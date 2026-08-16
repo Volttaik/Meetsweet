@@ -1,9 +1,10 @@
 import { NextRequest } from "next/server";
 import { eq, and, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { users, profiles, follows, subscriptions } from "@/lib/db/schema";
+import { users, profiles, follows, subscriptions, creator_settings } from "@/lib/db/schema";
 import { optionalAuth } from "@/middleware/auth";
 import { ok, err } from "@/lib/api/response";
+import { resolveBasePrice } from "@/lib/services/pricing";
 
 export async function GET(
   req: NextRequest,
@@ -28,9 +29,11 @@ export async function GET(
       location: profiles.location,
       is_verified_creator: profiles.is_verified_creator,
       subscription_price: profiles.subscription_price,
+      settings_price: creator_settings.subscription_price,
     })
     .from(users)
     .leftJoin(profiles, eq(profiles.user_id, users.id))
+    .leftJoin(creator_settings, eq(creator_settings.user_id, users.id))
     .where(eq(users.username, username))
     .limit(1);
 
@@ -70,6 +73,10 @@ export async function GET(
     isFollowing = !!existing;
   }
 
+  // Same pricing resolution as /creators/:id — the authoritative price is
+  // creator_settings, falling back to the legacy profiles value.
+  const basePrice = resolveBasePrice(row.settings_price, row.subscription_price);
+
   return ok({
     user: {
       id: row.id,
@@ -83,7 +90,8 @@ export async function GET(
       is_verified: row.is_verified,
       is_creator: row.is_creator,
       is_verified_creator: row.is_verified_creator,
-      subscription_price: row.subscription_price,
+      subscription_price: basePrice,
+      subscriptionPrice: basePrice,
       follower_count: followerCount?.count ?? 0,
       following_count: followingCount?.count ?? 0,
       subscriber_count: subscriberCount?.count ?? 0,

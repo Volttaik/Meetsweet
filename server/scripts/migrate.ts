@@ -174,6 +174,48 @@ async function run() {
           )
       `,
     },
+    // ── Subscription price: enforce the ₦200 default ─────────────────────────
+    // The column previously defaulted to 0, which made every public route
+    // (profile, creator list, dashboard, subscribe charge) resolve unpriced
+    // creators as "Free". The product default is ₦200/mo.
+    // NOTE: the column DEFAULT stays 0 in SQLite (ALTER COLUMN ... SET DEFAULT
+    // is not supported here); every app insert path now sets the price
+    // explicitly via DEFAULT_SUBSCRIPTION_PRICE, and the rows below backfill
+    // existing data.
+    // Backfill any active creator whose settings row is still unpriced (0) to
+    // the ₦200 default. Idempotent: only touches rows at exactly 0.
+    {
+      name: "creator_settings: backfill unpriced creators to ₦200",
+      sql: `
+        UPDATE creator_settings
+        SET subscription_price = 200
+        WHERE subscription_price = 0
+          AND EXISTS (
+            SELECT 1 FROM users u
+            WHERE u.id = creator_settings.user_id
+              AND u.is_active = 1
+              AND u.deleted_at IS NULL
+              AND (u.is_creator = 1 OR u.role = 'creator')
+          )
+      `,
+    },
+    // Insert missing creator_settings rows (at ₦200) for active creators whose
+    // row was never created (e.g. accounts promoted to creator before the flow
+    // existed). Idempotent via NOT EXISTS.
+    {
+      name: "creator_settings: create missing rows at ₦200",
+      sql: `
+        INSERT INTO creator_settings (id, user_id, subscription_price)
+        SELECT lower(hex(randomblob(16))), u.id, 200
+        FROM users u
+        WHERE u.is_active = 1
+          AND u.deleted_at IS NULL
+          AND (u.is_creator = 1 OR u.role = 'creator')
+          AND NOT EXISTS (
+            SELECT 1 FROM creator_settings cs WHERE cs.user_id = u.id
+          )
+      `,
+    },
 
     // ── posts table: content_type discriminator (post / video / short) ────────
     {

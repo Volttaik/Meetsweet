@@ -7,6 +7,7 @@ import { requireAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err } from "@/lib/api/response";
 import { generateId } from "@/lib/auth/codes";
+import { DEFAULT_SUBSCRIPTION_PRICE } from "@/lib/services/pricing";
 
 const saveSchema = z.object({
   bank_name: z.string().min(1).optional(),
@@ -26,7 +27,11 @@ async function ensureSettings(userId: string) {
     .where(eq(creator_settings.user_id, userId))
     .limit(1);
   if (!settings) {
-    await db.insert(creator_settings).values({ id: generateId(), user_id: userId });
+    await db.insert(creator_settings).values({
+      id: generateId(),
+      user_id: userId,
+      subscription_price: DEFAULT_SUBSCRIPTION_PRICE,
+    });
     [settings] = await db.select().from(creator_settings).where(eq(creator_settings.user_id, userId)).limit(1);
   }
   return settings!;

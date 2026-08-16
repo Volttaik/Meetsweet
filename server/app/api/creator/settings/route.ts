@@ -7,6 +7,7 @@ import { requireAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok } from "@/lib/api/response";
 import { generateId } from "@/lib/auth/codes";
+import { DEFAULT_SUBSCRIPTION_PRICE } from "@/lib/services/pricing";
 
 const patchSchema = z.object({
   subscription_price: z.number().finite().min(0).optional(),
@@ -59,7 +60,13 @@ export async function GET(req: NextRequest) {
 
   if (!settings) {
     const newId = generateId();
-    await db.insert(creator_settings).values({ id: newId, user_id: auth.user.userId });
+    await db.insert(creator_settings).values({
+      id: newId,
+      user_id: auth.user.userId,
+      // Auto-created rows must start at the default price (₦200), not 0, so
+      // the dashboard never shows "Free" for a creator who never priced it.
+      subscription_price: DEFAULT_SUBSCRIPTION_PRICE,
+    });
     [settings] = await db.select().from(creator_settings).where(eq(creator_settings.user_id, auth.user.userId)).limit(1);
   }
 
@@ -90,7 +97,13 @@ export async function PATCH(req: NextRequest) {
   if (existing) {
     await db.update(creator_settings).set({ ...updates, updated_at: now }).where(eq(creator_settings.id, existing.id));
   } else {
-    await db.insert(creator_settings).values({ id: generateId(), user_id: auth.user.userId, ...updates });
+    await db.insert(creator_settings).values({
+      id: generateId(),
+      user_id: auth.user.userId,
+      ...updates,
+      // Only override the default price when the PATCH explicitly sets one.
+      subscription_price: (updates.subscription_price as number | undefined) ?? DEFAULT_SUBSCRIPTION_PRICE,
+    });
   }
 
   const [settings] = await db.select().from(creator_settings).where(eq(creator_settings.user_id, auth.user.userId)).limit(1);

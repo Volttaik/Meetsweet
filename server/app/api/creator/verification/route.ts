@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { creator_settings, reports } from "@/lib/db/schema";
+import { DEFAULT_SUBSCRIPTION_PRICE } from "@/lib/services/pricing";
 import { requireAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok } from "@/lib/api/response";
@@ -40,6 +41,7 @@ export async function POST(req: NextRequest) {
       id: generateId(),
       user_id: auth.user.userId,
       verification_status: "pending",
+      subscription_price: DEFAULT_SUBSCRIPTION_PRICE,
     });
   }
 

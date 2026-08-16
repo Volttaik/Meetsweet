@@ -16,8 +16,11 @@ const createSchema = z.object({
   // Takes priority over cover_url when both are provided.
   cover_media_id: z.string().optional(),
   cover_url: z.string().url().nullable().optional(),
-  // unlock_price / price_credits — mobile sends unlock_price; both are accepted
+  // unlock_price / price / price_credits — mobile sends unlock_price (after
+  // translation) but accept `price` too so no client can silently create a
+  // free album; albums are purchase-only.
   unlock_price: z.number().int().min(0).max(1_000_000).optional(),
+  price: z.number().int().min(0).max(1_000_000).optional(),
   price_credits: z.number().int().min(0).max(1_000_000).optional(),
   is_premium: z.boolean().optional(),
   // visibility: 'draft' is mapped to 'private' in storage
@@ -184,8 +187,9 @@ export async function POST(req: NextRequest) {
     if (coverMedia) coverUrl = coverMedia.url;
   }
 
-  // Resolve price: unlock_price takes priority over price_credits
-  const priceCredits = data.unlock_price ?? data.price_credits ?? 0;
+  // Resolve price: unlock_price takes priority, then the `price` alias, then
+  // the legacy price_credits. Never fall through to a free album.
+  const priceCredits = data.unlock_price ?? data.price ?? data.price_credits ?? 0;
   const isPremium = data.is_premium ?? priceCredits > 0;
 
   // Map 'draft' visibility to 'private' for storage

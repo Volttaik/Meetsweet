@@ -1,4 +1,13 @@
 /**
+ * Default monthly subscription price (₦) a creator starts at.
+ *
+ * The product default is ₦200/mo: every creator gets this price when they
+ * become a creator or when their settings row is auto-created, so the DB
+ * never silently stores a 0 that the UI then renders as "Free".
+ */
+export const DEFAULT_SUBSCRIPTION_PRICE = 200;
+
+/**
  * Resolve a creator's base subscription price from the authoritative sources.
  *
  * `creator_settings.subscription_price` is NOT NULL with default 0, so a bare

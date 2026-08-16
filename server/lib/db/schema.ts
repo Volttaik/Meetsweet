@@ -7,6 +7,7 @@ import {
   text,
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
+import { DEFAULT_SUBSCRIPTION_PRICE } from "../services/pricing";
 
 const id = () => text("id").primaryKey();
 const createdAt = () =>
@@ -624,7 +625,9 @@ export const subscriptions = sqliteTable("subscriptions", {
 export const creator_settings = sqliteTable("creator_settings", {
   id: id(),
   user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  subscription_price: real("subscription_price").notNull().default(0),
+  // Product default price is ₦200 — never 0. A zero here would make every
+  // public route resolve the creator as "free" (see resolveBasePrice).
+  subscription_price: real("subscription_price").notNull().default(DEFAULT_SUBSCRIPTION_PRICE),
   // Optional independent price for the subscriber_plus tier. When null, the
   // subscription service falls back to 2× subscription_price for legacy creators.
   subscription_plus_price: real("subscription_plus_price"),

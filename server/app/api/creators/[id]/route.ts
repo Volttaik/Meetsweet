@@ -76,7 +76,7 @@ export async function GET(
           db.select({ id: follows.id }).from(follows)
             .where(and(eq(follows.follower_id, userId), eq(follows.following_id, user.id)))
             .then((r) => r.length > 0),
-          db.select({ tier: subscriptions.tier }).from(subscriptions)
+          db.select({ id: subscriptions.id, tier: subscriptions.tier }).from(subscriptions)
             .where(and(eq(subscriptions.subscriber_id, userId), eq(subscriptions.creator_id, user.id), eq(subscriptions.status, "active")))
             .limit(1)
             .then((r) => r[0] ?? null),
@@ -84,6 +84,7 @@ export async function GET(
       : [false, null];
   const isSubscribed = Boolean(subRow);
   const subscriptionTier = subRow?.tier ?? null;
+  const subscriptionId = subRow?.id ?? null;
 
   // Presence: "online" = a device seen within the last 10 minutes. This is the
   // app's real activity signal (devices.last_seen_at is updated on push-token
@@ -147,6 +148,10 @@ export async function GET(
     subscribedToCreator: isSubscribed,
     subscription_tier: subscriptionTier,
     subscriptionTier,
+    // Viewer's active subscription id for this creator — lets the app offer
+    // Unsubscribe from the creator profile without another lookup.
+    subscription_id: subscriptionId,
+    subscriptionId,
     joined_at: user.created_at,
   };
 

@@ -5,6 +5,7 @@ import { users, creator_settings } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
 import { ok, err } from "@/lib/api/response";
 import { generateId } from "@/lib/auth/codes";
+import { DEFAULT_SUBSCRIPTION_PRICE } from "@/lib/services/pricing";
 
 export async function POST(req: NextRequest) {
   const auth = await requireAuth(req);
@@ -38,6 +39,9 @@ export async function POST(req: NextRequest) {
     await db.insert(creator_settings).values({
       id: generateId(),
       user_id: auth.user.userId,
+      // New creators start at the default ₦200/mo price — a 0 here would
+      // surface as "Free" everywhere (profile, dashboard, subscribe modal).
+      subscription_price: DEFAULT_SUBSCRIPTION_PRICE,
     });
   }
 
