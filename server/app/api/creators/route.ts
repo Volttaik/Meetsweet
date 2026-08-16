@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { eq, and, count, inArray, gte, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users, profiles, subscriptions, creator_settings, devices } from "@/lib/db/schema";
+import { optionalAuth } from "@/middleware/auth";
 import { ok } from "@/lib/api/response";
 import { resolveBasePrice } from "@/lib/services/pricing";
 
@@ -70,6 +71,31 @@ export async function GET(req: NextRequest) {
       : [];
   const onlineSet = new Set(onlineRows.map((r) => r.user_id));
 
+  // Per-viewer subscription state — LIVE server data, so Explore never shows a
+  // stale "Subscribe" button for a user who already subscribed (even after a
+  // refresh or a new session). The client normalizer reads
+  // `subscribed_to_creator` / `subscription_tier` from this same response.
+  const viewer = (await optionalAuth(req))?.userId ?? null;
+  const viewerSubRows =
+    viewer && creatorIds.length > 0
+      ? await db
+          .select({
+            creator_id: subscriptions.creator_id,
+            tier: subscriptions.tier,
+          })
+          .from(subscriptions)
+          .where(
+            and(
+              eq(subscriptions.subscriber_id, viewer),
+              inArray(subscriptions.creator_id, creatorIds),
+              eq(subscriptions.status, "active"),
+            ),
+          )
+      : [];
+  const viewerSubMap = new Map(
+    viewerSubRows.map((r) => [r.creator_id, r.tier ?? "subscriber"]),
+  );
+
   const creators = creatorRows.map((u) => {
     // Same pricing resolution as GET /creators/[id] and the subscribe route, so
     // the advertised price is always the same single source of truth.
@@ -96,6 +122,12 @@ export async function GET(req: NextRequest) {
       subscriptionPrice: basePrice,
       subscription_plus_price: plusPrice,
       subscriptionPlusPrice: plusPrice,
+      // Viewing user's own subscription state for this creator (undefined for
+      // anonymous visitors).
+      subscribed_to_creator: viewerSubMap.has(u.id),
+      subscribedToCreator: viewerSubMap.has(u.id),
+      subscription_tier: viewerSubMap.get(u.id) ?? null,
+      subscriptionTier: viewerSubMap.get(u.id) ?? null,
     };
   });
 

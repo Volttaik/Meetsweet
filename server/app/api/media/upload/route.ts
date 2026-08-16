@@ -167,6 +167,11 @@ export async function POST(req: NextRequest) {
         Body: Buffer.from(bytes),
         ContentType: mimeType,
         ContentLength: file.size,
+        // Media objects are immutable (UUID keys), so a long-lived cache is
+        // always safe. Repeat views (and repeat video seeks) are served from
+        // the R2 CDN edge instead of the origin — faster startup + less
+        // buffering without any transcode pipeline.
+        CacheControl: "public, max-age=31536000, immutable",
       }),
     );
   } catch (e) {
