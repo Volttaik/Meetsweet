@@ -1,11 +1,10 @@
 import { createClient } from "@libsql/client";
 
 const TABLES = [
-  "notifications", "message_reads", "message_unlocks", "messages",
-  "conversation_members", "conversations", "comment_likes", "comment_replies",
+  "notifications", "comment_likes", "comment_replies",
   "comments", "post_unlocks", "album_unlocks", "album_items", "albums",
   "post_categories", "post_likes", "saved_posts", "media", "posts", "shares",
-  "creator_reviews", "creator_statistics", "creator_settings", "transactions",
+  "creator_reviews", "creator_settings", "transactions",
   "wallets", "subscriptions", "follows", "blocked_users", "muted_users",
   "recent_searches", "reports", "refresh_tokens", "sessions",
   "verification_codes", "user_settings", "profiles", "users", "categories",

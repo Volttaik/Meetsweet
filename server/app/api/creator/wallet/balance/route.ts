@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { wallets, transactions } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
@@ -17,6 +17,10 @@ export async function GET(req: NextRequest) {
 
   const balance = wallet?.balance ?? 0;
 
+  // In-flight withdrawals (awaiting OTP / Paystack processing). The withdraw
+  // route debits the wallet at reservation time, so `balance` already excludes
+  // these — pending_balance is informational only and must NOT be subtracted
+  // again (doing so double-counted and under-reported available funds).
   const [pendingRow] = await db
     .select({ total: sql<number>`COALESCE(SUM(amount), 0)` })
     .from(transactions)
@@ -24,12 +28,12 @@ export async function GET(req: NextRequest) {
       and(
         eq(transactions.user_id, auth.user.userId),
         eq(transactions.type, "withdrawal"),
-        eq(transactions.status, "pending"),
+        inArray(transactions.status, ["pending", "processing"]),
       ),
     );
 
   const pending_balance = Number(pendingRow?.total ?? 0);
-  const availableForWithdrawal = Math.max(0, balance - pending_balance);
+  const availableForWithdrawal = Math.max(0, balance);
 
   return ok({
     balance,

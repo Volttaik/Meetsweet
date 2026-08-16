@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { eq, and, or } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { users, blocked_users, conversation_members } from "@/lib/db/schema";
+import { users, blocked_users, chat_room_members } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
 import { ok, err } from "@/lib/api/response";
 import { generateId } from "@/lib/auth/codes";
@@ -10,8 +10,8 @@ import { generateId } from "@/lib/auth/codes";
  * POST /api/users/:username/block   — block a user
  * DELETE /api/users/:username/block — unblock a user
  *
- * Blocking also archives any existing direct conversation between the two
- * users for the blocker, so the chat disappears from their inbox immediately.
+ * Blocking also archives any existing direct chat room between the two users
+ * for the blocker, so the chat disappears from their inbox immediately.
  */
 
 export async function POST(
@@ -47,41 +47,38 @@ export async function POST(
     });
   }
 
-  // Archive any shared direct conversation for the blocker so it leaves the inbox.
-  // Find conversations that both users are members of.
-  const myMemberships = await db
-    .select({ conversation_id: conversation_members.conversation_id })
-    .from(conversation_members)
-    .where(eq(conversation_members.user_id, auth.user.userId));
+  // Archive any shared direct chat room for the blocker so it leaves the inbox.
+  // Find rooms that both users are members of (a direct room has exactly the two
+  // participants).
+  const myRooms = await db
+    .select({ chat_room_id: chat_room_members.chat_room_id })
+    .from(chat_room_members)
+    .where(eq(chat_room_members.user_id, auth.user.userId));
 
-  const myConvIds = myMemberships.map((m) => m.conversation_id);
+  for (const room of myRooms) {
+    const [theirMembership] = await db
+      .select({ id: chat_room_members.id })
+      .from(chat_room_members)
+      .where(
+        and(
+          eq(chat_room_members.chat_room_id, room.chat_room_id),
+          eq(chat_room_members.user_id, target.id),
+        ),
+      )
+      .limit(1);
 
-  if (myConvIds.length > 0) {
-    for (const convId of myConvIds) {
-      const [theirMembership] = await db
-        .select({ id: conversation_members.id })
-        .from(conversation_members)
+    if (theirMembership) {
+      // Archive the room for the blocker only
+      await db
+        .update(chat_room_members)
+        .set({ is_archived: true })
         .where(
           and(
-            eq(conversation_members.conversation_id, convId),
-            eq(conversation_members.user_id, target.id),
+            eq(chat_room_members.chat_room_id, room.chat_room_id),
+            eq(chat_room_members.user_id, auth.user.userId),
           ),
-        )
-        .limit(1);
-
-      if (theirMembership) {
-        // Archive the conversation for the blocker only
-        await db
-          .update(conversation_members)
-          .set({ is_archived: true })
-          .where(
-            and(
-              eq(conversation_members.conversation_id, convId),
-              eq(conversation_members.user_id, auth.user.userId),
-            ),
-          );
-        break; // Direct conversations are unique pairs; stop after first match
-      }
+        );
+      break; // Direct rooms are unique pairs; stop after first match
     }
   }
 

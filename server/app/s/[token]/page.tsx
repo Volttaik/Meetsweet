@@ -68,7 +68,7 @@ async function loadPreview(share: ShareData): Promise<PreviewData | null> {
         .from(posts)
         .innerJoin(users, eq(users.id, posts.creator_id))
         .leftJoin(profiles, eq(profiles.user_id, posts.creator_id))
-        .where(and(eq(posts.id, share.content_id), eq(posts.status, "published"), isNull(posts.deleted_at)))
+        .where(and(eq(posts.id, share.content_id), eq(posts.status, "published"), isNull(posts.deleted_at), eq(users.is_active, true), isNull(users.deleted_at)))
         .limit(1);
 
       if (!post) return null;
@@ -102,7 +102,7 @@ async function loadPreview(share: ShareData): Promise<PreviewData | null> {
         .from(albums)
         .innerJoin(users, eq(users.id, albums.creator_id))
         .leftJoin(profiles, eq(profiles.user_id, albums.creator_id))
-        .where(and(eq(albums.id, share.content_id), isNull(albums.deleted_at)))
+        .where(and(eq(albums.id, share.content_id), isNull(albums.deleted_at), eq(users.is_active, true), isNull(users.deleted_at)))
         .limit(1);
 
       return album
@@ -124,7 +124,7 @@ async function loadPreview(share: ShareData): Promise<PreviewData | null> {
       })
       .from(users)
       .leftJoin(profiles, eq(profiles.user_id, users.id))
-      .where(eq(users.id, share.content_id))
+      .where(and(eq(users.id, share.content_id), eq(users.is_active, true), isNull(users.deleted_at)))
       .limit(1);
 
     return creator

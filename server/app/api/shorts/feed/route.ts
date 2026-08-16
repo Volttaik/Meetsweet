@@ -14,6 +14,8 @@ export async function GET(req: NextRequest) {
 
   const conditions = and(
     isNull(posts.deleted_at),
+    eq(users.is_active, true),
+    isNull(users.deleted_at),
     eq(posts.status, "published"),
     eq(posts.content_type, "short"),
     eq(posts.visibility, "public"),

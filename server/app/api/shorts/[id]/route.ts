@@ -36,7 +36,7 @@ export async function GET(
     .from(posts)
     .innerJoin(users, eq(users.id, posts.creator_id))
     .leftJoin(profiles, eq(profiles.user_id, posts.creator_id))
-    .where(and(eq(posts.id, id), isNull(posts.deleted_at), eq(posts.content_type, "short")))
+    .where(and(eq(posts.id, id), isNull(posts.deleted_at), eq(posts.content_type, "short"), eq(users.is_active, true), isNull(users.deleted_at)))
     .limit(1);
 
   if (!row) return err("Short not found", 404);

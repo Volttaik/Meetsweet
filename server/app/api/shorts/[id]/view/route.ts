@@ -2,11 +2,9 @@ import { NextRequest } from "next/server";
 import { eq, and, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { posts, post_views } from "@/lib/db/schema";
-import { optionalAuth } from "@/middleware/auth";
+import { posts } from "@/lib/db/schema";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err } from "@/lib/api/response";
-import { generateId } from "@/lib/auth/codes";
 
 const viewSchema = z.object({
   watch_duration_secs: z.number().int().min(0).max(86400),
@@ -17,7 +15,6 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const userId = (await optionalAuth(req))?.userId ?? null;
 
   const [post] = await db.select({ id: posts.id })
     .from(posts).where(and(eq(posts.id, id), eq(posts.content_type, "short"))).limit(1);
@@ -26,12 +23,6 @@ export async function POST(
   const parsed = await parseBody(req, viewSchema);
   // View tracking is best-effort — proceed even if body is malformed
   const duration = parsed.success ? parsed.data.watch_duration_secs : 0;
-
-  await db.insert(post_views).values({
-    id: generateId(),
-    post_id: id,
-    user_id: userId,
-  });
 
   await db.update(posts).set({ view_count: sql`${posts.view_count} + 1` }).where(eq(posts.id, id));
 

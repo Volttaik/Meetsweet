@@ -17,6 +17,7 @@ const patchSchema = z.object({
   banner_url: z.string().url().nullable().optional(),
   website: z.string().url().nullable().optional(),
   location: z.string().max(100).nullable().optional(),
+  category: z.string().max(50).nullable().optional(),
   phone: z.string().max(30).nullable().optional(),
 });
 
@@ -43,6 +44,7 @@ export async function GET(req: NextRequest) {
       website: profiles.website,
       location: profiles.location,
       is_verified_creator: profiles.is_verified_creator,
+      category: profiles.category,
       subscription_price: profiles.subscription_price,
     })
     .from(users)
@@ -99,7 +101,7 @@ export async function PATCH(req: NextRequest) {
   const parsed = await parseBody(req, patchSchema);
   if (!parsed.success) return parsed.response;
 
-  const { full_name, display_name, username, bio, avatar_url, banner_url, website, location, phone } = parsed.data;
+  const { full_name, display_name, username, bio, avatar_url, banner_url, website, location, category, phone } = parsed.data;
   const now = new Date().toISOString();
 
   // Build users-table update (fields that live on the users row)
@@ -125,6 +127,7 @@ export async function PATCH(req: NextRequest) {
   if (banner_url !== undefined) profileUpdates.banner_url = banner_url;
   if (website !== undefined) profileUpdates.website = website;
   if (location !== undefined) profileUpdates.location = location;
+  if (category !== undefined) profileUpdates.category = category;
 
   if (Object.keys(profileUpdates).length > 1) {
     await db.update(profiles).set(profileUpdates).where(eq(profiles.user_id, auth.user.userId));
@@ -149,6 +152,7 @@ export async function PATCH(req: NextRequest) {
       website: profiles.website,
       location: profiles.location,
       is_verified_creator: profiles.is_verified_creator,
+      category: profiles.category,
       subscription_price: profiles.subscription_price,
     })
     .from(users)

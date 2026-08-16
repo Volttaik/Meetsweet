@@ -5,6 +5,7 @@ import {
   comment_replies,
   comment_rooms,
   comments,
+  posts,
   profiles,
   users,
 } from "@/lib/db/schema";
@@ -17,7 +18,7 @@ import {
 export async function ensureCommentRoom(roomId: string) {
   await db
     .insert(comment_rooms)
-    .values({ id: roomId, post_id: roomId, comments_enabled: true, comment_count: 0 })
+    .values({ id: roomId, post_id: roomId, comments_enabled: true })
     .onConflictDoNothing();
 
   const [room] = await db
@@ -32,6 +33,14 @@ export async function ensureCommentRoom(roomId: string) {
 export async function getCommentRoom(roomId: string) {
   const room = await ensureCommentRoom(roomId);
   if (!room) return null;
+  // `posts.comment_count` is the single canonical comment counter used by every
+  // feed/list endpoint; the room row only holds the comments-enabled flag.
+  const [post] = await db
+    .select({ comment_count: posts.comment_count })
+    .from(posts)
+    .where(eq(posts.id, roomId))
+    .limit(1);
+  const commentCount = post?.comment_count ?? 0;
   return {
     comment_room_id: room.id,
     commentRoomId: room.id,
@@ -39,8 +48,8 @@ export async function getCommentRoom(roomId: string) {
     postId: room.post_id,
     comments_enabled: room.comments_enabled,
     commentsEnabled: room.comments_enabled,
-    comment_count: room.comment_count,
-    commentCount: room.comment_count,
+    comment_count: commentCount,
+    commentCount,
     updated_at: room.updated_at,
   };
 }

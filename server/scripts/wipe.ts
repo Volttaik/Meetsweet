@@ -76,11 +76,6 @@ async function wipeR2() {
 // Tables ordered children-first so FK constraints (if enforced) don't block deletes.
 const TABLES = [
   "notifications",
-  "message_reads",
-  "message_unlocks",
-  "messages",
-  "conversation_members",
-  "conversations",
   "comment_likes",
   "comment_replies",
   "comments",
@@ -95,7 +90,6 @@ const TABLES = [
   "posts",
   "shares",
   "creator_reviews",
-  "creator_statistics",
   "creator_settings",
   "transactions",
   "wallets",

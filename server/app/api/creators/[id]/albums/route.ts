@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
-import { eq, and, desc, isNull } from "drizzle-orm";
+import { eq, and, desc, isNull, gte } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { albums, users, profiles, album_unlocks } from "@/lib/db/schema";
+import { albums, users, profiles, album_unlocks, devices } from "@/lib/db/schema";
 import { optionalAuth } from "@/middleware/auth";
 import { ok, err } from "@/lib/api/response";
 
@@ -16,8 +16,17 @@ export async function GET(
 
   const condition = id.includes("-") && id.length > 20 ? eq(users.id, id) : eq(users.username, id);
   const [creator] = await db.select({ id: users.id, is_creator: users.is_creator })
-    .from(users).where(and(condition, eq(users.is_active, true))).limit(1);
+    .from(users).where(and(condition, eq(users.is_active, true), isNull(users.deleted_at))).limit(1);
   if (!creator || !creator.is_creator) return err("Creator not found", 404);
+
+  // Presence: "online" = a device seen within the last 10 minutes (real signal).
+  const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+  const [recentDevice] = await db
+    .select({ id: devices.id })
+    .from(devices)
+    .where(and(eq(devices.user_id, creator.id), gte(devices.last_seen_at, tenMinutesAgo)))
+    .limit(1);
+  const isOnline = Boolean(recentDevice);
 
   const rows = await db
     .select({
@@ -87,7 +96,8 @@ export async function GET(
       avatarUrl: row.creator_avatar_url,
       is_verified: row.creator_is_verified,
       isVerified: row.creator_is_verified,
-      is_online: false,
+      is_online: isOnline,
+      isOnline,
     },
   }));
 

@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
-import { eq, and, count, isNull, avg } from "drizzle-orm";
+import { eq, and, count, isNull, avg, sum } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { users, posts, follows, subscriptions, post_likes, creator_reviews } from "@/lib/db/schema";
+import { users, posts, follows, subscriptions, creator_reviews } from "@/lib/db/schema";
 import { ok, err } from "@/lib/api/response";
 
 export async function GET(
@@ -30,10 +30,18 @@ export async function GET(
       db.select({ n: count() }).from(posts)
         .where(and(eq(posts.creator_id, creator.id), eq(posts.status, "published"), isNull(posts.deleted_at), eq(posts.content_type, "short")))
         .then((r) => r[0]?.n ?? 0),
-      db.select({ n: count() }).from(post_likes)
-        .innerJoin(posts, eq(posts.id, post_likes.post_id))
-        .where(eq(posts.creator_id, creator.id))
-        .then((r) => r[0]?.n ?? 0),
+      // Canonical like count: SUM(posts.like_count) over published, non-deleted
+      // posts — the same source the dashboard (`creator/statistics`) uses. The
+      // raw post_likes row count can disagree (it includes deleted/draft posts
+      // and drifts from the denormalized counter), which caused "works here but
+      // not there" like totals.
+      db.select({ total: sum(posts.like_count) }).from(posts)
+        .where(and(
+          eq(posts.creator_id, creator.id),
+          eq(posts.status, "published"),
+          isNull(posts.deleted_at),
+        ))
+        .then((r) => Number(r[0]?.total ?? 0)),
       db.select({ avg: avg(creator_reviews.rating), total: count() }).from(creator_reviews)
         .where(eq(creator_reviews.creator_id, creator.id))
         .then((r) => r[0] ?? { avg: null, total: 0 }),

@@ -61,6 +61,10 @@ async function run() {
       name: "profiles: add date_of_birth",
       sql: `ALTER TABLE profiles ADD COLUMN date_of_birth TEXT`,
     },
+    {
+      name: "profiles: add category",
+      sql: `ALTER TABLE profiles ADD COLUMN category TEXT`,
+    },
 
     // ── album support ──────────────────────────────────────────────────────
     {
@@ -150,6 +154,25 @@ async function run() {
     {
       name: "creator_settings: add subscription_plus_price",
       sql: `ALTER TABLE creator_settings ADD COLUMN subscription_plus_price REAL`,
+    },
+    // Backfill creator_settings.subscription_price from the legacy
+    // profiles.subscription_price for creators whose settings row was
+    // auto-created at the 0 default (so the dashboard, profile, and charge
+    // all agree on one price). Idempotent — only fills 0 rows that have a
+    // positive legacy price.
+    {
+      name: "creator_settings: backfill subscription_price from profiles",
+      sql: `
+        UPDATE creator_settings
+        SET subscription_price = (
+          SELECT p.subscription_price FROM profiles p WHERE p.user_id = creator_settings.user_id
+        )
+        WHERE subscription_price = 0
+          AND EXISTS (
+            SELECT 1 FROM profiles p
+            WHERE p.user_id = creator_settings.user_id AND p.subscription_price > 0
+          )
+      `,
     },
 
     // ── posts table: content_type discriminator (post / video / short) ────────
@@ -423,6 +446,14 @@ async function run() {
       sql: `ALTER TABLE user_settings ADD COLUMN allow_tags INTEGER NOT NULL DEFAULT 1`,
     },
     {
+      name: "user_settings: add profile_visibility",
+      sql: `ALTER TABLE user_settings ADD COLUMN profile_visibility TEXT NOT NULL DEFAULT 'everyone'`,
+    },
+    {
+      name: "user_settings: add message_perm",
+      sql: `ALTER TABLE user_settings ADD COLUMN message_perm TEXT NOT NULL DEFAULT 'everyone'`,
+    },
+    {
       name: "user_settings: add search_visible",
       sql: `ALTER TABLE user_settings ADD COLUMN search_visible INTEGER NOT NULL DEFAULT 1`,
     },
@@ -585,28 +616,42 @@ async function run() {
       sql: `CREATE INDEX IF NOT EXISTS message_reads_user_idx ON message_reads(user_id)`,
     },
 
-    // ── creator_statistics table ──────────────────────────────────────────────
+    // ── Drop dead analytics/legacy tables ────────────────────────────────────
+    // creator_statistics was never written (analytics now compute live from
+    // posts/subscriptions/transactions). post_views was write-only (view_count
+    // on posts is the authoritative counter). archives was never used.
     {
-      name: "create creator_statistics",
-      sql: `
-        CREATE TABLE IF NOT EXISTS creator_statistics (
-          id TEXT PRIMARY KEY,
-          creator_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-          period TEXT NOT NULL,
-          total_subscribers INTEGER NOT NULL DEFAULT 0,
-          new_subscribers INTEGER NOT NULL DEFAULT 0,
-          total_revenue REAL NOT NULL DEFAULT 0,
-          total_views INTEGER NOT NULL DEFAULT 0,
-          total_likes INTEGER NOT NULL DEFAULT 0,
-          total_posts INTEGER NOT NULL DEFAULT 0,
-          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-          updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-        )
-      `,
+      name: "drop creator_statistics table",
+      sql: `DROP TABLE IF EXISTS creator_statistics`,
     },
     {
-      name: "creator_statistics: creator period index",
-      sql: `CREATE INDEX IF NOT EXISTS creator_statistics_creator_period_idx ON creator_statistics(creator_id, period)`,
+      name: "drop post_views table",
+      sql: `DROP TABLE IF EXISTS post_views`,
+    },
+    {
+      name: "drop archives table",
+      sql: `DROP TABLE IF EXISTS archives`,
+    },
+    // Legacy conversations/messages model — replaced by the chat_rooms model
+    // (chat_rooms / chat_room_members / chat_room_messages). The mobile app no
+    // longer calls /api/conversations or /api/messages.
+    // NOTE: run scripts/repair-data.ts FIRST if you want to preserve any legacy
+    // DMs (it migrates messages → chat_room_messages before these drops).
+    {
+      name: "drop message_reads table",
+      sql: `DROP TABLE IF EXISTS message_reads`,
+    },
+    {
+      name: "drop messages table",
+      sql: `DROP TABLE IF EXISTS messages`,
+    },
+    {
+      name: "drop conversation_members table",
+      sql: `DROP TABLE IF EXISTS conversation_members`,
+    },
+    {
+      name: "drop conversations table",
+      sql: `DROP TABLE IF EXISTS conversations`,
     },
 
     // ── Tier system migration: bronze/silver/gold/diamond → free/subscriber/subscriber_plus ──
@@ -662,6 +707,17 @@ async function run() {
     {
       name: "comment_rooms: unique post index",
       sql: `CREATE UNIQUE INDEX IF NOT EXISTS comment_rooms_post_idx ON comment_rooms(post_id)`,
+    },
+    // Dead denormalized counters — reads moved to the canonical posts.comment_count
+    // and a live post_categories join respectively, so these columns are never
+    // read. Drop them to keep one source of truth.
+    {
+      name: "comment_rooms: drop dead comment_count column",
+      sql: `ALTER TABLE comment_rooms DROP COLUMN comment_count`,
+    },
+    {
+      name: "categories: drop dead post_count column",
+      sql: `ALTER TABLE categories DROP COLUMN post_count`,
     },
 
     // ── Chat Rooms ─────────────────────────────────────────────────────────

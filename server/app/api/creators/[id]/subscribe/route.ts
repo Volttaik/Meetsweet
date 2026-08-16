@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import {
   creator_settings,
   notifications,
+  profiles,
   subscriptions,
   transactions,
   users,
@@ -15,6 +16,8 @@ import { parseBody } from "@/lib/api/validate";
 import { ok, err, created } from "@/lib/api/response";
 import { generateId } from "@/lib/auth/codes";
 import { sendPushToUser, getActorUsername } from "@/lib/services/push";
+import { tierIndex } from "@/lib/services/content";
+import { resolveBasePrice } from "@/lib/services/pricing";
 
 const TIER_MULTIPLIER: Record<string, number> = { subscriber: 1, subscriber_plus: 2 };
 
@@ -48,11 +51,18 @@ export async function POST(
     .where(eq(creator_settings.user_id, creator_id))
     .limit(1);
 
-  const creatorPrice = settings?.subscription_price ?? 0;
-  const price =
-    tier === "subscriber_plus"
-      ? Math.round(settings?.subscription_plus_price ?? creatorPrice * TIER_MULTIPLIER.subscriber_plus)
-      : Math.round(creatorPrice);
+  // Legacy creators may only have profiles.subscription_price (no creator_settings
+  // row). Fall back to it so the charge always matches the price the profile
+  // endpoint advertises — never a silent ₦0 for a priced creator.
+  const [profile] = await db
+    .select({ subscription_price: profiles.subscription_price })
+    .from(profiles)
+    .where(eq(profiles.user_id, creator_id))
+    .limit(1);
+
+  const basePrice = resolveBasePrice(settings?.subscription_price, profile?.subscription_price);
+  const plusPrice = Math.round(settings?.subscription_plus_price ?? basePrice * TIER_MULTIPLIER.subscriber_plus);
+  const price = tier === "subscriber_plus" ? plusPrice : Math.round(basePrice);
 
   const now = new Date().toISOString();
   const expires = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
@@ -61,7 +71,7 @@ export async function POST(
   // The wallet debit + transaction + subscription insert are ONE atomic unit.
   // A failure at any step rolls the whole thing back so the user is never
   // charged without receiving an active subscription (or vice-versa).
-  type Outcome = { kind: "existing" | "created"; id: string; tier: "subscriber" | "subscriber_plus" };
+  type Outcome = { kind: "existing" | "created" | "upgraded"; id: string; tier: "subscriber" | "subscriber_plus" };
   let outcome!: Outcome;
   try {
     outcome = await db.transaction(async (tx): Promise<Outcome> => {
@@ -78,7 +88,87 @@ export async function POST(
         )
         .limit(1);
       if (existing) {
-        return { kind: "existing", id: existing.id, tier: existing.tier ?? tier };
+        const existingTier = (existing.tier ?? "subscriber") as "subscriber" | "subscriber_plus";
+        // Re-subscribing at the same (or lower) tier is idempotent — return the
+        // existing subscription without a second charge.
+        if (tierIndex(tier) <= tierIndex(existingTier)) {
+          return { kind: "existing", id: existing.id, tier: existingTier };
+        }
+
+        // Upgrade to a higher tier: charge only the price difference, then bump
+        // the tier. Atomic with the debit so a failed payment never activates
+        // the upgrade (and a successful one always does).
+        const currentPrice = existingTier === "subscriber_plus" ? plusPrice : Math.round(basePrice);
+        const newPrice = tier === "subscriber_plus" ? plusPrice : Math.round(basePrice);
+        const priceDiff = Math.max(0, newPrice - currentPrice);
+
+        if (priceDiff > 0) {
+          const [wallet] = await tx
+            .select({ id: wallets.id, balance: wallets.balance })
+            .from(wallets)
+            .where(eq(wallets.user_id, auth.user.userId))
+            .limit(1);
+          if (!wallet || (wallet.balance ?? 0) < priceDiff) {
+            throw new Error("INSUFFICIENT_BALANCE");
+          }
+
+          const [debited] = await tx
+            .update(wallets)
+            .set({ balance: sql`${wallets.balance} - ${priceDiff}`, updated_at: now })
+            .where(and(eq(wallets.id, wallet.id), gte(wallets.balance, priceDiff)))
+            .returning({ id: wallets.id });
+          if (!debited) throw new Error("INSUFFICIENT_BALANCE");
+
+          await tx.insert(transactions).values({
+            id: generateId(),
+            user_id: auth.user.userId,
+            type: "subscription",
+            amount: priceDiff,
+            currency: "NGN",
+            status: "success",
+            description: `Subscription upgrade ${existingTier} → ${tier} (${creator_id})`,
+            metadata: JSON.stringify({ creator_id, tier, from_tier: existingTier }),
+          });
+
+          // Credit the creator's wallet for the upgrade diff so creator
+          // earnings/withdrawals reflect real subscription revenue (matches
+          // the album-unlock earning path).
+          const [creatorWallet] = await tx
+            .select({ id: wallets.id })
+            .from(wallets)
+            .where(eq(wallets.user_id, creator_id))
+            .limit(1);
+          if (creatorWallet) {
+            await tx
+              .update(wallets)
+              .set({ balance: sql`${wallets.balance} + ${priceDiff}`, updated_at: now })
+              .where(eq(wallets.id, creatorWallet.id));
+          } else {
+            await tx.insert(wallets).values({
+              id: generateId(),
+              user_id: creator_id,
+              balance: priceDiff,
+              currency: "NGN",
+            });
+          }
+          await tx.insert(transactions).values({
+            id: generateId(),
+            user_id: creator_id,
+            type: "subscription_earn",
+            amount: priceDiff,
+            currency: "NGN",
+            status: "success",
+            description: `Subscription upgrade from a fan (${auth.user.userId})`,
+            metadata: JSON.stringify({ subscriber_id: auth.user.userId, tier, from_tier: existingTier }),
+          });
+        }
+
+        await tx
+          .update(subscriptions)
+          .set({ tier, amount: newPrice, updated_at: now, expires_at: expires })
+          .where(eq(subscriptions.id, existing.id));
+
+        return { kind: "upgraded", id: existing.id, tier };
       }
 
       if (price > 0) {
@@ -109,6 +199,39 @@ export async function POST(
           status: "success",
           description: `Subscription to creator ${creator_id}`,
           metadata: JSON.stringify({ creator_id, tier }),
+        });
+
+        // Credit the creator's wallet + record an earning so creator analytics
+        // and withdrawals reflect real subscription revenue (matches the
+        // album-unlock earning path). Previously this was never credited, so
+        // creator earnings from subscriptions were invisible.
+        const [creatorWallet] = await tx
+          .select({ id: wallets.id })
+          .from(wallets)
+          .where(eq(wallets.user_id, creator_id))
+          .limit(1);
+        if (creatorWallet) {
+          await tx
+            .update(wallets)
+            .set({ balance: sql`${wallets.balance} + ${price}`, updated_at: now })
+            .where(eq(wallets.id, creatorWallet.id));
+        } else {
+          await tx.insert(wallets).values({
+            id: generateId(),
+            user_id: creator_id,
+            balance: price,
+            currency: "NGN",
+          });
+        }
+        await tx.insert(transactions).values({
+          id: generateId(),
+          user_id: creator_id,
+          type: "subscription_earn",
+          amount: price,
+          currency: "NGN",
+          status: "success",
+          description: `Subscription from a fan (${auth.user.userId})`,
+          metadata: JSON.stringify({ subscriber_id: auth.user.userId, tier }),
         });
       }
 
@@ -145,6 +268,18 @@ export async function POST(
       subscription_id: outcome.id,
       subscribed: true,
       tier: outcome.tier,
+      subscriber_count,
+      subscriberCount: subscriber_count,
+      subscription: { id: outcome.id, creator_id, status: "active" },
+    });
+  }
+
+  if (outcome.kind === "upgraded") {
+    return ok({
+      subscription_id: outcome.id,
+      subscribed: true,
+      tier: outcome.tier,
+      upgraded: true,
       subscriber_count,
       subscriberCount: subscriber_count,
       subscription: { id: outcome.id, creator_id, status: "active" },

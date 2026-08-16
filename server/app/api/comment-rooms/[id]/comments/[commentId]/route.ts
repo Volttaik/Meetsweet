@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { eq, and, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { comment_rooms, comments, posts } from "@/lib/db/schema";
+import { comments, posts } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err } from "@/lib/api/response";
@@ -56,10 +56,6 @@ export async function DELETE(
 
   await db.update(comments).set({ deleted_at: new Date().toISOString() }).where(eq(comments.id, commentId));
   await db.update(posts).set({ comment_count: sql`MAX(0, ${posts.comment_count} - 1)` }).where(eq(posts.id, id));
-  await db
-    .update(comment_rooms)
-    .set({ comment_count: sql`MAX(0, ${comment_rooms.comment_count} - 1)`, updated_at: new Date().toISOString() })
-    .where(eq(comment_rooms.post_id, id));
 
   return ok({ deleted: true });
 }

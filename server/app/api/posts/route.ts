@@ -189,6 +189,8 @@ export async function GET(req: NextRequest) {
 
     let homeCond = and(
       isNull(posts.deleted_at),
+      eq(users.is_active, true),
+      isNull(users.deleted_at),
       eq(posts.status, "published"),
       sql`${posts.visibility} != 'draft'`,
       creatorCond,
@@ -336,6 +338,8 @@ export async function GET(req: NextRequest) {
   // Subscriber-locked items are included so subscribers can see them; is_locked is set per-item.
   let conditions = and(
     isNull(posts.deleted_at),
+    eq(users.is_active, true),
+    isNull(users.deleted_at),
     eq(posts.status, "published"),
     sql`${posts.visibility} != 'draft'`,
   );
@@ -357,6 +361,8 @@ export async function GET(req: NextRequest) {
     if (ids.length === 0) return ok({ posts: [], next_cursor: null, nextCursor: null, page, limit });
     conditions = and(
       and(isNull(posts.deleted_at), eq(posts.status, "published")),
+      eq(users.is_active, true),
+      isNull(users.deleted_at),
       sql`${posts.id} IN (${sql.join(ids.map((id) => sql`${id}`), sql`, `)})`,
     );
   }
@@ -515,7 +521,7 @@ export async function POST(req: NextRequest) {
   // app receives a stable comment_room_id without guessing or deriving it.
   await db
     .insert(comment_rooms)
-    .values({ id: postId, post_id: postId, comments_enabled: true, comment_count: 0 })
+    .values({ id: postId, post_id: postId, comments_enabled: true })
     .onConflictDoNothing();
 
   // Support inline media objects

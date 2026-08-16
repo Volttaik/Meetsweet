@@ -45,6 +45,7 @@ export async function GET(_req: NextRequest) {
       .where(and(
         eq(users.is_creator, true),
         eq(users.is_active, true),
+        isNull(users.deleted_at),
       ))
       .then((r) => r[0]?.n ?? 0),
   ]);

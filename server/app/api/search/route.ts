@@ -44,7 +44,7 @@ export async function GET(req: NextRequest) {
       })
       .from(users)
       .leftJoin(profiles, eq(profiles.user_id, users.id))
-      .where(where)
+      .where(and(where, eq(users.is_active, true), isNull(users.deleted_at)))
       .limit(limit)
       .offset(offset);
 
@@ -85,6 +85,8 @@ export async function GET(req: NextRequest) {
       .where(
         and(
           isNull(posts.deleted_at),
+          eq(users.is_active, true),
+          isNull(users.deleted_at),
           eq(posts.status, "published"),
           eq(posts.visibility, "public"),
           eq(posts.content_type, "post"),

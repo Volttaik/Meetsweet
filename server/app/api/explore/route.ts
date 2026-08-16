@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { eq, and, desc, isNull, inArray, notInArray, or, sql, count } from "drizzle-orm";
+import { eq, and, desc, isNull, inArray, notInArray, or, sql, count, gte } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   users,
@@ -11,6 +11,7 @@ import {
   saved_posts,
   hidden_posts,
   subscriptions,
+  devices,
 } from "@/lib/db/schema";
 import { optionalAuth } from "@/middleware/auth";
 import { ok } from "@/lib/api/response";
@@ -84,6 +85,8 @@ export async function GET(req: NextRequest) {
     .where(
       and(
         isNull(posts.deleted_at),
+        eq(users.is_active, true),
+        isNull(users.deleted_at),
         eq(posts.status, "published"),
         eq(posts.visibility, "public"),
         // Explore shows ONLY free-tier content — subscriber-gated posts must never appear here.
@@ -129,7 +132,7 @@ export async function GET(req: NextRequest) {
     .from(albums)
     .innerJoin(users, eq(users.id, albums.creator_id))
     .leftJoin(profiles, eq(profiles.user_id, albums.creator_id))
-    .where(and(isNull(albums.deleted_at), eq(albums.visibility, "public")))
+    .where(and(isNull(albums.deleted_at), eq(albums.visibility, "public"), eq(users.is_active, true), isNull(users.deleted_at)))
     .orderBy(desc(albums.created_at))
     .limit(Math.ceil(limit * 0.15))
     .offset(offset);
@@ -264,10 +267,11 @@ export async function GET(req: NextRequest) {
       is_verified:         users.is_verified,
       is_creator:          users.is_creator,
       is_verified_creator: profiles.is_verified_creator,
+      category:            profiles.category,
     })
     .from(users)
     .leftJoin(profiles, eq(profiles.user_id, users.id))
-    .where(eq(users.is_creator, true))
+    .where(and(eq(users.is_creator, true), eq(users.is_active, true), isNull(users.deleted_at)))
     .limit(10)
     .offset(offset);
 
@@ -287,6 +291,41 @@ export async function GET(req: NextRequest) {
           .groupBy(subscriptions.creator_id)
       : [];
   const subCountMap = new Map(subCountRows.map((r) => [r.creator_id, r.n]));
+
+  // Viewer's active subscription tier for each featured creator, so the client
+  // can render the exact subscribed state (Subscribed vs Subscribe) without a
+  // second request per creator.
+  const viewerSubMap = new Map<string, string | null>();
+  if (userId && creatorIds.length > 0) {
+    const viewerSubRows = await db
+      .select({ creator_id: subscriptions.creator_id, tier: subscriptions.tier })
+      .from(subscriptions)
+      .where(
+        and(
+          eq(subscriptions.subscriber_id, userId),
+          eq(subscriptions.status, "active"),
+          inArray(subscriptions.creator_id, creatorIds),
+        ),
+      );
+    for (const r of viewerSubRows) viewerSubMap.set(r.creator_id, r.tier ?? null);
+  }
+
+  // Presence for featured creators (online = device seen within 10 minutes).
+  const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+  const onlineRows =
+    creatorIds.length > 0
+      ? await db
+          .select({ user_id: devices.user_id })
+          .from(devices)
+          .where(
+            and(
+              inArray(devices.user_id, creatorIds),
+              gte(devices.last_seen_at, tenMinutesAgo),
+            ),
+          )
+          .groupBy(devices.user_id)
+      : [];
+  const onlineSet = new Set(onlineRows.map((r) => r.user_id));
 
   return ok({
     // Main paginated items (exactly limit rows, global engagement ranking)
@@ -309,8 +348,15 @@ export async function GET(req: NextRequest) {
       isVerified:          u.is_verified,
       is_creator:          u.is_creator,
       is_verified_creator: u.is_verified_creator,
+      category:            u.category ?? null,
+      is_online:           onlineSet.has(u.id),
+      isOnline:            onlineSet.has(u.id),
       subscriber_count:    subCountMap.get(u.id) ?? 0,
       subscriberCount:     subCountMap.get(u.id) ?? 0,
+      subscribed_to_creator: viewerSubMap.has(u.id),
+      subscribedToCreator:   viewerSubMap.has(u.id),
+      subscription_tier:     viewerSubMap.get(u.id) ?? null,
+      subscriptionTier:      viewerSubMap.get(u.id) ?? null,
     })),
     // Pagination metadata
     page,

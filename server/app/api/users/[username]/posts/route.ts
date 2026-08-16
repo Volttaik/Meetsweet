@@ -51,7 +51,7 @@ export async function GET(
   const [user] = await db
     .select({ id: users.id })
     .from(users)
-    .where(eq(users.username, username))
+    .where(and(eq(users.username, username), eq(users.is_active, true), isNull(users.deleted_at)))
     .limit(1);
 
   if (!user) return err("User not found", 404);
@@ -64,6 +64,8 @@ export async function GET(
 
   const conditions = and(
     isNull(posts.deleted_at),
+    eq(users.is_active, true),
+    isNull(users.deleted_at),
     eq(posts.status, "published"),
     eq(posts.creator_id, user.id),
     isOwner ? undefined : eq(posts.visibility, "public"),

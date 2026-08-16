@@ -1,10 +1,10 @@
 import { NextRequest } from "next/server";
-import { eq, and, desc, isNull, sql } from "drizzle-orm";
+import { eq, and, desc, isNull, ne, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { posts, media, users, profiles, post_likes, subscriptions } from "@/lib/db/schema";
 import { optionalAuth } from "@/middleware/auth";
 import { ok, err } from "@/lib/api/response";
-import { buildVideoRow, groupMediaByPost, visibleContentCondition } from "@/lib/services/content";
+import { buildVideoRow, groupMediaByPost } from "@/lib/services/content";
 
 export async function GET(
   req: NextRequest,
@@ -17,7 +17,7 @@ export async function GET(
 
   const condition = id.includes("-") && id.length > 20 ? eq(users.id, id) : eq(users.username, id);
   const [creator] = await db.select({ id: users.id, is_creator: users.is_creator })
-    .from(users).where(and(condition, eq(users.is_active, true))).limit(1);
+    .from(users).where(and(condition, eq(users.is_active, true), isNull(users.deleted_at))).limit(1);
   if (!creator || !creator.is_creator) return err("Creator not found", 404);
 
   const [subscription] = userId
@@ -60,7 +60,7 @@ export async function GET(
       isNull(posts.deleted_at),
       eq(posts.status, "published"),
       eq(posts.content_type, "video"),
-      isOwner ? undefined : visibleContentCondition(posts.visibility, posts.tier, isSubscribed, subTier),
+      isOwner ? undefined : ne(posts.visibility, "draft"),
       cursor ? sql`${posts.created_at} < ${cursor}` : undefined,
     ))
     .orderBy(desc(posts.published_at))

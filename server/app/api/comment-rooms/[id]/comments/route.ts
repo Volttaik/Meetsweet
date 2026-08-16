@@ -4,7 +4,6 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import {
   comment_replies,
-  comment_rooms,
   comments,
   notifications,
   posts,
@@ -63,7 +62,6 @@ export async function POST(
   if (!parsed.success) return parsed.response;
 
   const parentId = parsed.data.parent_id ?? parsed.data.parentId ?? null;
-  const now = new Date().toISOString();
 
   // Threaded reply
   if (parentId) {
@@ -113,10 +111,6 @@ export async function POST(
     body: parsed.data.body,
   });
   await db.update(posts).set({ comment_count: sql`${posts.comment_count} + 1` }).where(eq(posts.id, id));
-  await db
-    .update(comment_rooms)
-    .set({ comment_count: sql`${comment_rooms.comment_count} + 1`, updated_at: now })
-    .where(eq(comment_rooms.post_id, id));
 
   // Notify the post creator (skip self-comments).
   if (post.creator_id && post.creator_id !== auth.user.userId) {

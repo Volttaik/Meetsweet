@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { eq, like, or, and, ne } from "drizzle-orm";
+import { eq, like, or, and, ne, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users, profiles, recent_searches } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
@@ -31,6 +31,7 @@ export async function GET(req: NextRequest) {
       and(
         ne(users.id, auth.user.userId),
         eq(users.is_active, true),
+        isNull(users.deleted_at),
         or(
           like(users.username, pattern),
           like(users.full_name, pattern),

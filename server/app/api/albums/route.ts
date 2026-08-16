@@ -1,8 +1,8 @@
 import { NextRequest } from "next/server";
-import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, gte } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { albums, album_items, album_unlocks, media, profiles, users } from "@/lib/db/schema";
+import { albums, album_items, album_unlocks, media, profiles, users, devices } from "@/lib/db/schema";
 import { optionalAuth, requireAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { created, err, ok } from "@/lib/api/response";
@@ -67,16 +67,17 @@ export async function GET(req: NextRequest) {
       .from(albums)
       .innerJoin(users, eq(users.id, albums.creator_id))
       .leftJoin(profiles, eq(profiles.user_id, albums.creator_id))
-      .where(and(isNull(albums.deleted_at), inArray(albums.id, albumIds)));
+      .where(and(isNull(albums.deleted_at), inArray(albums.id, albumIds), eq(users.is_active, true), isNull(users.deleted_at)));
 
+    const onlineSet = await buildOnlineSet([...new Set(rows.map((r) => r.creator_id))]);
     return ok({
-      albums: rows.map((row) => formatAlbum(row, userId, true)),
+      albums: rows.map((row) => formatAlbum(row, userId, true, onlineSet)),
       next_cursor: null,
       has_more: false,
     });
   }
 
-  let conditions = and(isNull(albums.deleted_at), eq(albums.visibility, "public"));
+  let conditions = and(isNull(albums.deleted_at), eq(albums.visibility, "public"), eq(users.is_active, true), isNull(users.deleted_at));
   if (creatorId) conditions = and(conditions, eq(albums.creator_id, creatorId));
 
   const rows = await db
@@ -119,8 +120,9 @@ export async function GET(req: NextRequest) {
     unlockedSet = new Set(unlockRows.map((u) => u.album_id));
   }
 
+  const onlineSet = await buildOnlineSet([...new Set(items.map((r) => r.creator_id))]);
   const formatted = items.map((row) =>
-    formatAlbum(row, userId, unlockedSet.has(row.id)),
+    formatAlbum(row, userId, unlockedSet.has(row.id), onlineSet),
   );
 
   const lastItem = items[items.length - 1];
@@ -230,6 +232,18 @@ export async function POST(req: NextRequest) {
 
 // ─── Formatting helper ─────────────────────────────────────────────────────
 
+// Presence: "online" = a device seen within the last 10 minutes (real signal).
+async function buildOnlineSet(creatorIds: string[]): Promise<Set<string>> {
+  if (creatorIds.length === 0) return new Set();
+  const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+  const rows = await db
+    .select({ user_id: devices.user_id })
+    .from(devices)
+    .where(and(inArray(devices.user_id, creatorIds), gte(devices.last_seen_at, tenMinutesAgo)))
+    .groupBy(devices.user_id);
+  return new Set(rows.map((r) => r.user_id));
+}
+
 function formatAlbum(
   row: {
     id: string;
@@ -250,6 +264,7 @@ function formatAlbum(
   },
   viewerId: string | null,
   isUnlocked: boolean,
+  onlineSet: Set<string>,
 ) {
   const unlocked =
     isUnlocked || !row.is_premium || row.price_credits <= 0 || row.creator_id === viewerId;
@@ -287,7 +302,8 @@ function formatAlbum(
       avatarUrl: row.creator_avatar_url,
       is_verified: row.creator_is_verified,
       isVerified: row.creator_is_verified,
-      is_online: false,
+      is_online: onlineSet.has(row.creator_id),
+      isOnline: onlineSet.has(row.creator_id),
     },
     // Flat creator fields for normalizers that read top-level
     creator_username: row.creator_username,

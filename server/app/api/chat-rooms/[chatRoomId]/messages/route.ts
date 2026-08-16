@@ -121,7 +121,12 @@ export async function POST(
       sendPushToUser(other.user_id, {
         title: "New Message",
         body: d.body ? `${actor}: ${d.body.slice(0, 80)}` : `${actor} sent you a message`,
-        data: { type: "message", chat_room_id: chatRoomId, actor_id: auth.user.userId },
+        data: {
+          type: "message",
+          chat_room_id: chatRoomId,
+          actor_id: auth.user.userId,
+          actor_username: actor.replace(/^@/, ""),
+        },
       }, "notif_messages"),
     );
   }

@@ -59,6 +59,7 @@ export const profiles = sqliteTable("profiles", {
   location: text("location"),
   date_of_birth: text("date_of_birth"),
   is_verified_creator: integer("is_verified_creator", { mode: "boolean" }).notNull().default(false),
+  category: text("category"),
   subscription_price: real("subscription_price").default(0),
   created_at: createdAt(),
   updated_at: updatedAt(),
@@ -86,6 +87,8 @@ export const user_settings = sqliteTable("user_settings", {
   allow_dms: integer("allow_dms", { mode: "boolean" }).default(true),
   allow_mentions: integer("allow_mentions", { mode: "boolean" }).default(true),
   allow_tags: integer("allow_tags", { mode: "boolean" }).default(true),
+  profile_visibility: text("profile_visibility").default("everyone"),
+  message_perm: text("message_perm").default("everyone"),
   search_visible: integer("search_visible", { mode: "boolean" }).default(true),
   birthday_visible: integer("birthday_visible", { mode: "boolean" }).default(false),
   phone_visible: integer("phone_visible", { mode: "boolean" }).default(false),
@@ -259,13 +262,6 @@ export const post_likes = sqliteTable("post_likes", {
   created_at: createdAt(),
 });
 
-export const post_views = sqliteTable("post_views", {
-  id: id(),
-  user_id: text("user_id").references(() => users.id, { onDelete: "set null" }),
-  post_id: text("post_id").notNull().references(() => posts.id, { onDelete: "cascade" }),
-  created_at: createdAt(),
-});
-
 export const saved_posts = sqliteTable("saved_posts", {
   id: id(),
   user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
@@ -280,20 +276,10 @@ export const hidden_posts = sqliteTable("hidden_posts", {
   created_at: createdAt(),
 });
 
-export const archives = sqliteTable("archives", {
-  id: id(),
-  post_id: text("post_id").notNull().references(() => posts.id, { onDelete: "cascade" }),
-  creator_id: text("creator_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  price: real("price").default(0),
-  is_purchasable: integer("is_purchasable", { mode: "boolean" }).notNull().default(false),
-  created_at: createdAt(),
-});
-
 export const categories = sqliteTable("categories", {
   id: id(),
   name: text("name").notNull(),
   slug: text("slug").notNull(),
-  post_count: integer("post_count").notNull().default(0),
   created_at: createdAt(),
 });
 
@@ -479,7 +465,6 @@ export const comment_rooms = sqliteTable(
     id: id(),
     post_id: text("post_id").notNull().references(() => posts.id, { onDelete: "cascade" }),
     comments_enabled: integer("comments_enabled", { mode: "boolean" }).notNull().default(true),
-    comment_count: integer("comment_count").notNull().default(0),
     created_at: createdAt(),
     updated_at: updatedAt(),
   },
@@ -496,67 +481,6 @@ export const reports = sqliteTable("reports", {
   status: text("status").notNull().default("pending"),
   created_at: createdAt(),
   updated_at: updatedAt(),
-});
-
-// ─── Messaging ────────────────────────────────────────────────────────────
-
-export const conversations = sqliteTable("conversations", {
-  id: id(),
-  type: text("type", { enum: ["direct", "group"] }).notNull().default("direct"),
-  name: text("name"),
-  avatar_url: text("avatar_url"),
-  last_message_at: text("last_message_at"),
-  created_by: text("created_by").references(() => users.id, { onDelete: "set null" }),
-  created_at: createdAt(),
-  updated_at: updatedAt(),
-});
-
-export const conversation_members = sqliteTable("conversation_members", {
-  id: id(),
-  conversation_id: text("conversation_id").notNull().references(() => conversations.id, { onDelete: "cascade" }),
-  user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  role: text("role").notNull().default("member"),
-  is_muted: integer("is_muted", { mode: "boolean" }).notNull().default(false),
-  is_pinned: integer("is_pinned", { mode: "boolean" }).notNull().default(false),
-  is_archived: integer("is_archived", { mode: "boolean" }).notNull().default(false),
-  last_read_at: text("last_read_at"),
-  // cleared_at: messages before this timestamp are hidden for this member only
-  cleared_at: text("cleared_at"),
-  // background: per-member chat background (hex colour, gradient key, or image URL)
-  background: text("background"),
-  created_at: createdAt(),
-});
-
-export const messages = sqliteTable("messages", {
-  id: id(),
-  conversation_id: text("conversation_id").notNull().references(() => conversations.id, { onDelete: "cascade" }),
-  sender_id: text("sender_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  reply_to_id: text("reply_to_id"),
-  type: text("type").notNull().default("text"),
-  body: text("body"),
-  caption: text("caption"),
-  media_url: text("media_url"),
-  // media_type: explicit "image"|"video"|"audio"|"document" — distinct from `type` which is
-  // the message category ("text"|"media"). Storing both avoids URL-extension guessing on mobile.
-  media_type: text("media_type"),
-  media_blob_path: text("media_blob_path"),
-  mime_type: text("mime_type"),
-  file_name: text("file_name"),
-  file_size: integer("file_size"),
-  audio_duration: real("audio_duration"),
-  reactions: text("reactions"),
-  is_edited: integer("is_edited", { mode: "boolean" }).notNull().default(false),
-  is_recalled: integer("is_recalled", { mode: "boolean" }).notNull().default(false),
-  created_at: createdAt(),
-  updated_at: updatedAt(),
-  deleted_at: text("deleted_at"),
-});
-
-export const message_reads = sqliteTable("message_reads", {
-  id: id(),
-  message_id: text("message_id").notNull().references(() => messages.id, { onDelete: "cascade" }),
-  user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  created_at: createdAt(),
 });
 
 // ─── Chat Rooms (USER → ROOM → CONTENT) ─────────────────────────────────────
@@ -719,16 +643,4 @@ export const creator_settings = sqliteTable("creator_settings", {
   updated_at: updatedAt(),
 });
 
-export const creator_statistics = sqliteTable("creator_statistics", {
-  id: id(),
-  creator_id: text("creator_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  period: text("period").notNull(),
-  total_subscribers: integer("total_subscribers").notNull().default(0),
-  new_subscribers: integer("new_subscribers").notNull().default(0),
-  total_revenue: real("total_revenue").notNull().default(0),
-  total_views: integer("total_views").notNull().default(0),
-  total_likes: integer("total_likes").notNull().default(0),
-  total_posts: integer("total_posts").notNull().default(0),
-  created_at: createdAt(),
-  updated_at: updatedAt(),
-});
+

@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { randomBytes } from "crypto";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { posts, albums, users, shares } from "@/lib/db/schema";
@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
     case "video":
     case "short": {
       const [post] = await db.select({ id: posts.id }).from(posts)
-        .where(and(eq(posts.id, content_id), eq(posts.status, "published")))
+        .where(and(eq(posts.id, content_id), eq(posts.status, "published"), isNull(posts.deleted_at)))
         .limit(1);
       if (!post) return err("Content not found", 404);
       // Increment share count
@@ -63,14 +63,16 @@ export async function POST(req: NextRequest) {
     }
     case "album": {
       const [album] = await db.select({ id: albums.id }).from(albums)
-        .where(eq(albums.id, content_id)).limit(1);
+        .where(and(eq(albums.id, content_id), isNull(albums.deleted_at))).limit(1);
       if (!album) return err("Album not found", 404);
       break;
     }
     case "creator": {
+      // A profile share may point at any active user — a creator or a regular
+      // fan sharing their own profile. Resolve by the canonical user id.
       const [creator] = await db.select({ id: users.id }).from(users)
-        .where(and(eq(users.id, content_id), eq(users.is_creator, true))).limit(1);
-      if (!creator) return err("Creator not found", 404);
+        .where(and(eq(users.id, content_id), eq(users.is_active, true), isNull(users.deleted_at))).limit(1);
+      if (!creator) return err("User not found", 404);
       break;
     }
   }

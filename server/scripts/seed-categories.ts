@@ -63,7 +63,6 @@ async function main() {
       id: randomId(),
       name: cat.name,
       slug: cat.slug,
-      post_count: 0,
     });
     inserted++;
     console.log(`  ✓ Inserted: ${cat.name}`);

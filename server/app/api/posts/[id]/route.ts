@@ -61,7 +61,7 @@ export async function GET(
     .from(posts)
     .innerJoin(users, eq(users.id, posts.creator_id))
     .leftJoin(profiles, eq(profiles.user_id, posts.creator_id))
-    .where(and(eq(posts.id, id), isNull(posts.deleted_at)))
+    .where(and(eq(posts.id, id), isNull(posts.deleted_at), eq(users.is_active, true), isNull(users.deleted_at)))
     .limit(1);
 
   if (!row) return err("Post not found", 404);
@@ -262,7 +262,7 @@ export async function PUT(
   // Ensure the room exists (legacy posts may predate comment_rooms).
   await db
     .insert(comment_rooms)
-    .values({ id, post_id: id, comments_enabled: parsed.data.enabled, comment_count: 0 })
+    .values({ id, post_id: id, comments_enabled: parsed.data.enabled })
     .onConflictDoNothing();
 
   await db

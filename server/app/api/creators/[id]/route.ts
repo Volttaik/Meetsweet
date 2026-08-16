@@ -1,9 +1,10 @@
 import { NextRequest } from "next/server";
-import { eq, and, count, sum, isNull } from "drizzle-orm";
+import { eq, and, count, isNull, gte } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { users, profiles, follows, subscriptions, posts, creator_settings, albums } from "@/lib/db/schema";
+import { users, profiles, follows, subscriptions, posts, creator_settings, albums, devices } from "@/lib/db/schema";
 import { optionalAuth } from "@/middleware/auth";
 import { ok, err } from "@/lib/api/response";
+import { resolveBasePrice } from "@/lib/services/pricing";
 
 export async function GET(
   req: NextRequest,
@@ -32,11 +33,12 @@ export async function GET(
       website: profiles.website,
       location: profiles.location,
       is_verified_creator: profiles.is_verified_creator,
+      category: profiles.category,
       subscription_price: profiles.subscription_price,
     })
     .from(users)
     .leftJoin(profiles, eq(profiles.user_id, users.id))
-    .where(and(condition, eq(users.is_active, true)))
+    .where(and(condition, eq(users.is_active, true), isNull(users.deleted_at)))
     .limit(1);
 
   if (!user || !user.is_creator) return err("Creator not found", 404);
@@ -83,6 +85,23 @@ export async function GET(
   const isSubscribed = Boolean(subRow);
   const subscriptionTier = subRow?.tier ?? null;
 
+  // Presence: "online" = a device seen within the last 10 minutes. This is the
+  // app's real activity signal (devices.last_seen_at is updated on push-token
+  // registration / app foreground) — not a hardcoded value.
+  const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+  const [recentDevice] = await db
+    .select({ id: devices.id })
+    .from(devices)
+    .where(and(eq(devices.user_id, user.id), gte(devices.last_seen_at, tenMinutesAgo)))
+    .limit(1);
+  const isOnline = Boolean(recentDevice);
+
+  // Pricing source of truth: creator_settings, falling back to the legacy
+  // profiles.subscription_price. subscriber_plus falls back to 2× the base
+  // price so the client always shows the real charge (never a fake "Free").
+  const basePrice = resolveBasePrice(settings?.subscription_price, user.subscription_price);
+  const plusPrice = settings?.subscription_plus_price ?? Math.round(basePrice * 2);
+
   const creator = {
     id: user.id,
     username: user.username,
@@ -95,11 +114,11 @@ export async function GET(
     bannerUrl: user.banner_url ?? null,
     website: user.website ?? null,
     location: user.location ?? null,
-    category: null, // future: add category to profiles
+    category: user.category ?? null,
     is_verified: user.is_verified_creator ?? user.is_verified,
     isVerified: user.is_verified_creator ?? user.is_verified,
-    is_online: false, // future: real-time presence
-    isOnline: false,
+    is_online: isOnline,
+    isOnline,
     follower_count: followerCount,
     followerCount,
     subscriber_count: subscriberCount,
@@ -112,10 +131,10 @@ export async function GET(
     shortCount,
     album_count: albumCount,
     albumCount,
-    subscription_price: settings?.subscription_price ?? user.subscription_price ?? 0,
-    subscriptionPrice: settings?.subscription_price ?? user.subscription_price ?? 0,
-    subscription_plus_price: settings?.subscription_plus_price ?? null,
-    subscriptionPlusPrice: settings?.subscription_plus_price ?? null,
+    subscription_price: basePrice,
+    subscriptionPrice: basePrice,
+    subscription_plus_price: plusPrice,
+    subscriptionPlusPrice: plusPrice,
     allow_dms: settings?.allow_dms ?? true,
     allow_comments: settings?.allow_comments ?? true,
     who_can_message: (settings?.who_can_message as 'everyone' | 'subscribers' | 'none') ?? 'everyone',

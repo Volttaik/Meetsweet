@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull, gte } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   albums,
@@ -7,6 +7,7 @@ import {
   media,
   profiles,
   users,
+  devices,
 } from "@/lib/db/schema";
 
 export async function loadAlbum(albumId: string, userId?: string | null) {
@@ -31,7 +32,7 @@ export async function loadAlbum(albumId: string, userId?: string | null) {
     .from(albums)
     .innerJoin(users, eq(users.id, albums.creator_id))
     .leftJoin(profiles, eq(profiles.user_id, albums.creator_id))
-    .where(and(eq(albums.id, albumId), isNull(albums.deleted_at)))
+    .where(and(eq(albums.id, albumId), isNull(albums.deleted_at), eq(users.is_active, true), isNull(users.deleted_at)))
     .limit(1);
 
   if (!row) return null;
@@ -82,6 +83,15 @@ export async function loadAlbum(albumId: string, userId?: string | null) {
     is_locked: !unlocked,
   }));
 
+  // Presence: "online" = a device seen within the last 10 minutes (real signal).
+  const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+  const [recentDevice] = await db
+    .select({ id: devices.id })
+    .from(devices)
+    .where(and(eq(devices.user_id, row.creator_id), gte(devices.last_seen_at, tenMinutesAgo)))
+    .limit(1);
+  const isOnline = Boolean(recentDevice);
+
   const creator = {
     id: row.creator_id,
     name: row.creator_name,
@@ -90,7 +100,8 @@ export async function loadAlbum(albumId: string, userId?: string | null) {
     avatarUrl: row.creator_avatar_url,
     is_verified: row.creator_is_verified,
     isVerified: row.creator_is_verified,
-    is_online: false,
+    is_online: isOnline,
+    isOnline,
   };
 
   return {

@@ -54,6 +54,38 @@ function logoUrl(): string {
   return `${base}/meetsweet-logo.png`;
 }
 
+/**
+ * Inline SVG background (soft accent glows) as a data URI. Clients that render
+ * SVG backgrounds (Apple Mail, modern Outlook, etc.) show the glow; clients that
+ * strip data-URI/SVG backgrounds (Gmail) fall back to the solid dark background.
+ */
+function svgBackground(): string {
+  const svg = [
+    `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720">`,
+    `<rect width="1200" height="720" fill="${BG}"/>`,
+    `<defs>`,
+    `<radialGradient id="glowA" cx="50%" cy="0%" r="85%">`,
+    `<stop offset="0%" stop-color="${ACCENT}" stop-opacity="0.22"/>`,
+    `<stop offset="60%" stop-color="${ACCENT}" stop-opacity="0.05"/>`,
+    `<stop offset="100%" stop-color="${ACCENT}" stop-opacity="0"/>`,
+    `</radialGradient>`,
+    `<radialGradient id="glowB" cx="92%" cy="100%" r="75%">`,
+    `<stop offset="0%" stop-color="#8B5CF6" stop-opacity="0.18"/>`,
+    `<stop offset="100%" stop-color="#8B5CF6" stop-opacity="0"/>`,
+    `</radialGradient>`,
+    `<radialGradient id="glowC" cx="4%" cy="96%" r="55%">`,
+    `<stop offset="0%" stop-color="#EC4899" stop-opacity="0.14"/>`,
+    `<stop offset="100%" stop-color="#EC4899" stop-opacity="0"/>`,
+    `</radialGradient>`,
+    `</defs>`,
+    `<rect width="1200" height="720" fill="url(#glowA)"/>`,
+    `<rect width="1200" height="720" fill="url(#glowB)"/>`,
+    `<rect width="1200" height="720" fill="url(#glowC)"/>`,
+    `</svg>`,
+  ].join("");
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+
 // ─── Delivery (with diagnostics) ─────────────────────────────────────────────
 
 async function deliver(
@@ -168,15 +200,8 @@ function expiryPill(minutes: number): string {
 
 function securityNote(text: string): string {
   return `
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0;">
-      <tr>
-        <td style="padding:16px 20px;background-color:rgba(255,255,255,0.03);
-          border:1px solid ${BORDER};border-radius:12px;">
-          <p style="margin:0;font-size:13px;line-height:1.6;color:${TEXT_3};
-            font-family:${FONT};text-align:center;">${text}</p>
-        </td>
-      </tr>
-    </table>`;
+    <p style="margin:28px 0 0 0;font-size:13px;line-height:1.6;color:${TEXT_3};
+      font-family:${FONT};text-align:center;padding:0 12px;">${text}</p>`;
 }
 
 function footer(): string {
@@ -214,9 +239,9 @@ function shell(opts: { preheader: string; content: string }): string {
     ${opts.preheader}&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;
   </div>
 
-  <!-- Designed background: solid fallback + gradient accents -->
+  <!-- Designed background: SVG glow accents + solid dark fallback -->
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
-    style="background-color:${BG};background-image:radial-gradient(ellipse 80% 45% at 50% -10%, rgba(196,90,114,0.18) 0%, rgba(196,90,114,0) 62%),linear-gradient(180deg, rgba(255,255,255,0.02) 0%, rgba(255,255,255,0) 100%);">
+    style="background-color:${BG};background-image:url('${svgBackground()}');background-repeat:no-repeat;background-position:top center;background-size:cover;">
     <tr>
       <td align="center" style="padding:44px 16px 48px 16px;">
 
@@ -226,22 +251,8 @@ function shell(opts: { preheader: string; content: string }): string {
           <tr><td>${logoHeader()}</td></tr>
 
           <tr>
-            <td style="background-color:${CARD};border:1px solid ${BORDER};border-radius:16px;overflow:hidden;">
-              <!-- Accent top band -->
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-                <tr>
-                  <td style="height:4px;font-size:0;line-height:0;
-                    background-color:${ACCENT};background-image:linear-gradient(90deg, rgba(196,90,114,0) 0%, ${ACCENT} 50%, rgba(196,90,114,0) 100%);"></td>
-                </tr>
-              </table>
-              <!-- Card content -->
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-                <tr>
-                  <td style="padding:40px 40px 44px 40px;">
-                    ${opts.content}
-                  </td>
-                </tr>
-              </table>
+            <td style="padding:8px 8px 0 8px;">
+              ${opts.content}
             </td>
           </tr>
 
