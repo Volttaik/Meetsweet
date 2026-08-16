@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { eq, and, desc, isNull, sql } from "drizzle-orm";
+import { eq, and, desc, isNull, sql, exists } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { posts, media, users, profiles, post_likes, subscriptions } from "@/lib/db/schema";
 import { optionalAuth } from "@/middleware/auth";
@@ -12,6 +12,17 @@ export async function GET(req: NextRequest) {
   const limit = Math.min(Math.max(1, Number(params.get("limit") ?? 20)), 50);
   const userId = (await optionalAuth(req))?.userId ?? null;
 
+  // A short without a playable video media row cannot be rendered, so only
+  // serve shorts that actually have one. This keeps the feed truthful — the
+  // empty state appears only when there genuinely are no playable shorts —
+  // instead of surfacing media-less rows as broken black pages.
+  const hasVideoMedia = exists(
+    db
+      .select({ id: media.id })
+      .from(media)
+      .where(and(eq(media.post_id, posts.id), eq(media.type, "video"))),
+  );
+
   const conditions = and(
     isNull(posts.deleted_at),
     eq(users.is_active, true),
@@ -19,6 +30,7 @@ export async function GET(req: NextRequest) {
     eq(posts.status, "published"),
     eq(posts.content_type, "short"),
     eq(posts.visibility, "public"),
+    hasVideoMedia,
     cursor ? sql`${posts.created_at} < ${cursor}` : undefined,
   );
 

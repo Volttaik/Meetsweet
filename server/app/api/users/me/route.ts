@@ -2,11 +2,43 @@ import { NextRequest } from "next/server";
 import { eq, and, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { users, profiles, follows, posts, subscriptions, refresh_tokens } from "@/lib/db/schema";
+import { users, profiles, follows, posts, subscriptions, refresh_tokens, creator_settings } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err } from "@/lib/api/response";
 import { verifyPassword } from "@/lib/auth/password";
+import { resolveBasePrice } from "@/lib/services/pricing";
+
+/**
+ * Resolve the user's creator pricing from the authoritative creator_settings,
+ * falling back to the legacy profiles.subscription_price. Kept identical to the
+ * public /creators/[id] endpoint so a creator's own profile never advertises a
+ * different price than their followers see.
+ */
+async function getResolvedPrices(userId: string): Promise<{
+  subscription_price: number;
+  subscription_plus_price: number | null;
+}> {
+  const [settings] = await db
+    .select({
+      subscription_price: creator_settings.subscription_price,
+      subscription_plus_price: creator_settings.subscription_plus_price,
+    })
+    .from(creator_settings)
+    .where(eq(creator_settings.user_id, userId))
+    .limit(1);
+  const [profile] = await db
+    .select({ subscription_price: profiles.subscription_price })
+    .from(profiles)
+    .where(eq(profiles.user_id, userId))
+    .limit(1);
+  const base = resolveBasePrice(settings?.subscription_price, profile?.subscription_price);
+  return {
+    subscription_price: base,
+    subscription_plus_price:
+      settings?.subscription_plus_price ?? (base > 0 ? Math.round(base * 2) : null),
+  };
+}
 
 const patchSchema = z.object({
   full_name: z.string().min(2).max(100).optional(),
@@ -82,10 +114,13 @@ export async function GET(req: NextRequest) {
     .from(subscriptions)
     .where(and(eq(subscriptions.subscriber_id, auth.user.userId), eq(subscriptions.status, "active")));
 
+  const prices = await getResolvedPrices(auth.user.userId);
+
   // Mobile's normalizeUser(raw) is called directly on the unwrapped data,
   // so we return the user fields at the top level (not wrapped in {user:...}).
   return ok({
     ...row,
+    ...prices,
     follower_count: followerCount?.count ?? 0,
     following_count: followingCount?.count ?? 0,
     post_count: postCount?.count ?? 0,
@@ -160,7 +195,8 @@ export async function PATCH(req: NextRequest) {
     .where(eq(users.id, auth.user.userId))
     .limit(1);
 
-  return ok({ user: row });
+  const prices = await getResolvedPrices(auth.user.userId);
+  return ok({ user: { ...row, ...prices } });
 }
 
 export async function DELETE(req: NextRequest) {

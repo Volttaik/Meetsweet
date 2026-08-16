@@ -2,12 +2,13 @@ import { NextRequest } from "next/server";
 import { eq, and, gte, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { subscriptions, wallets, transactions, creator_settings } from "@/lib/db/schema";
+import { subscriptions, wallets, transactions, creator_settings, profiles } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err } from "@/lib/api/response";
 import { generateId } from "@/lib/auth/codes";
 import { tierIndex } from "@/lib/services/content";
+import { resolveBasePrice } from "@/lib/services/pricing";
 
 // subscriber_plus costs 2× the creator's subscription_price
 const TIER_MULTIPLIER: Record<string, number> = {
@@ -60,7 +61,8 @@ export async function POST(
     return err(`New tier must be higher than current tier (${currentTier})`, 400);
   }
 
-  // Resolve creator price for the diff calculation
+  // Resolve creator price for the diff calculation from the same authoritative
+  // sources as /creators/[id]/subscribe (never a silent ₦0 for a priced creator).
   const [settings] = await db
     .select({
       subscription_price: creator_settings.subscription_price,
@@ -69,7 +71,12 @@ export async function POST(
     .from(creator_settings)
     .where(eq(creator_settings.user_id, sub.creator_id))
     .limit(1);
-  const creatorPrice = settings?.subscription_price ?? 0;
+  const [profile] = await db
+    .select({ subscription_price: profiles.subscription_price })
+    .from(profiles)
+    .where(eq(profiles.user_id, sub.creator_id))
+    .limit(1);
+  const creatorPrice = resolveBasePrice(settings?.subscription_price, profile?.subscription_price);
 
   const currentMultiplier = TIER_MULTIPLIER[currentTier] ?? 1;
   const newMultiplier = TIER_MULTIPLIER[newTier] ?? 1;

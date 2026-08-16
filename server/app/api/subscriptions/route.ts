@@ -8,6 +8,7 @@ import { parseBody } from "@/lib/api/validate";
 import { ok, err, created } from "@/lib/api/response";
 import { generateId } from "@/lib/auth/codes";
 import { sendPushToUser, getActorUsername } from "@/lib/services/push";
+import { resolveBasePrice } from "@/lib/services/pricing";
 
 // Subscription tier pricing:
 //   subscriber      → creator's own subscription_price
@@ -95,16 +96,20 @@ export async function POST(req: NextRequest) {
   const [creator] = await db.select({ id: users.id }).from(users).where(eq(users.id, creator_id)).limit(1);
   if (!creator) return err("Creator not found", 404);
 
-  // Resolve price from creator's subscription_price setting.
-  //   subscriber      → 1× creator price
-  //   subscriber_plus → 2× creator price (exclusive premium tier)
+  // Resolve price from the same authoritative sources as /creators/[id] so the
+  // charge here can never differ from the price the profile advertises.
   const [settings] = await db
     .select({ subscription_price: creator_settings.subscription_price })
     .from(creator_settings)
     .where(eq(creator_settings.user_id, creator_id))
     .limit(1);
+  const [profile] = await db
+    .select({ subscription_price: profiles.subscription_price })
+    .from(profiles)
+    .where(eq(profiles.user_id, creator_id))
+    .limit(1);
 
-  const creatorPrice = settings?.subscription_price ?? 0;
+  const creatorPrice = resolveBasePrice(settings?.subscription_price, profile?.subscription_price);
   const resolvedTier: "subscriber" | "subscriber_plus" = tier ?? "subscriber";
   const multiplier = TIER_MULTIPLIER[resolvedTier] ?? 1;
   const [tierSettings] = await db

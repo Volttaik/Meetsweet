@@ -286,7 +286,10 @@ export function buildShortRow(
   isOwner = false,
 ) {
   const sorted = [...mediaRows].sort((a, b) => a.sort_order - b.sort_order);
-  const primary = sorted[0];
+  // A short's playable URL must be a video row, not a thumbnail/image row that
+  // happens to sort first. Prefer the first video media; fall back to the
+  // first row only when no video exists.
+  const primary = sorted.find((m) => m.type === "video") ?? sorted[0];
   const creator = buildCreator(row);
 
   // Post-level thumbnail takes priority; fall back to media-level thumbnail
