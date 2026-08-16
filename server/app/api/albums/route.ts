@@ -1,8 +1,8 @@
 import { NextRequest } from "next/server";
-import { and, desc, eq, inArray, isNull, gte } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, gte, or, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { albums, album_items, album_unlocks, media, profiles, users, devices } from "@/lib/db/schema";
+import { albums, album_items, album_unlocks, media, profiles, users, devices, subscriptions } from "@/lib/db/schema";
 import { optionalAuth, requireAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { created, err, ok } from "@/lib/api/response";
@@ -77,7 +77,30 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  let conditions = and(isNull(albums.deleted_at), eq(albums.visibility, "public"), eq(users.is_active, true), isNull(users.deleted_at));
+  // Visibility-aware listing: everyone sees public albums; the owner sees all of
+  // their own (including private / subscriber-only); active subscribers
+  // additionally see the creators' subscriber-only albums. Without this, a
+  // freshly-created "Subscribers" album is silently hidden from its own owner
+  // and from every subscriber, which is why albums seemed to "disappear".
+  let visibilityCond: SQL | undefined = eq(albums.visibility, "public");
+  if (userId) {
+    const subRows = await db
+      .select({ creator_id: subscriptions.creator_id })
+      .from(subscriptions)
+      .where(and(eq(subscriptions.subscriber_id, userId), eq(subscriptions.status, "active")));
+    const conds: (SQL | undefined)[] = [eq(albums.visibility, "public"), eq(albums.creator_id, userId)];
+    if (subRows.length > 0) {
+      conds.push(
+        and(
+          eq(albums.visibility, "subscribers"),
+          inArray(albums.creator_id, subRows.map((r) => r.creator_id)),
+        ),
+      );
+    }
+    visibilityCond = or(...conds);
+  }
+
+  let conditions = and(isNull(albums.deleted_at), visibilityCond, eq(users.is_active, true), isNull(users.deleted_at));
   if (creatorId) conditions = and(conditions, eq(albums.creator_id, creatorId));
 
   const rows = await db

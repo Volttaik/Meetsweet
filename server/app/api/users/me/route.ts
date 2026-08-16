@@ -81,10 +81,13 @@ export async function GET(req: NextRequest) {
     })
     .from(users)
     .leftJoin(profiles, eq(profiles.user_id, users.id))
-    .where(eq(users.id, auth.user.userId))
+    .where(and(eq(users.id, auth.user.userId), eq(users.is_active, true), isNull(users.deleted_at)))
     .limit(1);
 
-  if (!row) return err("User not found", 404);
+  // A valid token pointing at a missing or disabled user is an invalid session,
+  // not a missing route. Return 401 (not 404) so the client clears the stale
+  // session and re-authenticates instead of silently keeping a dead session.
+  if (!row) return err("Session is no longer valid", 401, "UNAUTHORIZED");
 
   // Follower / following / post counts
   const [followerCount] = await db

@@ -497,6 +497,17 @@ export async function POST(req: NextRequest) {
     media_ids,
   } = parsed.data;
 
+  // Shorts and videos are unplayable without media. Reject media-less
+  // video/short creation so a broken record (no playable URL) can never be
+  // persisted and later show up as an empty black page in the feed.
+  if (
+    (content_type === "short" || content_type === "video") &&
+    (!mediaItems || mediaItems.length === 0) &&
+    (!media_ids || media_ids.length === 0)
+  ) {
+    return err("Media is required for videos and shorts", 400, "MEDIA_REQUIRED");
+  }
+
   const postId = generateId();
   const now = new Date().toISOString();
 

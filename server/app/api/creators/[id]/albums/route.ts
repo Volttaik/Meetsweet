@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
-import { eq, and, desc, isNull, gte } from "drizzle-orm";
+import { eq, and, desc, isNull, gte, or, type SQL } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { albums, users, profiles, album_unlocks, devices } from "@/lib/db/schema";
+import { albums, users, profiles, album_unlocks, devices, subscriptions } from "@/lib/db/schema";
 import { optionalAuth } from "@/middleware/auth";
 import { ok, err } from "@/lib/api/response";
 
@@ -28,6 +28,33 @@ export async function GET(
     .limit(1);
   const isOnline = Boolean(recentDevice);
 
+  // Visibility-aware: the owner sees all their albums (public / subscribers /
+  // private); active subscribers additionally see subscriber-only albums;
+  // everyone else sees public albums only.
+  let visibilityCond: SQL | undefined = eq(albums.visibility, "public");
+  if (userId === creator.id) {
+    visibilityCond = or(
+      eq(albums.visibility, "public"),
+      eq(albums.visibility, "subscribers"),
+      eq(albums.visibility, "private"),
+    );
+  } else if (userId) {
+    const [sub] = await db
+      .select({ id: subscriptions.id })
+      .from(subscriptions)
+      .where(
+        and(
+          eq(subscriptions.subscriber_id, userId),
+          eq(subscriptions.creator_id, creator.id),
+          eq(subscriptions.status, "active"),
+        ),
+      )
+      .limit(1);
+    if (sub) {
+      visibilityCond = or(eq(albums.visibility, "public"), eq(albums.visibility, "subscribers"));
+    }
+  }
+
   const rows = await db
     .select({
       id: albums.id,
@@ -52,7 +79,7 @@ export async function GET(
     .where(and(
       eq(albums.creator_id, creator.id),
       isNull(albums.deleted_at),
-      eq(albums.visibility, "public"),
+      visibilityCond,
     ))
     .orderBy(desc(albums.created_at))
     .limit(limit + 1)

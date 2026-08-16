@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { posts, media, post_categories } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
-import { created } from "@/lib/api/response";
+import { created, err } from "@/lib/api/response";
 import { generateId } from "@/lib/auth/codes";
 
 const createSchema = z.object({
@@ -53,6 +53,12 @@ export async function POST(req: NextRequest) {
     preview_duration,
     media_ids, media: mediaItems, categories,
   } = parsed.data;
+
+  // A short without media can never play — reject it so a media-less record is
+  // never persisted and later surfaced as a broken black page in the feed.
+  if ((!mediaItems || mediaItems.length === 0) && (!media_ids || media_ids.length === 0)) {
+    return err("Media is required to create a short", 400, "MEDIA_REQUIRED");
+  }
 
   const postId = generateId();
   const now = new Date().toISOString();
