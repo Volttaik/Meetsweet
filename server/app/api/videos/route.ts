@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { posts, media, users, profiles, post_likes, subscriptions, post_categories } from "@/lib/db/schema";
 import { optionalAuth, requireAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
-import { ok, created } from "@/lib/api/response";
+import { ok, err, created } from "@/lib/api/response";
 import {
   buildVideoRow,
   getHiddenCreatorIds,
@@ -174,6 +174,13 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const auth = await requireAuth(req);
   if ("response" in auth) return auth.response;
+
+  // Videos are creator-only content — gate on the account's LIVE role
+  // (requireAuth re-reads it from the DB on every request), matching the
+  // album and short creation gates.
+  if (auth.user.role !== "creator" && auth.user.role !== "admin") {
+    return err("Creator account required", 403, "CREATOR_REQUIRED");
+  }
 
   const parsed = await parseBody(req, createSchema);
   if (!parsed.success) return parsed.response;

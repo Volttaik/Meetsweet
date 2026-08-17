@@ -576,6 +576,16 @@ export async function POST(req: NextRequest) {
     media_ids,
   } = parsed.data;
 
+  // Shorts and videos are creator-only content — gate on the account's LIVE
+  // role (requireAuth re-reads it from the DB on every request), matching
+  // the existing album creation gate. Plain text/image posts stay open to
+  // all authenticated users.
+  if (content_type === "short" || content_type === "video") {
+    if (auth.user.role !== "creator" && auth.user.role !== "admin") {
+      return err("Creator account required", 403, "CREATOR_REQUIRED");
+    }
+  }
+
   // Shorts and videos are unplayable without media. Reject media-less
   // video/short creation so a broken record (no playable URL) can never be
   // persisted and later show up as an empty black page in the feed.
