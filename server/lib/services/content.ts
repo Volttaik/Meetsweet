@@ -223,6 +223,28 @@ function buildCreator(row: PostRow) {
   };
 }
 
+/**
+ * Playable quality variants for a video, derived from server-side media
+ * metadata (the authoritative source — the client never invents qualities).
+ *
+ * Today the platform stores a single source file (no transcoding pipeline),
+ * so the list contains exactly one "Auto" entry pointing at the original;
+ * the player only shows a quality selector when a future transcoding
+ * pipeline provides more than one variant. Locked content returns [] so no
+ * media URL ever leaks to unauthorized callers.
+ */
+export function buildQualities(
+  primary: MediaRow | undefined,
+  isLocked: boolean,
+): Array<{ label: string; url: string; height: number | null }> {
+  if (!primary?.url || isLocked) return [];
+  return [{
+    label: "Auto",
+    url: primary.url,
+    height: primary.height ?? null,
+  }];
+}
+
 export function buildVideoRow(
   row: PostRow,
   mediaRows: MediaRow[],
@@ -284,6 +306,9 @@ export function buildVideoRow(
     durationSecs: primary?.duration_seconds ?? 0,
     width: mediaWidth,
     height: mediaHeight,
+    // Server-authoritative playable qualities (single Auto entry today; the
+    // player shows a selector only when multiple variants exist).
+    qualities: buildQualities(primary, isLocked),
     view_count: row.view_count,
     viewCount: row.view_count,
     like_count: row.like_count,
@@ -372,6 +397,9 @@ export function buildShortRow(
     durationSecs: primary?.duration_seconds ?? 0,
     width: mediaWidth,
     height: mediaHeight,
+    // Server-authoritative playable qualities (single Auto entry today; the
+    // player shows a selector only when multiple variants exist).
+    qualities: buildQualities(primary, isLocked),
     view_count: row.view_count,
     viewCount: row.view_count,
     like_count: row.like_count,

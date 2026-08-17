@@ -80,6 +80,10 @@ export async function loadAlbum(albumId: string, userId?: string | null) {
     width: unlocked ? item.width : null,
     height: unlocked ? item.height : null,
     duration_secs: unlocked ? item.duration_seconds : null,
+    // Server-authoritative playable qualities (single Auto entry today; the
+    // player shows a selector only when multiple variants exist). Nulled for
+    // locked items so no media URL leaks before purchase.
+    qualities: unlocked && item.url ? [{ label: "Auto", url: item.url, height: item.height ?? null }] : [],
     is_locked: !unlocked,
   }));
 
