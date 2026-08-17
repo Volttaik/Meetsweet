@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { eq, and, desc, isNull, or, sql } from "drizzle-orm";
+import { eq, and, desc, isNull, notInArray, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { users, profiles, posts, media, post_likes, saved_posts, post_categories, subscriptions, comment_rooms } from "@/lib/db/schema";
@@ -7,7 +7,7 @@ import { requireAuth, optionalAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err, created } from "@/lib/api/response";
 import { generateId } from "@/lib/auth/codes";
-import { canViewContent } from "@/lib/services/content";
+import { canViewContent, getHiddenCreatorIds, getHiddenPostIds } from "@/lib/services/content";
 import { notifySubscribersOfNewPost } from "@/lib/services/push";
 
 const createSchema = z.object({
@@ -70,6 +70,7 @@ function postRow(
   liked: boolean,
   bookmarked: boolean,
   isLocked: boolean,
+  subscribed = false,
 ) {
   return {
     id: p.id,
@@ -101,6 +102,10 @@ function postRow(
     bookmarked_by_me: bookmarked,
     is_locked: isLocked,
     isLocked,
+    // Viewer's subscription state for this post's creator — the client uses it
+    // to gate discovery actions (no Hide/Not Interested for subscribed creators).
+    subscribed_to_creator: subscribed,
+    subscribedToCreator: subscribed,
     media: isLocked ? [] : mediaItems.map(mediaShape),
   };
 }
@@ -128,6 +133,17 @@ export async function GET(req: NextRequest) {
   let userId: string | null = null;
   const authResult = await optionalAuth(req);
   if (authResult?.userId) userId = authResult.userId;
+
+  // Hide-Creator / Not-Interested / Block exclusions — the viewer's muted +
+  // blocked creators and explicitly hidden posts stay out of every feed.
+  let hiddenCreatorIds: string[] = [];
+  let hiddenPostIds: string[] = [];
+  if (userId) {
+    [hiddenCreatorIds, hiddenPostIds] = await Promise.all([
+      getHiddenCreatorIds(userId),
+      getHiddenPostIds(userId),
+    ]);
+  }
 
   if (bookmarked || feedMode === "home") {
     if (!userId) {
@@ -199,6 +215,9 @@ export async function GET(req: NextRequest) {
       contentTypeFilter
         ? eq(posts.content_type, contentTypeFilter)
         : sql`${posts.content_type} IN ('post', 'video', 'album')`,
+      // Hidden/blocked creators and hidden posts never appear in the home feed.
+      ...(hiddenCreatorIds.length > 0 ? [notInArray(posts.creator_id, hiddenCreatorIds)] : []),
+      ...(hiddenPostIds.length > 0 ? [notInArray(posts.id, hiddenPostIds)] : []),
     );
 
     if (cursor) {
@@ -292,7 +311,7 @@ export async function GET(req: NextRequest) {
       const isSubscribed = homeSubMap.has(p.creator_id as string);
       const subTier = homeSubMap.get(p.creator_id as string) ?? null;
       const isLocked = !canViewContent(p.visibility as string, p.tier as string | null, isSubscribed, subTier, isOwner);
-      return postRow(p as Record<string, unknown>, homeMediaByPost[p.id] ?? [], homeLikedSet.has(p.id), homeSavedSet.has(p.id), isLocked);
+      return postRow(p as Record<string, unknown>, homeMediaByPost[p.id] ?? [], homeLikedSet.has(p.id), homeSavedSet.has(p.id), isLocked, isSubscribed);
     });
 
     const homeLastItem = homeItems[homeItems.length - 1];
@@ -342,6 +361,9 @@ export async function GET(req: NextRequest) {
     isNull(users.deleted_at),
     eq(posts.status, "published"),
     sql`${posts.visibility} != 'draft'`,
+    // Hidden/blocked creators and hidden posts never appear in generic feeds.
+    ...(hiddenCreatorIds.length > 0 ? [notInArray(posts.creator_id, hiddenCreatorIds)] : []),
+    ...(hiddenPostIds.length > 0 ? [notInArray(posts.id, hiddenPostIds)] : []),
   );
 
   // Apply content_type filter.
@@ -458,7 +480,7 @@ export async function GET(req: NextRequest) {
       subTier,
       isOwner,
     );
-    return postRow(p as Record<string, unknown>, mediaByPost[p.id] ?? [], likedSet.has(p.id), savedSet.has(p.id), isLocked);
+    return postRow(p as Record<string, unknown>, mediaByPost[p.id] ?? [], likedSet.has(p.id), savedSet.has(p.id), isLocked, isSubscribed);
   });
 
   const lastItem = items[items.length - 1];

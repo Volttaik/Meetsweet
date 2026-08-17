@@ -1,4 +1,6 @@
 import { and, eq, isNull, ne, or, type AnyColumn } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { muted_users, blocked_users, hidden_posts } from "@/lib/db/schema";
 
 /**
  * Shared helpers for building video / short / comment response shapes.
@@ -14,6 +16,36 @@ export type ContentTier = typeof TIER_ORDER[number];
 export type SubscriptionTier = "subscriber" | "subscriber_plus";
 
 /** Returns the numeric rank of a tier (higher = more access). -1 means no tier/unknown. */
+/**
+ * IDs of creators the viewer has muted or blocked — their content is excluded
+ * from every feed (Hide Creator / Block persist server-side).
+ */
+export async function getHiddenCreatorIds(userId: string): Promise<string[]> {
+  const [muted, blocked] = await Promise.all([
+    db
+      .select({ id: muted_users.muted_id })
+      .from(muted_users)
+      .where(eq(muted_users.muter_id, userId)),
+    db
+      .select({ id: blocked_users.blocked_id })
+      .from(blocked_users)
+      .where(eq(blocked_users.blocker_id, userId)),
+  ]);
+  return [...new Set([...muted.map((m) => m.id), ...blocked.map((b) => b.id)])];
+}
+
+/**
+ * IDs of posts the viewer has explicitly hidden (Not Interested) — excluded
+ * from feeds server-side so they don't reappear after a refresh.
+ */
+export async function getHiddenPostIds(userId: string): Promise<string[]> {
+  const rows = await db
+    .select({ id: hidden_posts.post_id })
+    .from(hidden_posts)
+    .where(eq(hidden_posts.user_id, userId));
+  return rows.map((r) => r.id);
+}
+
 export function tierIndex(tier: string | null | undefined): number {
   if (!tier) return -1;
   return TIER_ORDER.indexOf(tier as ContentTier);

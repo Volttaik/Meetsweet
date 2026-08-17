@@ -1,16 +1,18 @@
 import { NextRequest } from "next/server";
-import { eq, and, desc, isNull, sql, exists } from "drizzle-orm";
+import { eq, and, desc, isNull, notInArray, sql, exists } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { posts, media, users, profiles, post_likes, subscriptions } from "@/lib/db/schema";
 import { optionalAuth } from "@/middleware/auth";
 import { ok } from "@/lib/api/response";
-import { buildShortRow, groupMediaByPost } from "@/lib/services/content";
+import { buildShortRow, getHiddenCreatorIds, groupMediaByPost } from "@/lib/services/content";
 
 export async function GET(req: NextRequest) {
   const params = req.nextUrl.searchParams;
   const cursor = params.get("cursor");
   const limit = Math.min(Math.max(1, Number(params.get("limit") ?? 20)), 50);
   const userId = (await optionalAuth(req))?.userId ?? null;
+  // Hidden/blocked creators stay out of the shorts feed.
+  const hiddenCreatorIds = userId ? await getHiddenCreatorIds(userId) : [];
 
   // A short without a playable video media row cannot be rendered, so only
   // serve shorts that actually have one. This keeps the feed truthful — the
@@ -31,6 +33,7 @@ export async function GET(req: NextRequest) {
     eq(posts.content_type, "short"),
     eq(posts.visibility, "public"),
     hasVideoMedia,
+    ...(hiddenCreatorIds.length > 0 ? [notInArray(posts.creator_id, hiddenCreatorIds)] : []),
     cursor ? sql`${posts.created_at} < ${cursor}` : undefined,
   );
 

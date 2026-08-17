@@ -1,12 +1,12 @@
 import { NextRequest } from "next/server";
-import { eq, and, desc, isNull, sql } from "drizzle-orm";
+import { eq, and, desc, isNull, notInArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { posts, media, users, profiles, post_likes, subscriptions, post_categories } from "@/lib/db/schema";
 import { optionalAuth, requireAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok, created } from "@/lib/api/response";
-import { buildVideoRow, groupMediaByPost } from "@/lib/services/content";
+import { buildVideoRow, getHiddenCreatorIds, groupMediaByPost } from "@/lib/services/content";
 import { generateId } from "@/lib/auth/codes";
 
 const createSchema = z.object({
@@ -44,6 +44,8 @@ export async function GET(req: NextRequest) {
   const cursor = params.get("cursor");
   const limit = Math.min(Math.max(1, Number(params.get("limit") ?? 20)), 50);
   const userId = (await optionalAuth(req))?.userId ?? null;
+  // Hidden/blocked creators stay out of the video feed.
+  const hiddenCreatorIds = userId ? await getHiddenCreatorIds(userId) : [];
 
   // Include ALL published videos (public + subscriber-gated).
   // is_locked is set per-item based on the viewer's subscriptions.
@@ -55,6 +57,7 @@ export async function GET(req: NextRequest) {
     eq(posts.status, "published"),
     eq(posts.content_type, "video"),
     sql`${posts.visibility} != 'draft'`,
+    ...(hiddenCreatorIds.length > 0 ? [notInArray(posts.creator_id, hiddenCreatorIds)] : []),
     cursor ? sql`${posts.created_at} < ${cursor}` : undefined,
   );
 

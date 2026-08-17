@@ -15,7 +15,7 @@ import {
 } from "@/lib/db/schema";
 import { optionalAuth } from "@/middleware/auth";
 import { ok } from "@/lib/api/response";
-import { buildVideoRow, buildShortRow, groupMediaByPost } from "@/lib/services/content";
+import { buildVideoRow, buildShortRow, getHiddenCreatorIds, groupMediaByPost } from "@/lib/services/content";
 
 /**
  * GET /api/explore
@@ -42,6 +42,9 @@ export async function GET(req: NextRequest) {
   const offset = (page - 1) * limit;
 
   const userId = await optionalAuth(req).then((a) => a?.userId ?? null);
+
+  // Hidden/blocked creators never appear in Explore (content or creator rows).
+  const hiddenCreatorIds = userId ? await getHiddenCreatorIds(userId) : [];
 
   // ── Hidden posts: collect IDs the viewer has explicitly hidden ───────────
   let hiddenPostIds: string[] = [];
@@ -96,6 +99,8 @@ export async function GET(req: NextRequest) {
         inArray(posts.content_type, ["post", "video"]),
         // Exclude posts the viewer has explicitly hidden
         ...(hiddenPostIds.length > 0 ? [notInArray(posts.id, hiddenPostIds)] : []),
+        // Exclude content from hidden/blocked creators
+        ...(hiddenCreatorIds.length > 0 ? [notInArray(posts.creator_id, hiddenCreatorIds)] : []),
       ),
     )
     // Three-level ordering for full determinism at every page boundary:
@@ -271,7 +276,14 @@ export async function GET(req: NextRequest) {
     })
     .from(users)
     .leftJoin(profiles, eq(profiles.user_id, users.id))
-    .where(and(eq(users.is_creator, true), eq(users.is_active, true), isNull(users.deleted_at)))
+    .where(
+      and(
+        eq(users.is_creator, true),
+        eq(users.is_active, true),
+        isNull(users.deleted_at),
+        ...(hiddenCreatorIds.length > 0 ? [notInArray(users.id, hiddenCreatorIds)] : []),
+      ),
+    )
     .limit(10)
     .offset(offset);
 
