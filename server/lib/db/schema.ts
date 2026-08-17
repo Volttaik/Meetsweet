@@ -263,6 +263,30 @@ export const post_likes = sqliteTable("post_likes", {
   created_at: createdAt(),
 });
 
+export const post_views = sqliteTable(
+  "post_views",
+  {
+    id: id(),
+    post_id: text("post_id").notNull().references(() => posts.id, { onDelete: "cascade" }),
+    // The authenticated account that watched the content. Anonymous plays are
+    // never counted — a view requires an account.
+    user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    // Accumulated watch time (seconds) reported by the client. The server keeps
+    // the running total so replays and seeks contribute toward the threshold
+    // and the account+content relationship caps at exactly one counted view.
+    watched_seconds: real("watched_seconds").notNull().default(0),
+    // True once this account's view has been counted (posts.view_count + 1).
+    // Set exactly once inside the counting transaction — replays never recount.
+    counted: integer("counted", { mode: "boolean" }).notNull().default(false),
+    created_at: createdAt(),
+    updated_at: updatedAt(),
+  },
+  (table) => [
+    uniqueIndex("post_views_post_user_idx").on(table.post_id, table.user_id),
+    index("post_views_user_idx").on(table.user_id),
+  ],
+);
+
 export const saved_posts = sqliteTable("saved_posts", {
   id: id(),
   user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),

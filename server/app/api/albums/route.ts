@@ -210,39 +210,50 @@ export async function POST(req: NextRequest) {
 
   // Add media items immediately if media_ids were provided
   if (data.media_ids && data.media_ids.length > 0) {
+    // Only the uploader's OWN media rows are attachable — a stray id from
+    // another user (or a vanished upload) must never attach.
     const mediaRows = await db
       .select({ id: media.id, url: media.url, thumbnail_url: media.thumbnail_url })
       .from(media)
-      .where(inArray(media.id, data.media_ids));
+      .where(and(inArray(media.id, data.media_ids), eq(media.uploader_id, auth.user.userId)));
 
-    if (mediaRows.length > 0) {
-      // Insert in the order the mobile specified
-      const orderedMedia = data.media_ids
-        .map((id) => mediaRows.find((m) => m.id === id))
-        .filter(Boolean) as typeof mediaRows;
-
-      await db.insert(album_items).values(
-        orderedMedia.map((m, i) => ({
-          id: generateId(),
-          album_id: albumId,
-          media_id: m.id,
-          sort_order: i,
-        })),
+    // Hard requirement: EVERY requested item must exist in storage+DB. If any
+    // is missing the album is NOT created as a silent empty shell — fail
+    // loudly so the client re-uploads rather than shipping "Content unavailable".
+    if (mediaRows.length !== data.media_ids.length) {
+      return err(
+        `Only ${mediaRows.length} of ${data.media_ids.length} album items could be stored. Please re-upload and try again.`,
+        400,
+        "ALBUM_MEDIA_MISSING",
       );
+    }
 
-      // Update item_count
+    // Insert in the order the mobile specified
+    const orderedMedia = data.media_ids
+      .map((id) => mediaRows.find((m) => m.id === id))
+      .filter(Boolean) as typeof mediaRows;
+
+    await db.insert(album_items).values(
+      orderedMedia.map((m, i) => ({
+        id: generateId(),
+        album_id: albumId,
+        media_id: m.id,
+        sort_order: i,
+      })),
+    );
+
+    // Update item_count — exactly N for N stored items
+    await db
+      .update(albums)
+      .set({ item_count: orderedMedia.length })
+      .where(eq(albums.id, albumId));
+
+    // Set the first image as cover if no cover was supplied
+    if (!coverUrl && orderedMedia[0]) {
       await db
         .update(albums)
-        .set({ item_count: orderedMedia.length })
+        .set({ cover_url: orderedMedia[0].thumbnail_url ?? orderedMedia[0].url })
         .where(eq(albums.id, albumId));
-
-      // Set the first image as cover if no cover was supplied
-      if (!coverUrl && orderedMedia[0]) {
-        await db
-          .update(albums)
-          .set({ cover_url: orderedMedia[0].thumbnail_url ?? orderedMedia[0].url })
-          .where(eq(albums.id, albumId));
-      }
     }
   }
 
