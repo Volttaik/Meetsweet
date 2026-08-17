@@ -31,6 +31,12 @@ export async function GET(
   const subTier = subscription?.tier ?? null;
   const isOwner = userId === creator.id;
 
+  // Creator-profile access model: subscriber-gated on the profile — an
+  // unsubscribed viewer gets no rows; the owner always sees their own content.
+  if (!isOwner && !isSubscribed) {
+    return ok({ locked: true, shorts: [] });
+  }
+
   const rows = await db
     .select({
       id: posts.id,

@@ -678,19 +678,23 @@ async function run() {
     },
     {
       name: "create post_views table (authoritative per-account view dedupe)",
-      sql: `
-        CREATE TABLE IF NOT EXISTS post_views (
-          id TEXT PRIMARY KEY,
-          post_id TEXT NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
-          user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-          watched_seconds REAL NOT NULL DEFAULT 0,
-          counted INTEGER NOT NULL DEFAULT 0,
-          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-          updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-        );
-        CREATE UNIQUE INDEX IF NOT EXISTS post_views_post_user_idx ON post_views(post_id, user_id);
-        CREATE INDEX IF NOT EXISTS post_views_user_idx ON post_views(user_id);
-      `,
+      sql: `CREATE TABLE IF NOT EXISTS post_views (
+        id TEXT PRIMARY KEY,
+        post_id TEXT NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        watched_seconds REAL NOT NULL DEFAULT 0,
+        counted INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+      )`,
+    },
+    {
+      name: "post_views: unique post+user index",
+      sql: `CREATE UNIQUE INDEX IF NOT EXISTS post_views_post_user_idx ON post_views(post_id, user_id)`,
+    },
+    {
+      name: "post_views: user index",
+      sql: `CREATE INDEX IF NOT EXISTS post_views_user_idx ON post_views(user_id)`,
     },
     // Legacy conversations/messages model — replaced by the chat_rooms model
     // (chat_rooms / chat_room_members / chat_room_messages). The mobile app no

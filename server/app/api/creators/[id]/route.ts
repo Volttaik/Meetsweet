@@ -85,6 +85,7 @@ export async function GET(
   const isSubscribed = Boolean(subRow);
   const subscriptionTier = subRow?.tier ?? null;
   const subscriptionId = subRow?.id ?? null;
+  const isOwner = Boolean(userId && userId === user.id);
 
   // Presence: "online" = a device seen within the last 10 minutes. This is the
   // app's real activity signal (devices.last_seen_at is updated on push-token
@@ -146,6 +147,12 @@ export async function GET(
     // Mobile normalizer reads raw.subscribed_to_creator
     subscribed_to_creator: isSubscribed,
     subscribedToCreator: isSubscribed,
+    // Creator-profile access model: the creator profile is subscriber-gated —
+    // an unsubscribed viewer must NOT see ANY of the creator's content there
+    // (free content remains discoverable in Explore, not on the profile). The
+    // owner always sees their own content.
+    content_locked: isOwner ? false : !isSubscribed,
+    contentLocked: isOwner ? false : !isSubscribed,
     subscription_tier: subscriptionTier,
     subscriptionTier,
     // Viewer's active subscription id for this creator — lets the app offer
