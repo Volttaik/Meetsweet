@@ -7,7 +7,15 @@ import { requireAuth, optionalAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err, created } from "@/lib/api/response";
 import { generateId } from "@/lib/auth/codes";
-import { canViewContent, getHiddenCreatorIds, getHiddenPostIds } from "@/lib/services/content";
+import {
+  canViewContent,
+  getHiddenCreatorIds,
+  getHiddenPostIds,
+  feedRankScore,
+  getFeedDedupClause,
+  applyCreatorDiversity,
+  recordFeedImpressions,
+} from "@/lib/services/content";
 import { notifySubscribersOfNewPost } from "@/lib/services/push";
 
 const createSchema = z.object({
@@ -221,8 +229,17 @@ export async function GET(req: NextRequest) {
     );
 
     if (cursor) {
-      const sepIdx = cursor.lastIndexOf("__");
-      if (sepIdx !== -1) {
+      const parts = cursor.split("__");
+      if (parts.length === 3) {
+        // score__published_at__id (ranked cursor)
+        const [cs, ts, cid] = parts;
+        homeCond = and(
+          homeCond,
+          sql`(${feedRankScore(userId)} < ${cs} OR (${feedRankScore(userId)} = ${cs} AND (${posts.published_at} < ${ts} OR (${posts.published_at} = ${ts} AND ${posts.id} < ${cid}))))`,
+        );
+      } else if (cursor.includes("__")) {
+        // legacy published_at__id cursor
+        const sepIdx = cursor.lastIndexOf("__");
         const cursorTs = cursor.slice(0, sepIdx);
         const cursorId = cursor.slice(sepIdx + 2);
         homeCond = and(
@@ -260,18 +277,29 @@ export async function GET(req: NextRequest) {
         published_at: posts.published_at,
         created_at: posts.created_at,
         updated_at: posts.updated_at,
+        // Blended ranking score — also used for ordering + cursor.
+        rank_score: feedRankScore(userId),
       })
       .from(posts)
       .innerJoin(users, eq(users.id, posts.creator_id))
       .leftJoin(profiles, eq(profiles.user_id, posts.creator_id))
       .where(homeCond)
-      .orderBy(desc(posts.published_at), desc(posts.id))
+      // Server-authoritative ranking: blended score, then freshness/id
+      // tiebreaks for fully deterministic pagination.
+      .orderBy(desc(feedRankScore(userId)), desc(posts.published_at), desc(posts.id))
       .limit(limit + 1)
       .offset(cursor ? 0 : (page - 1) * limit);
 
     const homeHasMore = homeRows.length > limit;
-    const homeItems = homeHasMore ? homeRows.slice(0, limit) : homeRows;
+    const homeSlice = homeHasMore ? homeRows.slice(0, limit) : homeRows;
+    // Soft creator diversity within the page (deterministic reorder).
+    const homeItems = applyCreatorDiversity(homeSlice);
     const homePostIds = homeItems.map((p) => p.id);
+
+    // Record what was served (dedup only applies to discovery feeds, but
+    // impressions are tracked for every feed surface so nothing is re-served
+    // within a session unnecessarily).
+    void recordFeedImpressions(userId, homePostIds).catch(() => {});
 
     if (homePostIds.length === 0) {
       return ok({ posts: [], next_cursor: null, nextCursor: null, page, limit });
@@ -314,9 +342,11 @@ export async function GET(req: NextRequest) {
       return postRow(p as Record<string, unknown>, homeMediaByPost[p.id] ?? [], homeLikedSet.has(p.id), homeSavedSet.has(p.id), isLocked, isSubscribed);
     });
 
-    const homeLastItem = homeItems[homeItems.length - 1];
-    const homeNextCursor = homeHasMore && homeLastItem
-      ? `${homeLastItem.published_at ?? homeLastItem.created_at}__${homeLastItem.id}`
+    // Cursor from the LOWEST-ranked shown row (pre-diversity slice), so the
+    // next page continues exactly where this page ended — no skips/duplicates.
+    const homeCursorRow = homeSlice[homeSlice.length - 1];
+    const homeNextCursor = homeHasMore && homeCursorRow
+      ? `${homeCursorRow.rank_score}__${homeCursorRow.published_at ?? homeCursorRow.created_at}__${homeCursorRow.id}`
       : null;
 
     return ok({ posts: homeResult, next_cursor: homeNextCursor, nextCursor: homeNextCursor, page, limit });
@@ -348,6 +378,8 @@ export async function GET(req: NextRequest) {
       published_at: posts.published_at,
       created_at: posts.created_at,
       updated_at: posts.updated_at,
+      // Blended ranking score — also used for ordering + cursor.
+      rank_score: feedRankScore(userId),
     })
     .from(posts)
     .innerJoin(users, eq(users.id, posts.creator_id))
@@ -393,29 +425,48 @@ export async function GET(req: NextRequest) {
     conditions = and(conditions, eq(posts.creator_id, creatorId));
   }
 
-  // Compound cursor encodes both fields of the ORDER BY (published_at, id)
+  // Ranked cursor: score__published_at__id (legacy plain published_at and
+  // published_at__id cursors are still accepted).
   if (cursor) {
-    const sepIdx = cursor.lastIndexOf("__");
-    if (sepIdx !== -1) {
-      const cursorTs = cursor.slice(0, sepIdx);
-      const cursorId = cursor.slice(sepIdx + 2);
-      conditions = and(
-        conditions,
-        sql`(${posts.published_at} < ${cursorTs} OR (${posts.published_at} = ${cursorTs} AND ${posts.id} < ${cursorId}))`,
-      );
-    } else {
-      conditions = and(conditions, sql`${posts.published_at} < ${cursor}`);
+      const parts = cursor.split("__");
+      if (parts.length === 3) {
+        // score__published_at__id (ranked cursor)
+        const [cs, ts, cid] = parts;
+        conditions = and(
+          conditions,
+          sql`(${feedRankScore(userId)} < ${cs} OR (${feedRankScore(userId)} = ${cs} AND (${posts.published_at} < ${ts} OR (${posts.published_at} = ${ts} AND ${posts.id} < ${cid}))))`,
+        );
+      } else if (cursor.includes("__")) {
+        // legacy published_at__id cursor
+        const sepIdx = cursor.lastIndexOf("__");
+        const cursorTs = cursor.slice(0, sepIdx);
+        const cursorId = cursor.slice(sepIdx + 2);
+        conditions = and(
+          conditions,
+          sql`(${posts.published_at} < ${cursorTs} OR (${posts.published_at} = ${cursorTs} AND ${posts.id} < ${cursorId}))`,
+        );
+      } else {
+        conditions = and(conditions, sql`${posts.published_at} < ${cursor}`);
+      }
     }
-  }
+
+  const dedupClause = await getFeedDedupClause(userId);
+  if (dedupClause) conditions = and(conditions, dedupClause);
 
   const rows = await baseSelect
     .where(conditions)
-    .orderBy(desc(posts.published_at), desc(posts.id))
+    // Server-authoritative ranking: blended score, then freshness/id tiebreaks.
+    .orderBy(desc(feedRankScore(userId)), desc(posts.published_at), desc(posts.id))
     .limit(limit + 1)
     .offset(cursor ? 0 : (page - 1) * limit);
 
   const hasMore = rows.length > limit;
-  const items = hasMore ? rows.slice(0, limit) : rows;
+  const slice = hasMore ? rows.slice(0, limit) : rows;
+  // Soft creator diversity within the page (deterministic reorder).
+  const items = applyCreatorDiversity(slice);
+
+  // Record what was served (feed dedup across requests).
+  void recordFeedImpressions(userId, items.map((p) => p.id)).catch(() => {});
 
   const postIds = items.map((p) => p.id);
   if (postIds.length === 0) return ok({ posts: [], next_cursor: null, nextCursor: null, page, limit });
@@ -483,9 +534,11 @@ export async function GET(req: NextRequest) {
     return postRow(p as Record<string, unknown>, mediaByPost[p.id] ?? [], likedSet.has(p.id), savedSet.has(p.id), isLocked, isSubscribed);
   });
 
-  const lastItem = items[items.length - 1];
-  const nextCursor = hasMore && lastItem
-    ? `${lastItem.published_at ?? lastItem.created_at}__${lastItem.id}`
+  // Cursor from the LOWEST-ranked shown row (pre-diversity slice) so the next
+  // page continues exactly where this page ended.
+  const cursorRow = slice[slice.length - 1];
+  const nextCursor = hasMore && cursorRow
+    ? `${cursorRow.rank_score}__${cursorRow.published_at ?? cursorRow.created_at}__${cursorRow.id}`
     : null;
 
   return ok({

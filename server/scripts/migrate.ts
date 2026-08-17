@@ -875,6 +875,50 @@ async function run() {
       name: "users: add totp_enabled",
       sql: `ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0`,
     },
+
+    // ── Feed dedup (impressions) + search indexes ──────────────────────────
+    // feed_impressions records which posts each account was served in
+    // discovery feeds; ranking excludes recently-seen posts (24h) unless the
+    // viewer owns them or subscribes to the creator.
+    {
+      name: "create feed_impressions table",
+      sql: `CREATE TABLE IF NOT EXISTS feed_impressions (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        post_id TEXT NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+        seen_at TEXT NOT NULL
+      )`,
+    },
+    {
+      name: "feed_impressions: unique user+post index",
+      sql: `CREATE UNIQUE INDEX IF NOT EXISTS feed_impressions_user_post_idx ON feed_impressions(user_id, post_id)`,
+    },
+    {
+      name: "feed_impressions: user/seen index",
+      sql: `CREATE INDEX IF NOT EXISTS feed_impressions_user_seen_idx ON feed_impressions(user_id, seen_at)`,
+    },
+    // Search indexes — prefix LIKE queries ("q%") can use these; substring
+    // matches are still scanned but benefit from the narrowed row set.
+    {
+      name: "search: users.username index",
+      sql: `CREATE INDEX IF NOT EXISTS users_username_idx ON users(username)`,
+    },
+    {
+      name: "search: users.full_name index",
+      sql: `CREATE INDEX IF NOT EXISTS users_full_name_idx ON users(full_name)`,
+    },
+    {
+      name: "search: posts.title index",
+      sql: `CREATE INDEX IF NOT EXISTS posts_title_idx ON posts(title)`,
+    },
+    {
+      name: "search: posts.caption index",
+      sql: `CREATE INDEX IF NOT EXISTS posts_caption_idx ON posts(caption)`,
+    },
+    {
+      name: "search: albums.title index",
+      sql: `CREATE INDEX IF NOT EXISTS albums_title_idx ON albums(title)`,
+    },
   ];
 
   for (const m of migrations) {

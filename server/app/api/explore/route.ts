@@ -15,7 +15,16 @@ import {
 } from "@/lib/db/schema";
 import { optionalAuth } from "@/middleware/auth";
 import { ok } from "@/lib/api/response";
-import { buildVideoRow, buildShortRow, getHiddenCreatorIds, groupMediaByPost } from "@/lib/services/content";
+import {
+  buildVideoRow,
+  buildShortRow,
+  getHiddenCreatorIds,
+  groupMediaByPost,
+  feedRankScore,
+  getFeedDedupClause,
+  applyCreatorDiversity,
+  recordFeedImpressions,
+} from "@/lib/services/content";
 
 /**
  * GET /api/explore
@@ -34,7 +43,10 @@ import { buildVideoRow, buildShortRow, getHiddenCreatorIds, groupMediaByPost } f
  *   - response trims to exactly `limit` items
  *   - `has_more` is derived from the true result set, not quota estimates
  *
- * Ranking: engagement score = like_count + comment_count + view_count DESC
+ * Ranking: server-authoritative blended score (capped popularity + engagement
+ * rate + freshness decay + subscription boost + deterministic per-user
+ * exploration jitter), then freshness/id tiebreaks for stable pagination.
+ * The same score is projected as rank_score on every row.
  */
 export async function GET(req: NextRequest) {
   const page  = Math.max(1, Number(req.nextUrl.searchParams.get("page")  ?? 1));
@@ -59,6 +71,7 @@ export async function GET(req: NextRequest) {
   // ── Single combined query: post + video + short ─────────────────────────
   // All three types live in the posts table, so one query + one sort gives
   // a globally consistent ranking that pages correctly across all types.
+  const dedupClause = await getFeedDedupClause(userId);
 
   const contentRows = await db
     .select({
@@ -81,6 +94,8 @@ export async function GET(req: NextRequest) {
       share_count:          posts.share_count,
       published_at:         posts.published_at,
       created_at:           posts.created_at,
+      // Blended ranking score (see feedRankScore) — also used for ordering.
+      rank_score:           feedRankScore(userId),
     })
     .from(posts)
     .innerJoin(users, eq(users.id, posts.creator_id))
@@ -101,21 +116,23 @@ export async function GET(req: NextRequest) {
         ...(hiddenPostIds.length > 0 ? [notInArray(posts.id, hiddenPostIds)] : []),
         // Exclude content from hidden/blocked creators
         ...(hiddenCreatorIds.length > 0 ? [notInArray(posts.creator_id, hiddenCreatorIds)] : []),
+        // Feed dedup: don't re-serve content the viewer saw within 24h (unless
+        // they own it or subscribe to the creator).
+        ...(dedupClause ? [dedupClause] : []),
       ),
     )
     // Three-level ordering for full determinism at every page boundary:
-    // 1. engagement score (primary rank), 2. freshness, 3. id (unique tiebreaker)
-    .orderBy(
-      desc(sql`${posts.like_count} + ${posts.comment_count} + ${posts.view_count}`),
-      desc(posts.published_at),
-      desc(posts.id),
-    )
+    // 1. blended rank score (primary), 2. freshness, 3. id (unique tiebreaker)
+    .orderBy(desc(feedRankScore(userId)), desc(posts.published_at), desc(posts.id))
     .limit(limit + 1)   // over-fetch by 1 to detect has_more
     .offset(offset);
 
   // True has_more: determined from actual result count before trim
   const hasMore = contentRows.length > limit;
-  const rows    = hasMore ? contentRows.slice(0, limit) : contentRows;
+  const slice   = hasMore ? contentRows.slice(0, limit) : contentRows;
+  // Soft creator diversity — reorder within the page (deterministic) so a
+  // single creator can never monopolize the discovery feed.
+  const rows = applyCreatorDiversity(slice);
 
   // ── Supplementary albums (separate table, separate section) ─────────────
   const albumRows = await db
@@ -174,6 +191,9 @@ export async function GET(req: NextRequest) {
     likedSet = new Set(liked.map((l) => l.post_id));
     savedSet = new Set(saved.map((s) => s.post_id));
   }
+
+  // ── Record what was served (feed dedup) — fire-and-forget ───────────────
+  void recordFeedImpressions(userId, rows.map((r) => r.id)).catch(() => {});
 
   // ── Build typed items ───────────────────────────────────────────────────
 

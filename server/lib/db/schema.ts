@@ -301,6 +301,26 @@ export const hidden_posts = sqliteTable("hidden_posts", {
   created_at: createdAt(),
 });
 
+// Feed deduplication — records which posts each account has been served in
+// discovery feeds (Explore / generic feed / videos / shorts). The ranking
+// excludes recently-seen posts (24h window) so the same content isn't shown
+// repeatedly, but never permanently — after the window passes, or when the
+// viewer is subscribed to the creator (or owns the post), it can resurface.
+export const feed_impressions = sqliteTable(
+  "feed_impressions",
+  {
+    id: id(),
+    user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    post_id: text("post_id").notNull().references(() => posts.id, { onDelete: "cascade" }),
+    // ISO timestamp of the feed response that included this post.
+    seen_at: text("seen_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("feed_impressions_user_post_idx").on(table.user_id, table.post_id),
+    index("feed_impressions_user_seen_idx").on(table.user_id, table.seen_at),
+  ],
+);
+
 export const categories = sqliteTable("categories", {
   id: id(),
   name: text("name").notNull(),

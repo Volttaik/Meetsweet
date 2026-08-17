@@ -4,7 +4,15 @@ import { db } from "@/lib/db";
 import { posts, media, users, profiles, post_likes, subscriptions } from "@/lib/db/schema";
 import { optionalAuth } from "@/middleware/auth";
 import { ok } from "@/lib/api/response";
-import { buildShortRow, getHiddenCreatorIds, groupMediaByPost } from "@/lib/services/content";
+import {
+  buildShortRow,
+  getHiddenCreatorIds,
+  groupMediaByPost,
+  feedRankScore,
+  getFeedDedupClause,
+  applyCreatorDiversity,
+  recordFeedImpressions,
+} from "@/lib/services/content";
 
 export async function GET(req: NextRequest) {
   const params = req.nextUrl.searchParams;
@@ -25,7 +33,10 @@ export async function GET(req: NextRequest) {
       .where(and(eq(media.post_id, posts.id), eq(media.type, "video"))),
   );
 
-  const conditions = and(
+  // Feed dedup: don't re-serve shorts the viewer already swiped past within
+  // 24h (unless they own them or subscribe to the creator).
+  const dedupClause = await getFeedDedupClause(userId);
+  let conditions = and(
     isNull(posts.deleted_at),
     eq(users.is_active, true),
     isNull(users.deleted_at),
@@ -34,8 +45,23 @@ export async function GET(req: NextRequest) {
     eq(posts.visibility, "public"),
     hasVideoMedia,
     ...(hiddenCreatorIds.length > 0 ? [notInArray(posts.creator_id, hiddenCreatorIds)] : []),
-    cursor ? sql`${posts.created_at} < ${cursor}` : undefined,
+    ...(dedupClause ? [dedupClause] : []),
   );
+
+  // Ranked cursor: score__published_at__id (legacy plain created_at cursors
+  // are no longer produced; treat any non-compound cursor as legacy).
+  if (cursor) {
+    const parts = cursor.split("__");
+    if (parts.length === 3) {
+      const [cs, ts, cid] = parts;
+      conditions = and(
+        conditions,
+        sql`(${feedRankScore(userId)} < ${cs} OR (${feedRankScore(userId)} = ${cs} AND (${posts.published_at} < ${ts} OR (${posts.published_at} = ${ts} AND ${posts.id} < ${cid}))))`,
+      );
+    } else {
+      conditions = and(conditions, sql`${posts.created_at} < ${cursor}`);
+    }
+  }
 
   const rows = await db
     .select({
@@ -56,17 +82,25 @@ export async function GET(req: NextRequest) {
       creator_display_name: profiles.display_name,
       creator_avatar: profiles.avatar_url,
       creator_is_verified: users.is_verified,
+      // Blended ranking score — also used for ordering + cursor.
+      rank_score: feedRankScore(userId),
     })
     .from(posts)
     .innerJoin(users, eq(users.id, posts.creator_id))
     .leftJoin(profiles, eq(profiles.user_id, posts.creator_id))
     .where(conditions)
-    .orderBy(desc(posts.published_at))
+    // Server-authoritative ranking: blended score, then freshness/id tiebreaks.
+    .orderBy(desc(feedRankScore(userId)), desc(posts.published_at), desc(posts.id))
     .limit(limit + 1);
 
   const hasMore = rows.length > limit;
-  const items = hasMore ? rows.slice(0, limit) : rows;
+  const slice = hasMore ? rows.slice(0, limit) : rows;
+  // Soft creator diversity within the page (deterministic reorder).
+  const items = applyCreatorDiversity(slice);
   const postIds = items.map((p) => p.id);
+
+  // Record what was served (feed dedup across requests).
+  void recordFeedImpressions(userId, postIds).catch(() => {});
 
   const mediaRows = postIds.length > 0
     ? await db.select().from(media).where(sql`${media.post_id} IN (${sql.join(postIds.map((id) => sql`${id}`), sql`, `)})`)
@@ -95,10 +129,14 @@ export async function GET(req: NextRequest) {
     return buildShortRow(p, mediaByPost[p.id] ?? [], likedSet.has(p.id), isSubscribed, subTier);
   });
 
+  // Cursor from the LOWEST-ranked shown row (pre-diversity slice).
+  const cursorRow = slice[slice.length - 1];
   return ok({
     shorts,
     items: shorts,
-    next_cursor: hasMore ? items[items.length - 1]?.created_at ?? null : null,
+    next_cursor: hasMore && cursorRow
+      ? `${cursorRow.rank_score}__${cursorRow.published_at ?? cursorRow.created_at}__${cursorRow.id}`
+      : null,
     has_more: hasMore,
     hasMore,
   });

@@ -1,6 +1,6 @@
-import { and, eq, isNull, ne, or, type AnyColumn } from "drizzle-orm";
+import { and, eq, isNull, ne, or, sql, type AnyColumn, type SQL } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { muted_users, blocked_users, hidden_posts } from "@/lib/db/schema";
+import { muted_users, blocked_users, hidden_posts, feed_impressions } from "@/lib/db/schema";
 
 /**
  * Shared helpers for building video / short / comment response shapes.
@@ -44,6 +44,199 @@ export async function getHiddenPostIds(userId: string): Promise<string[]> {
     .from(hidden_posts)
     .where(eq(hidden_posts.user_id, userId));
   return rows.map((r) => r.id);
+}
+
+// ─── Feed ranking (server-authoritative, pure-SQL) ──────────────────────────
+//
+// Replaces chronological ordering. The score blends four signals so the feed
+// behaves like modern discovery platforms:
+//
+//   1. popularity  — capped engagement points (like/comment/save/share/view).
+//      The cap is the log-like dampener: an old viral post's raw counts stop
+//      dominating past a ceiling, so it can't lock out everything forever.
+//   2. engagement rate — interactions per view (capped). Small-but-loved
+//      content ranks, and opening a video without watching can't inflate it
+//      (the platform's 60s/90% view rule feeds view_count, so raw "opened"
+//      events are not a ranking lever).
+//   3. freshness — 1/(1+age_days): newest content gets a real but bounded
+//      boost (≈5 at creation, ≈0.6 after a week) so new creators/posts can
+//      surface without freshness being the whole ranking.
+//   4. subscription boost — subscribed creators' content ranks slightly
+//      higher for that viewer (personalization).
+//   5. exploration jitter — a deterministic per-(user, post) term ∈ [0,0.8]
+//      so different users see different (but per-user stable, pagination-safe)
+//      rankings, and less-exposed content occasionally edges in.
+//
+// Everything is pure SQLite arithmetic (no log/exp needed), fully
+// deterministic per user, and the same expression is reused for ordering,
+// cursor comparison and the projected `rank_score` column. Fresh calls create
+// fresh parameter instances so drizzle/libsql never shares bound params.
+
+export function feedRankScore(userId: string | null): SQL {
+  const seed = userId
+    ? [...userId].reduce((acc, ch) => (acc * 31 + ch.charCodeAt(0)) % 1_000_003, 17)
+    : 7;
+  const subBoost = userId
+    ? sql`CASE WHEN EXISTS (
+        SELECT 1 FROM subscriptions s
+        WHERE s.subscriber_id = ${userId}
+          AND s.creator_id = posts.creator_id
+          AND s.status = 'active'
+      ) THEN 1.2 ELSE 0 END`
+    : sql`0`;
+  return sql`(
+    min(
+      COALESCE(posts.like_count, 0) * 2
+      + COALESCE(posts.comment_count, 0) * 4
+      + COALESCE(posts.save_count, 0) * 3
+      + COALESCE(posts.share_count, 0) * 3
+      + COALESCE(posts.view_count, 0) * 0.02,
+      60
+    ) * 0.45
+    + min(
+      (
+        COALESCE(posts.like_count, 0)
+        + COALESCE(posts.comment_count, 0)
+        + COALESCE(posts.save_count, 0)
+        + COALESCE(posts.share_count, 0)
+      ) * 100.0 / max(COALESCE(posts.view_count, 0), 10),
+      100
+    ) * 0.30
+    + (1.0 / (1.0 + (julianday('now') - julianday(COALESCE(posts.published_at, posts.created_at))))) * 5.0
+    + ${subBoost}
+    + abs(((posts.rowid % 100000) * 48271 + ${seed}) % 1000) / 1000.0 * 0.8
+  )`;
+}
+
+/**
+ * Posts this account has been served in discovery feeds within the window.
+ * Feed dedup: content can resurface after the window, when the viewer
+ * subscribes to the creator, or when they own it.
+ */
+export async function recentlySeenPostIds(
+  userId: string,
+  hours = 24,
+): Promise<string[]> {
+  const cutoff = new Date(Date.now() - hours * 3_600_000).toISOString();
+  const rows = await db
+    .select({ post_id: feed_impressions.post_id })
+    .from(feed_impressions)
+    .where(and(eq(feed_impressions.user_id, userId), sql`${feed_impressions.seen_at} > ${cutoff}`));
+  return rows.map((r) => r.post_id);
+}
+
+/**
+ * SQL exclusion for feed dedup — returns undefined for anonymous viewers.
+ * Excludes posts seen within the window UNLESS the viewer owns them or is
+ * subscribed to the creator (subscribed content always repeats by design).
+ */
+export function feedDedupClause(userId: string, hours = 24): SQL {
+  const cutoff = new Date(Date.now() - hours * 3_600_000).toISOString();
+  return sql`(
+    NOT EXISTS (
+      SELECT 1 FROM feed_impressions fi
+      WHERE fi.user_id = ${userId}
+        AND fi.post_id = posts.id
+        AND fi.seen_at > ${cutoff}
+    )
+    OR posts.creator_id = ${userId}
+    OR EXISTS (
+      SELECT 1 FROM subscriptions s
+      WHERE s.subscriber_id = ${userId}
+        AND s.creator_id = posts.creator_id
+        AND s.status = 'active'
+    )
+  )`;
+}
+
+// SQLite fails at statement PREPARE when a table is missing, so a guard inside
+// the WHERE can't protect pre-migration deployments. Instead we check once per
+// process whether feed_impressions exists and only apply the dedup clause when
+// it does — feeds keep working (with dedup off) before the migration runs.
+let _feedDedupAvailable: boolean | null = null;
+
+async function isFeedDedupAvailable(): Promise<boolean> {
+  if (_feedDedupAvailable !== null) return _feedDedupAvailable;
+  try {
+    const rows = await db.all<{ name: string }>(
+      sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'feed_impressions' LIMIT 1`,
+    );
+    _feedDedupAvailable = (rows?.length ?? 0) > 0;
+  } catch {
+    _feedDedupAvailable = false;
+  }
+  return _feedDedupAvailable;
+}
+
+/**
+ * Feed-dedup WHERE clause for the viewer, or undefined when dedup isn't
+ * available yet (table missing pre-migration or anonymous viewer).
+ */
+export async function getFeedDedupClause(
+  userId: string | null,
+  hours = 24,
+): Promise<SQL | undefined> {
+  if (!userId) return undefined;
+  if (!(await isFeedDedupAvailable())) return undefined;
+  return feedDedupClause(userId, hours);
+}
+
+/**
+ * Record that a set of posts was served to a viewer (idempotent; refreshes
+ * seen_at on repeat serves via the unique user+post constraint). Fire-and-
+ * forget from routes — never blocks the feed response.
+ */
+export async function recordFeedImpressions(
+  userId: string | null,
+  postIds: string[],
+): Promise<void> {
+  if (!userId || postIds.length === 0) return;
+  const now = new Date().toISOString();
+  await db
+    .insert(feed_impressions)
+    .values(
+      postIds.map((id) => ({
+        id: `${userId}_${id}`,
+        user_id: userId,
+        post_id: id,
+        seen_at: now,
+      })),
+    )
+    .onConflictDoNothing();
+}
+
+/**
+ * Soft creator diversity for a page of ranked rows. Keeps the ranked order as
+ * much as possible while (a) capping runs of the same creator and (b) capping
+ * any single creator's share of the page — one creator can never monopolize a
+ * feed. Fully deterministic (same ranked input → same page).
+ */
+export function applyCreatorDiversity<T extends { creator_id: string }>(
+  rows: T[],
+  maxConsecutive = 2,
+  maxShare = 0.5,
+): T[] {
+  if (rows.length <= 2) return rows;
+  const cap = Math.max(1, Math.round(rows.length * maxShare));
+  const counts = new Map<string, number>();
+  const out: T[] = [];
+  const deferred: T[] = [];
+  for (const row of rows) {
+    const creator = row.creator_id;
+    const seen = counts.get(creator) ?? 0;
+    if (seen >= cap) {
+      deferred.push(row);
+      continue;
+    }
+    const tail = out.slice(-maxConsecutive);
+    if (tail.length === maxConsecutive && tail.every((r) => r.creator_id === creator)) {
+      deferred.push(row);
+      continue;
+    }
+    out.push(row);
+    counts.set(creator, seen + 1);
+  }
+  return [...out, ...deferred];
 }
 
 export function tierIndex(tier: string | null | undefined): number {
