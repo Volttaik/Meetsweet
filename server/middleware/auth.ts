@@ -9,24 +9,31 @@ import { users } from "@/lib/db/schema";
 export type AuthedRequest = NextRequest & { user: TokenPayload };
 
 /**
- * Re-check the user's live account state. The JWT itself can outlive a
- * deletion/deactivation by up to its expiry window, so every authed request
- * verifies the account is still active and not soft-deleted. This is what
- * makes a deleted account's data immediately inaccessible — the token stops
- * working the moment the account is deleted.
+ * Re-check the user's live account state AND current role. The JWT itself can
+ * outlive a deletion/deactivation by up to its expiry window, and the role
+ * claim goes stale when a user becomes a creator (or is demoted) after login.
+ * Every authed request therefore re-reads the account from the DB and uses the
+ * LIVE role — creator-only endpoints (album creation, uploads) gate on the
+ * database role, not the token claim. This is what makes a deleted account's
+ * data immediately inaccessible and a new creator role immediately effective.
  */
-async function isAccountLive(userId: string): Promise<boolean> {
+async function fetchLiveAccount(userId: string): Promise<{
+  isActive: boolean;
+  role: string | null;
+} | null> {
   try {
     const [row] = await db
-      .select({ is_active: users.is_active, deleted_at: users.deleted_at })
+      .select({ is_active: users.is_active, deleted_at: users.deleted_at, role: users.role })
       .from(users)
       .where(eq(users.id, userId))
       .limit(1);
-    if (!row) return false;
-    return row.is_active === true && row.deleted_at === null;
+    if (!row) return null;
+    const live =
+      row.is_active === true && row.deleted_at === null;
+    return { isActive: live, role: live ? row.role : null };
   } catch {
     // On DB errors, fail closed — never let an unverifiable account through.
-    return false;
+    return null;
   }
 }
 
@@ -40,11 +47,13 @@ export async function requireAuth(
 
   const token = header.slice(7);
   try {
-    const user = await verifyToken(token);
-    if (!(await isAccountLive(user.userId))) {
+    const tokenUser = await verifyToken(token);
+    const live = await fetchLiveAccount(tokenUser.userId);
+    if (!live || !live.isActive || !live.role) {
       return { response: unauthorized("Account no longer active") };
     }
-    return { user };
+    // Authoritative role comes from the DB, never the (possibly stale) JWT claim.
+    return { user: { ...tokenUser, role: live.role } };
   } catch {
     return { response: unauthorized("Invalid or expired token") };
   }
@@ -56,9 +65,10 @@ export async function optionalAuth(
   const header = req.headers.get("authorization");
   if (!header?.startsWith("Bearer ")) return null;
   try {
-    const user = await verifyToken(header.slice(7));
-    if (!(await isAccountLive(user.userId))) return null;
-    return user;
+    const tokenUser = await verifyToken(header.slice(7));
+    const live = await fetchLiveAccount(tokenUser.userId);
+    if (!live || !live.isActive || !live.role) return null;
+    return { ...tokenUser, role: live.role };
   } catch {
     return null;
   }

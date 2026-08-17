@@ -6,7 +6,7 @@ import { users, profiles, posts, media, post_likes, saved_posts, subscriptions, 
 import { requireAuth, optionalAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err } from "@/lib/api/response";
-import { canViewContent } from "@/lib/services/content";
+import { canViewContent, buildQualities } from "@/lib/services/content";
 
 const patchSchema = z.object({
   caption: z.string().max(2200).nullable().optional(),
@@ -133,6 +133,9 @@ export async function GET(
     bookmarkedByMe: savedRow.length > 0,
     is_locked: isLocked,
     isLocked,
+    // Server-authoritative playable qualities (single Auto variant today — the
+    // player only shows a selector when the server offers more than one).
+    qualities: buildQualities(postMedia[0], isLocked),
     media: isLocked ? [] : postMedia.map((m) => ({
       id: m.id,
       url: m.url,

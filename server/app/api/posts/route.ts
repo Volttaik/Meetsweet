@@ -15,6 +15,7 @@ import {
   getFeedDedupClause,
   applyCreatorDiversity,
   recordFeedImpressions,
+  buildQualities,
 } from "@/lib/services/content";
 import { notifySubscribersOfNewPost } from "@/lib/services/push";
 
@@ -114,6 +115,9 @@ function postRow(
     // to gate discovery actions (no Hide/Not Interested for subscribed creators).
     subscribed_to_creator: subscribed,
     subscribedToCreator: subscribed,
+    // Server-authoritative playable qualities (single Auto variant today — the
+    // player only shows a selector when the server offers more than one).
+    qualities: buildQualities(mediaItems[0] as any, isLocked),
     media: isLocked ? [] : mediaItems.map(mediaShape),
   };
 }
