@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080">
+  <defs>
+    <radialGradient id="glow" cx="50%" cy="0%" r="90%">
+      <stop offset="0%" stop-color="#C45A72" stop-opacity="0.22"/>
+      <stop offset="55%" stop-color="#C45A72" stop-opacity="0.06"/>
+      <stop offset="100%" stop-color="#0C0C0F" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1080" height="1080" fill="#0C0C0F"/>
+  <rect width="1080" height="1080" fill="url(#glow)"/>
+
+  <!-- Step badge -->
+  <circle cx="540" cy="108" r="32" fill="#C45A72"/>
+  <text x="540" y="119" font-family="Arial, Helvetica, sans-serif" font-size="32" font-weight="700" fill="#FFFFFF" text-anchor="middle">4</text>
+  <text x="540" y="178" font-family="Arial, Helvetica, sans-serif" font-size="44" font-weight="700" fill="#F2F2F7" text-anchor="middle">Allow unknown apps</text>
+
+  <!-- Phone body -->
+  <rect x="340" y="208" width="400" height="762" rx="58" fill="#16161C" stroke="#2E2E37" stroke-width="3"/>
+  <rect x="354" y="222" width="372" height="734" rx="44" fill="#131318"/>
+
+  <!-- Status bar -->
+  <text x="384" y="252" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="600" fill="#E8E8EE">9:41</text>
+  <g fill="#E8E8EE">
+    <rect x="664" y="244" width="3" height="6" rx="1"/>
+    <rect x="669" y="242" width="3" height="8" rx="1"/>
+    <rect x="674" y="240" width="3" height="10" rx="1"/>
+    <rect x="679" y="238" width="3" height="12" rx="1"/>
+  </g>
+  <rect x="694" y="239" width="20" height="11" rx="3" fill="none" stroke="#E8E8EE" stroke-width="1.5"/>
+  <rect x="716" y="242" width="3" height="5" rx="1.5" fill="#E8E8EE"/>
+  <rect x="697" y="242" width="12" height="5" rx="1.5" fill="#34C759"/>
+
+  <!-- App bar -->
+  <path d="M 388 296 l 10 -10 l 10 10" fill="none" stroke="#E8E8EE" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="540" y="303" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" fill="#F2F2F7" text-anchor="middle">Install unknown apps</text>
+
+  <!-- Info -->
+  <text x="388" y="344" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#9A9AA8">Allow apps downloaded from these</text>
+  <text x="388" y="364" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#9A9AA8">sources to be installed.</text>
+
+  <!-- Chrome row (allowed) -->
+  <rect x="374" y="386" width="332" height="96" rx="18" fill="#1A1A21" stroke="#2A2A33" stroke-width="1.5"/>
+  <circle cx="406" cy="434" r="22" fill="#3B82F6"/>
+  <circle cx="406" cy="434" r="9" fill="#FFFFFF"/>
+  <circle cx="402" cy="431" r="3.4" fill="#3B82F6"/>
+  <circle cx="410" cy="437" r="3.4" fill="#3B82F6"/>
+  <text x="442" y="428" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" fill="#F2F2F7">Chrome</text>
+  <text x="442" y="450" font-family="Arial, Helvetica, sans-serif" font-size="12.5" fill="#9A9AA8">Allow from this source</text>
+  <rect x="622" y="418" width="54" height="32" rx="16" fill="#C45A72"/>
+  <circle cx="662" cy="434" r="12" fill="#FFFFFF"/>
+
+  <!-- Files row -->
+  <rect x="374" y="498" width="332" height="96" rx="18" fill="#1A1A21" stroke="#2A2A33" stroke-width="1.5"/>
+  <circle cx="406" cy="546" r="22" fill="#8E6CFF"/>
+  <path d="M 396 536 h 8 l 4 4 h 8 v 12 h -20 Z" fill="none" stroke="#FFFFFF" stroke-width="2.4" stroke-linejoin="round"/>
+  <text x="442" y="540" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" fill="#F2F2F7">Files</text>
+  <text x="442" y="562" font-family="Arial, Helvetica, sans-serif" font-size="12.5" fill="#9A9AA8">Allow from this source</text>
+  <rect x="622" y="530" width="54" height="32" rx="16" fill="#3A3A44"/>
+  <circle cx="638" cy="546" r="12" fill="#C9C9D4"/>
+
+  <!-- Drive row -->
+  <rect x="374" y="610" width="332" height="96" rx="18" fill="#1A1A21" stroke="#2A2A33" stroke-width="1.5"/>
+  <path d="M 398 560 a 8 8 0 0 1 16 0 a 8 8 0 0 1 0 0 h -16 Z" fill="none"/>
+  <polygon points="400,556 412,556 406,548" fill="none" stroke="#FFFFFF" stroke-width="2.4" stroke-linejoin="round"/>
+  <path d="M 396 560 h 20 l -4 12 h -12 Z" fill="none" stroke="#FFFFFF" stroke-width="2.4" stroke-linejoin="round"/>
+  <text x="442" y="652" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" fill="#F2F2F7">Drive</text>
+  <text x="442" y="674" font-family="Arial, Helvetica, sans-serif" font-size="12.5" fill="#9A9AA8">Allow from this source</text>
+  <rect x="622" y="642" width="54" height="32" rx="16" fill="#3A3A44"/>
+  <circle cx="638" cy="658" r="12" fill="#C9C9D4"/>
+
+  <!-- Gesture pill -->
+  <rect x="522" y="928" width="56" height="5" rx="2.5" fill="#3A3A44"/>
+
+  <!-- Caption -->
+  <text x="540" y="1018" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="600" fill="#C45A72" text-anchor="middle">Settings → Apps → Special access → Install unknown apps</text>
+</svg>

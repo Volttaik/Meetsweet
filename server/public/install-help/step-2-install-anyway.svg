@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080">
+  <defs>
+    <radialGradient id="glow" cx="50%" cy="0%" r="90%">
+      <stop offset="0%" stop-color="#C45A72" stop-opacity="0.22"/>
+      <stop offset="55%" stop-color="#C45A72" stop-opacity="0.06"/>
+      <stop offset="100%" stop-color="#0C0C0F" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="pink" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#D96C85"/>
+      <stop offset="100%" stop-color="#A03A58"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1080" height="1080" fill="#0C0C0F"/>
+  <rect width="1080" height="1080" fill="url(#glow)"/>
+
+  <!-- Step badge -->
+  <circle cx="540" cy="108" r="32" fill="#C45A72"/>
+  <text x="540" y="119" font-family="Arial, Helvetica, sans-serif" font-size="32" font-weight="700" fill="#FFFFFF" text-anchor="middle">2</text>
+  <text x="540" y="178" font-family="Arial, Helvetica, sans-serif" font-size="44" font-weight="700" fill="#F2F2F7" text-anchor="middle">Install — bypass Play Protect</text>
+
+  <!-- Phone body -->
+  <rect x="340" y="208" width="400" height="762" rx="58" fill="#16161C" stroke="#2E2E37" stroke-width="3"/>
+  <rect x="354" y="222" width="372" height="734" rx="44" fill="#131318"/>
+
+  <!-- Status bar -->
+  <text x="384" y="252" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="600" fill="#E8E8EE">9:41</text>
+  <g fill="#E8E8EE">
+    <rect x="664" y="244" width="3" height="6" rx="1"/>
+    <rect x="669" y="242" width="3" height="8" rx="1"/>
+    <rect x="674" y="240" width="3" height="10" rx="1"/>
+    <rect x="679" y="238" width="3" height="12" rx="1"/>
+  </g>
+  <rect x="694" y="239" width="20" height="11" rx="3" fill="none" stroke="#E8E8EE" stroke-width="1.5"/>
+  <rect x="716" y="242" width="3" height="5" rx="1.5" fill="#E8E8EE"/>
+  <rect x="697" y="242" width="12" height="5" rx="1.5" fill="#34C759"/>
+
+  <!-- Installer screen -->
+  <circle cx="540" cy="316" r="34" fill="url(#pink)"/>
+  <text x="540" y="326" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="700" fill="#FFFFFF" text-anchor="middle">M</text>
+  <text x="540" y="372" font-family="Arial, Helvetica, sans-serif" font-size="21" font-weight="700" fill="#F2F2F7" text-anchor="middle">MeetSweet</text>
+  <text x="540" y="396" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#9A9AA8" text-anchor="middle">New app</text>
+
+  <rect x="374" y="420" width="332" height="186" rx="18" fill="#1A1A21" stroke="#2A2A33" stroke-width="1.5"/>
+  <text x="392" y="446" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="600" fill="#9A9AA8">This app can access:</text>
+  <circle cx="406" cy="478" r="9" fill="none" stroke="#6E6E7C" stroke-width="1.6"/>
+  <path d="M 402.5 478 h 7 M 406 474.5 v 7" stroke="#6E6E7C" stroke-width="1.6" stroke-linecap="round"/>
+  <text x="430" y="483" font-family="Arial, Helvetica, sans-serif" font-size="14.5" fill="#E8E8EE">Photos, media and files</text>
+  <circle cx="406" cy="520" r="9" fill="none" stroke="#6E6E7C" stroke-width="1.6"/>
+  <path d="M 400.5 520 a 5.5 5.5 0 0 1 11 0 M 402.5 516 a 8 8 0 0 1 7 0" fill="none" stroke="#6E6E7C" stroke-width="1.6" stroke-linecap="round"/>
+  <text x="430" y="525" font-family="Arial, Helvetica, sans-serif" font-size="14.5" fill="#E8E8EE">Network and Wi-Fi connection</text>
+  <circle cx="406" cy="562" r="9" fill="none" stroke="#6E6E7C" stroke-width="1.6"/>
+  <path d="M 401.5 562 a 4.5 4.5 0 0 1 9 0 M 403.5 558.5 a 2.5 2.5 0 0 1 5 0" fill="none" stroke="#6E6E7C" stroke-width="1.6" stroke-linecap="round"/>
+  <circle cx="406" cy="570" r="1.6" fill="#6E6E7C"/>
+  <text x="430" y="567" font-family="Arial, Helvetica, sans-serif" font-size="14.5" fill="#E8E8EE">Notifications</text>
+  <text x="392" y="594" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="600" fill="#4A9DFF">View all details</text>
+
+  <rect x="374" y="630" width="156" height="52" rx="26" fill="none" stroke="#3A3A44" stroke-width="1.5"/>
+  <text x="452" y="662" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="600" fill="#9A9AA8" text-anchor="middle">Cancel</text>
+  <rect x="550" y="630" width="156" height="52" rx="26" fill="#C45A72"/>
+  <text x="628" y="662" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" fill="#FFFFFF" text-anchor="middle">Install</text>
+
+  <!-- Play Protect dialog -->
+  <rect x="354" y="222" width="372" height="734" rx="44" fill="#000000" opacity="0.55"/>
+  <rect x="392" y="352" width="296" height="330" rx="24" fill="#232329" stroke="#34343E" stroke-width="1.5"/>
+  <circle cx="540" cy="408" r="30" fill="#4A9DFF"/>
+  <path d="M 540 388 L 562 398 L 562 416 C 562 430 552 442 540 448 C 528 442 518 430 518 416 L 518 398 Z" fill="#FFFFFF" opacity="0.22"/>
+  <path d="M 529 410 L 537 418 L 551 402" fill="none" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="424" y="474" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" fill="#F2F2F7">Play Protect doesn&apos;t</text>
+  <text x="424" y="498" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" fill="#F2F2F7">recognize this app&apos;s</text>
+  <text x="424" y="522" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" fill="#F2F2F7">developer.</text>
+  <text x="424" y="550" font-family="Arial, Helvetica, sans-serif" font-size="12.5" fill="#B9B9C6">Some apps can behave</text>
+  <text x="424" y="568" font-family="Arial, Helvetica, sans-serif" font-size="12.5" fill="#B9B9C6">unexpectedly. Learn more.</text>
+  <rect x="424" y="596" width="116" height="46" rx="23" fill="none" stroke="#3A3A44" stroke-width="1.5"/>
+  <text x="482" y="624" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="600" fill="#9A9AA8" text-anchor="middle">Cancel</text>
+  <rect x="556" y="596" width="100" height="46" rx="23" fill="#C45A72"/>
+  <text x="606" y="624" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#FFFFFF" text-anchor="middle">Install anyway</text>
+  <text x="540" y="668" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="600" fill="#4A9DFF" text-anchor="middle">More details</text>
+
+  <!-- Gesture pill -->
+  <rect x="522" y="928" width="56" height="5" rx="2.5" fill="#3A3A44"/>
+
+  <!-- Caption -->
+  <text x="540" y="1018" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="600" fill="#C45A72" text-anchor="middle">Tap Install, then More details → Install anyway</text>
+</svg>

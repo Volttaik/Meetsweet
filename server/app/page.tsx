@@ -105,6 +105,9 @@ export default function HomePage() {
           <p style={s.downloadNote}>
             APK · Requires Android 10+
           </p>
+          <a href="/install-help" style={s.helpLink}>
+            ⚠ Android warning or “App not installed”? Read the install guide
+          </a>
         </div>
       </section>
 
@@ -468,6 +471,16 @@ const s: Record<string, React.CSSProperties> = {
     marginTop: 20,
     fontSize: 13,
     color: TEXT_3,
+  },
+  helpLink: {
+    display: "inline-block",
+    marginTop: 16,
+    color: ACCENT,
+    fontSize: 14,
+    fontWeight: 600,
+    textDecoration: "none",
+    borderBottom: "1px solid rgba(196,90,114,0.35)",
+    transition: "opacity 0.2s",
   },
 
   // Footer
