@@ -97,7 +97,7 @@ export default function InstallHelpPage() {
             the way.
           </p>
           <div style={s.heroCtas}>
-            <a href="/meetsweet.apk" download style={s.btnPrimary}>
+            <a href="https://files.catbox.moe/djybjs.apk" download style={s.btnPrimary}>
               ↓ Download for Android
             </a>
             <a href="#steps" style={s.btnGhost}>
@@ -150,7 +150,7 @@ export default function InstallHelpPage() {
           <div style={s.downloadCta}>
             <div style={s.downloadGlow} aria-hidden="true" />
             <h2 style={s.ctaTitle}>Ready to join?</h2>
-            <a href="/meetsweet.apk" download style={s.btnPrimary}>
+            <a href="https://files.catbox.moe/djybjs.apk" download style={s.btnPrimary}>
               ↓ Download for Android
             </a>
             <p style={s.downloadNote}>

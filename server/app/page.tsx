@@ -95,7 +95,7 @@ export default function HomePage() {
           </p>
           <div style={s.downloadBtns}>
             <a
-              href="/meetsweet.apk"
+              href="https://files.catbox.moe/djybjs.apk"
               download
               style={s.btnPrimary}
             >
