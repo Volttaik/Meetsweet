@@ -235,6 +235,10 @@ export function buildVideoRow(
   const sorted = [...mediaRows].sort((a, b) => a.sort_order - b.sort_order);
   const primary = sorted[0];
   const creator = buildCreator(row);
+  // Media dimensions let the player size itself instantly (no layout jump
+  // waiting for the first frame) and let feed cards keep the real aspect ratio.
+  const mediaWidth = primary?.width ?? null;
+  const mediaHeight = primary?.height ?? null;
 
   // Post-level thumbnail takes priority; fall back to media-level thumbnail
   const thumbnailUrl = row.thumbnail_url ?? primary?.thumbnail_url ?? null;
@@ -278,6 +282,8 @@ export function buildVideoRow(
     videoUrl: isLocked ? null : (primary?.url ?? null),
     duration_secs: primary?.duration_seconds ?? 0,
     durationSecs: primary?.duration_seconds ?? 0,
+    width: mediaWidth,
+    height: mediaHeight,
     view_count: row.view_count,
     viewCount: row.view_count,
     like_count: row.like_count,
@@ -305,6 +311,8 @@ export function buildVideoRow(
       type: m.type,
       thumbnail_url: m.thumbnail_url,
       duration_secs: m.duration_seconds,
+      width: m.width ?? null,
+      height: m.height ?? null,
     })),
   };
 }
@@ -323,6 +331,8 @@ export function buildShortRow(
   // first row only when no video exists.
   const primary = sorted.find((m) => m.type === "video") ?? sorted[0];
   const creator = buildCreator(row);
+  const mediaWidth = primary?.width ?? null;
+  const mediaHeight = primary?.height ?? null;
 
   // Post-level thumbnail takes priority; fall back to media-level thumbnail
   const thumbnailUrl = row.thumbnail_url ?? primary?.thumbnail_url ?? null;
@@ -360,6 +370,8 @@ export function buildShortRow(
     videoUrl: isLocked ? null : (primary?.url ?? null),
     duration_secs: primary?.duration_seconds ?? 0,
     durationSecs: primary?.duration_seconds ?? 0,
+    width: mediaWidth,
+    height: mediaHeight,
     view_count: row.view_count,
     viewCount: row.view_count,
     like_count: row.like_count,
@@ -384,6 +396,8 @@ export function buildShortRow(
       type: m.type,
       thumbnail_url: m.thumbnail_url,
       duration_secs: m.duration_seconds,
+      width: m.width ?? null,
+      height: m.height ?? null,
     })),
   };
 }
