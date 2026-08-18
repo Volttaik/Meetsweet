@@ -47,6 +47,13 @@ export async function POST(req: NextRequest) {
   const parsed = await parseBody(req, createSchema);
   if (!parsed.success) return parsed.response;
 
+  // Shorts are creator-only content — gate on the account's LIVE role
+  // (requireAuth re-reads it from the DB every request), matching the
+  // /posts short/video gate and the album gate.
+  if (auth.user.role !== "creator" && auth.user.role !== "admin") {
+    return err("Creator account required", 403, "CREATOR_REQUIRED");
+  }
+
   const {
     caption, title, visibility,
     thumbnail_url, tags,
