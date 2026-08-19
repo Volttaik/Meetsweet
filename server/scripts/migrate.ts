@@ -866,14 +866,32 @@ async function run() {
       sql: `CREATE INDEX IF NOT EXISTS chat_room_messages_room_created_idx ON chat_room_messages(chat_room_id, created_at)`,
     },
 
-    // ── Two-factor authentication (TOTP) ────────────────────────────────────
+    // ── Two-factor authentication ──────────────────────────────────────────────
+    // The old TOTP design is replaced by email-code 2FA. The `totp_enabled`
+    // column is renamed (its boolean stays) and the unused encrypted secret is
+    // dropped. Order matters: rename before drop. On a fresh DB both columns
+    // may not exist — the error matcher below treats "no such column" as done.
     {
-      name: "users: add totp_secret",
-      sql: `ALTER TABLE users ADD COLUMN totp_secret TEXT`,
+      name: "users: rename totp_enabled to two_fa_enabled",
+      sql: `ALTER TABLE users RENAME COLUMN totp_enabled TO two_fa_enabled`,
     },
     {
-      name: "users: add totp_enabled",
-      sql: `ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0`,
+      name: "users: drop totp_secret",
+      sql: `ALTER TABLE users DROP COLUMN totp_secret`,
+    },
+
+    // ── Cloudflare Stream multi-quality (long-form video) ──────────────────
+    {
+      name: "media: add stream_uid",
+      sql: `ALTER TABLE media ADD COLUMN stream_uid TEXT`,
+    },
+    {
+      name: "media: add stream_status",
+      sql: `ALTER TABLE media ADD COLUMN stream_status TEXT NOT NULL DEFAULT 'none'`,
+    },
+    {
+      name: "media: add qualities",
+      sql: `ALTER TABLE media ADD COLUMN qualities TEXT`,
     },
 
     // ── Feed dedup (impressions) + search indexes ──────────────────────────

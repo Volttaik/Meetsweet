@@ -3,13 +3,13 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users, login_history, verification_codes } from "@/lib/db/schema";
 import { verifyPassword } from "@/lib/auth/password";
-import { signTotpChallenge } from "@/lib/auth/jwt";
-import { generateId, generateVerificationCode, expiresAt } from "@/lib/auth/codes";
+import { signTwoFactorChallenge } from "@/lib/auth/jwt";
+import { generateId, generateVerificationCode, expiresAt, issueEmailCode } from "@/lib/auth/codes";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err, unauthorized } from "@/lib/api/response";
 import { loginSchema } from "@/schemas/auth";
 import { loginLimit, getClientIp, tooManyRequests } from "@/lib/security/rate-limiter";
-import { sendVerificationEmail } from "@/lib/services/email";
+import { sendVerificationEmail, sendTwoFactorEmail } from "@/lib/services/email";
 import { issueSession } from "@/lib/auth/session";
 
 export async function POST(req: NextRequest) {
@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
       is_creator: users.is_creator,
       is_active: users.is_active,
       is_verified: users.is_verified,
-      totp_enabled: users.totp_enabled,
+      two_fa_enabled: users.two_fa_enabled,
       deleted_at: users.deleted_at,
     })
     .from(users)
@@ -103,12 +103,19 @@ export async function POST(req: NextRequest) {
     is_creator: user.is_creator,
   };
 
-  // ── Two-factor authentication gate ──────────────────────────────────────
-  // A correct password must never produce a session when 2FA is enabled. Issue
-  // a short-lived, single-purpose challenge token instead; the client submits
-  // the authenticator code to /auth/2fa/verify to obtain real tokens.
-  if (user.totp_enabled) {
-    const challengeToken = await signTotpChallenge(user.id);
+  // ── Two-factor authentication gate (email code) ─────────────────────────
+  // A correct password must never produce a session when 2FA is enabled. Email
+  // a 6-digit sign-in code, issue a short-lived challenge token, and let the
+  // client submit the code to /auth/2fa/verify for the real session tokens.
+  if (user.two_fa_enabled) {
+    const code = await issueEmailCode(user.id, "two_fa");
+    await sendTwoFactorEmail({
+      to: user.email,
+      name: user.full_name ?? user.email,
+      code,
+    }).catch(() => null);
+
+    const challengeToken = await signTwoFactorChallenge(user.id);
     return ok({
       requires_2fa: true,
       challenge_token: challengeToken,

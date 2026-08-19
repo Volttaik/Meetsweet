@@ -4,29 +4,38 @@ import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
 import { ok, err } from "@/lib/api/response";
-import { generateTotpSecret, totpUri, encryptTotpSecret } from "@/lib/security/totp";
+import { issueEmailCode } from "@/lib/auth/codes";
+import { sendTwoFactorEmail } from "@/lib/services/email";
+import { twoFactorVerifyLimit, getClientIp, tooManyRequests } from "@/lib/security/rate-limiter";
 
+/**
+ * POST /api/auth/2fa/setup
+ *
+ * Emails a fresh 6-digit code to the account owner. Used both when ENABLING
+ * two-factor authentication and when DISABLING it (a current code is required
+ * to turn it off). No secret, no authenticator app — the code arrives by email.
+ */
 export async function POST(req: NextRequest) {
   const auth = await requireAuth(req);
   if ("response" in auth) return auth.response;
 
+  const rl = twoFactorVerifyLimit(getClientIp(req));
+  if (!rl.allowed) return tooManyRequests(rl.resetIn);
+
   const [user] = await db
-    .select({ username: users.username, email: users.email })
+    .select({ full_name: users.full_name, email: users.email })
     .from(users)
     .where(eq(users.id, auth.user.userId))
     .limit(1);
 
   if (!user) return err("User not found", 404);
 
-  const secret = generateTotpSecret();
-  await db
-    .update(users)
-    .set({ totp_secret: encryptTotpSecret(secret), updated_at: new Date().toISOString() })
-    .where(eq(users.id, auth.user.userId));
+  const code = await issueEmailCode(auth.user.userId, "two_fa");
+  await sendTwoFactorEmail({
+    to: user.email,
+    name: user.full_name ?? user.email,
+    code,
+  }).catch(() => null);
 
-  const account = user.username || user.email;
-  return ok({
-    secret,
-    otpauth_url: totpUri(secret, account),
-  });
+  return ok({ sent: true, expires_in_seconds: 15 * 60 });
 }

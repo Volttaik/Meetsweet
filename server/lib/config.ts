@@ -36,6 +36,14 @@ export const config = {
     bucket: () => firstSet("R2_BUCKET_NAME"),
     publicBaseUrl: () => firstSet("R2_PUBLIC_BASE_URL"),
   },
+  cloudflare: {
+    // Stream needs the Cloudflare API token (not the R2 S3 access key). The
+    // account id is shared with R2. Without a token, Stream stays disabled and
+    // videos keep playing as a single MP4 from R2.
+    accountId: () => firstSet("CLOUDFLARE_ACCOUNT_ID", "R2_ACCOUNT_ID"),
+    apiToken: () => firstSet("CLOUDFLARE_API_TOKEN"),
+    webhookSecret: () => firstSet("STREAM_WEBHOOK_SECRET"),
+  },
   resend: {
     apiKey: () => firstSet("RESEND_API_KEY"),
     sender: () => firstSet("VERIFIED_SENDER_EMAIL", "RESEND_FROM_EMAIL"),

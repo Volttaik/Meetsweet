@@ -365,6 +365,9 @@ interface MediaRow {
   width: number | null;
   height: number | null;
   sort_order: number;
+  stream_uid?: string | null;
+  stream_status?: string | null;
+  qualities?: string | null;
 }
 
 interface PostRow {
@@ -420,21 +423,68 @@ function buildCreator(row: PostRow) {
  * Playable quality variants for a video, derived from server-side media
  * metadata (the authoritative source — the client never invents qualities).
  *
- * Today the platform stores a single source file (no transcoding pipeline),
- * so the list contains exactly one "Auto" entry pointing at the original;
- * the player only shows a quality selector when a future transcoding
- * pipeline provides more than one variant. Locked content returns [] so no
- * media URL ever leaks to unauthorized callers.
+ * When Cloudflare Stream has finished transcoding (stream_status "ready"),
+ * the stored `qualities` JSON (HLS manifest + parsed rendition heights) is
+ * returned as-is — that is a REAL multi-quality source: each variant selects
+ * an actual HLS rendition in the player. Until then (or when Stream is not
+ * configured) the single original MP4 is the only variant, and the player
+ * hides the selector. Locked content returns [] so no media URL ever leaks
+ * to unauthorized callers.
  */
+/**
+ * Default playback URL for a video. When Stream transcoding is ready the
+ * adaptive HLS manifest (the "Auto" quality) is the best source; otherwise
+ * the original MP4 from R2. Locked content always returns null.
+ *
+ * `adaptive` must be true (long-form videos only) — Shorts, albums and other
+ * surfaces still play progressive MP4s via expo-av, which cannot play HLS.
+ */
+export function primaryPlayableUrl(
+  primary: MediaRow | undefined,
+  isLocked: boolean,
+  adaptive = false,
+): string | null {
+  if (!primary?.url || isLocked) return null;
+  if (adaptive && primary.stream_status === "ready" && primary.qualities) {
+    try {
+      const parsed = JSON.parse(primary.qualities);
+      const auto = Array.isArray(parsed) ? parsed.find((q: any) => q?.label === "Auto" && typeof q.url === "string") : null;
+      if (auto?.url) return auto.url;
+    } catch {
+      // fall back to the original file
+    }
+  }
+  return primary.url;
+}
+
 export function buildQualities(
   primary: MediaRow | undefined,
   isLocked: boolean,
-): Array<{ label: string; url: string; height: number | null }> {
+  adaptive = false,
+): Array<{ label: string; url: string; height: number | null; index?: number | null }> {
   if (!primary?.url || isLocked) return [];
+
+  // Adaptive HLS is served only for long-form videos (content_type "video").
+  // Shorts / albums / chat stay on the progressive MP4 — expo-av (still used
+  // by those surfaces) cannot play HLS.
+  if (adaptive && primary.stream_status === "ready" && primary.qualities) {
+    try {
+      const parsed = JSON.parse(primary.qualities);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.filter(
+          (q: any) => q && typeof q.url === "string" && q.url,
+        );
+      }
+    } catch {
+      // Fall through to the single-variant MP4 below.
+    }
+  }
+
   return [{
     label: "Auto",
     url: primary.url,
     height: primary.height ?? null,
+    index: null,
   }];
 }
 
@@ -493,15 +543,15 @@ export function buildVideoRow(
     thumbnailUrl,
     // Omit media URLs when content is locked so subscriber-only content
     // cannot be accessed by unauthenticated / non-subscribed callers.
-    video_url: isLocked ? null : (primary?.url ?? null),
-    videoUrl: isLocked ? null : (primary?.url ?? null),
+    video_url: primaryPlayableUrl(primary, isLocked, true),
+    videoUrl: primaryPlayableUrl(primary, isLocked, true),
     duration_secs: primary?.duration_seconds ?? 0,
     durationSecs: primary?.duration_seconds ?? 0,
     width: mediaWidth,
     height: mediaHeight,
     // Server-authoritative playable qualities (single Auto entry today; the
     // player shows a selector only when multiple variants exist).
-    qualities: buildQualities(primary, isLocked),
+    qualities: buildQualities(primary, isLocked, true),
     view_count: row.view_count,
     viewCount: row.view_count,
     like_count: row.like_count,
@@ -584,15 +634,15 @@ export function buildShortRow(
     thumbnailUrl,
     // Omit media URLs when content is locked so subscriber-only content
     // cannot be accessed by unauthenticated / non-subscribed callers.
-    video_url: isLocked ? null : (primary?.url ?? null),
-    videoUrl: isLocked ? null : (primary?.url ?? null),
+    video_url: primaryPlayableUrl(primary, isLocked, false),
+    videoUrl: primaryPlayableUrl(primary, isLocked, false),
     duration_secs: primary?.duration_seconds ?? 0,
     durationSecs: primary?.duration_seconds ?? 0,
     width: mediaWidth,
     height: mediaHeight,
     // Server-authoritative playable qualities (single Auto entry today; the
     // player shows a selector only when multiple variants exist).
-    qualities: buildQualities(primary, isLocked),
+    qualities: buildQualities(primary, isLocked, false),
     view_count: row.view_count,
     viewCount: row.view_count,
     like_count: row.like_count,

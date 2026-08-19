@@ -115,9 +115,9 @@ function postRow(
     // to gate discovery actions (no Hide/Not Interested for subscribed creators).
     subscribed_to_creator: subscribed,
     subscribedToCreator: subscribed,
-    // Server-authoritative playable qualities (single Auto variant today — the
-    // player only shows a selector when the server offers more than one).
-    qualities: buildQualities(mediaItems[0] as any, isLocked),
+    // Server-authoritative playable qualities. Adaptive HLS is only exposed
+    // for long-form videos; Shorts/albums keep the single progressive MP4.
+    qualities: buildQualities(mediaItems[0] as any, isLocked, p.content_type === "video"),
     media: isLocked ? [] : mediaItems.map(mediaShape),
   };
 }

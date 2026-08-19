@@ -10,12 +10,12 @@ export async function GET(req: NextRequest) {
   if ("response" in auth) return auth.response;
 
   const [user] = await db
-    .select({ totp_enabled: users.totp_enabled })
+    .select({ two_fa_enabled: users.two_fa_enabled })
     .from(users)
     .where(eq(users.id, auth.user.userId))
     .limit(1);
 
   if (!user) return err("User not found", 404);
 
-  return ok({ enabled: Boolean(user.totp_enabled) });
+  return ok({ enabled: Boolean(user.two_fa_enabled) });
 }

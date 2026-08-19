@@ -37,11 +37,11 @@ export const users = sqliteTable(
     created_at: createdAt(),
     updated_at: updatedAt(),
     deleted_at: text("deleted_at"),
-    // ── Two-factor authentication (TOTP) ──────────────────────────────────
-    // totp_secret is AES-256-GCM encrypted at rest (see lib/security/totp.ts).
-    // It is never returned by any API response after the one-time setup call.
-    totp_secret: text("totp_secret"),
-    totp_enabled: integer("totp_enabled", { mode: "boolean" }).notNull().default(false),
+    // ── Two-factor authentication (email-code based) ───────────────────────
+    // 2FA uses a 6-digit code emailed to the account owner — no authenticator
+    // app, no TOTP secret. The code is stored in verification_codes (type
+    // "two_fa") and consumed on login / enable / disable.
+    two_fa_enabled: integer("two_fa_enabled", { mode: "boolean" }).notNull().default(false),
   },
   (table) => [
     uniqueIndex("users_email_idx").on(table.email),
@@ -120,7 +120,7 @@ export const verification_codes = sqliteTable(
     id: id(),
     user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
     code: text("code").notNull(),
-    type: text("type", { enum: ["email_verify", "password_reset", "phone_verify"] }).notNull(),
+    type: text("type", { enum: ["email_verify", "password_reset", "phone_verify", "two_fa"] }).notNull(),
     expires_at: text("expires_at").notNull(),
     used_at: text("used_at"),
     created_at: createdAt(),
@@ -250,6 +250,15 @@ export const media = sqliteTable("media", {
   thumbnail_url: text("thumbnail_url"),
   file_name: text("file_name"),
   sort_order: integer("sort_order").notNull().default(0),
+  // ── Cloudflare Stream transcoding (long-form video multi-quality) ────────
+  // stream_uid: the Stream video id. stream_status: "none" (no transcode
+  // requested/configured) | "processing" | "ready" | "error". qualities is a
+  // JSON array of { label, url, height, index } variants built once the HLS
+  // manifest is ready — the server-authoritative source for the player's
+  // quality selector.
+  stream_uid: text("stream_uid"),
+  stream_status: text("stream_status").notNull().default("none"),
+  qualities: text("qualities"),
   created_at: createdAt(),
 }, (table) => [
   index("media_post_sort_idx").on(table.post_id, table.sort_order),

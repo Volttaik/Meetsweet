@@ -35,24 +35,24 @@ export async function verifyToken(token: string): Promise<TokenPayload> {
 
 // ─── Two-factor login challenge ───────────────────────────────────────────────
 // A short-lived, single-purpose token issued after a successful password check
-// for accounts with TOTP enabled. It cannot be used as an access token; it only
-// authorises the 2FA verification step.
+// for accounts with 2FA (email-code) enabled. It cannot be used as an access
+// token; it only authorises the 2FA verification step.
 
-export interface TotpChallengePayload extends JWTPayload {
+export interface TwoFactorChallengePayload extends JWTPayload {
   userId: string;
   purpose: string;
 }
 
-export async function signTotpChallenge(userId: string): Promise<string> {
-  return new SignJWT({ userId, purpose: "totp_login" })
+export async function signTwoFactorChallenge(userId: string): Promise<string> {
+  return new SignJWT({ userId, purpose: "two_fa_login" })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime("5m")
     .sign(secret());
 }
 
-export async function verifyTotpChallenge(token: string): Promise<TotpChallengePayload> {
+export async function verifyTwoFactorChallenge(token: string): Promise<TwoFactorChallengePayload> {
   const { payload } = await jwtVerify(token, secret());
-  if (payload.purpose !== "totp_login") throw new Error("Invalid challenge purpose");
-  return payload as TotpChallengePayload;
+  if (payload.purpose !== "two_fa_login") throw new Error("Invalid challenge purpose");
+  return payload as TwoFactorChallengePayload;
 }

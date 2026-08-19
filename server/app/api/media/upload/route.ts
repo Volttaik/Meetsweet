@@ -1,11 +1,13 @@
 import { NextRequest } from "next/server";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { media } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
 import { ok, err, created } from "@/lib/api/response";
 import { generateId } from "@/lib/auth/codes";
 import { config } from "@/lib/config";
+import { pullVideoFromUrl } from "@/lib/services/stream";
 
 const ALLOWED_MIME_TYPES = [
   // Images
@@ -197,6 +199,32 @@ export async function POST(req: NextRequest) {
     size_bytes: file.size,
     file_name: fileName,
   });
+
+  // ── Multi-quality: kick off Cloudflare Stream transcoding for videos ────
+  // Fire-and-forget — Stream pulls the R2 URL, transcodes to an adaptive HLS
+  // manifest, and the webhook flips stream_status to "ready" with the parsed
+  // quality variants. Until then the original MP4 is the single playable
+  // source, exactly like today. Only the long-form video flow (client sends
+  // `transcode=1`) requests this — shorts/chat/album uploads skip it, so
+  // Stream quota isn't spent where adaptive quality isn't used.
+  const wantTranscode = formData.get("transcode") === "1";
+  if (category === "video" && wantTranscode) {
+    const publicBase = config.r2.publicBaseUrl();
+    const sourceUrl = publicBase ? `${publicBase.replace(/\/$/, "")}/${key}` : null;
+    if (sourceUrl) {
+      pullVideoFromUrl(sourceUrl, {
+        mediaId,
+        uploaderId: auth.user.userId,
+        postId,
+      }).then((res) => {
+        if (!res) return;
+        return db
+          .update(media)
+          .set({ stream_uid: res.uid, stream_status: "processing" })
+          .where(eq(media.id, mediaId));
+      }).catch((e) => console.error("[media/upload] stream kickoff failed:", e));
+    }
+  }
 
   return created({
     media: {

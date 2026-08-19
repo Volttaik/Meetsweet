@@ -133,9 +133,9 @@ export async function GET(
     bookmarkedByMe: savedRow.length > 0,
     is_locked: isLocked,
     isLocked,
-    // Server-authoritative playable qualities (single Auto variant today — the
-    // player only shows a selector when the server offers more than one).
-    qualities: buildQualities(postMedia[0], isLocked),
+    // Server-authoritative playable qualities. Adaptive HLS is only exposed
+    // for long-form videos; Shorts/albums keep the single progressive MP4.
+    qualities: buildQualities(postMedia[0], isLocked, row.content_type === "video"),
     media: isLocked ? [] : postMedia.map((m) => ({
       id: m.id,
       url: m.url,

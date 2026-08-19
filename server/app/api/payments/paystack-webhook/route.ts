@@ -1,19 +1,15 @@
 import { NextRequest } from "next/server";
-import { and, eq, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { wallets, transactions } from "@/lib/db/schema";
 import { verifyWebhookSignature } from "@/lib/services/paystack";
-import { creditDeposit } from "@/lib/services/deposit-credit";
 
 /**
  * POST /api/payments/paystack-webhook
  *
  * Receives Paystack events (unauthenticated — verified via the
- * x-paystack-signature HMAC-SHA512 header). Settles both directions:
- *
- *   charge.success            → credit an in-app wallet top-up (dedicated NUBAN
- *                               bank transfer — the authoritative credit path)
- *   transfer.success          → mark a creator withdrawal completed
+ * x-paystack-signature HMAC-SHA512 header). Settles withdrawal transfers:
+ *   transfer.success          → mark the withdrawal completed
  *   transfer.failed/reversed  → refund the reserved wallet funds + mark failed
  *
  * Register this URL in the Paystack dashboard (Settings → Webhooks).
@@ -33,77 +29,16 @@ export async function POST(req: NextRequest) {
   }
 
   const ev = event.event ?? "";
-  const data = event.data ?? {};
-  const now = new Date().toISOString();
-
-  // ── In-app wallet top-up (dedicated virtual account bank transfer) ────────
-  if (ev === "charge.success") {
-    const channel: string = data.channel ?? data.authorization?.channel ?? "";
-    if (channel !== "dedicated_nuban") {
-      // A card/other charge — not our bank-transfer funding flow.
-      return new Response("ok", { status: 200 });
-    }
-
-    const customerCode: string = data.customer?.customer_code ?? data.customer_code ?? "";
-    const amountNaira = Math.round((Number(data.amount) ?? 0) / 100);
-    const chargeReference: string = data.reference ?? "";
-    if (!customerCode || !amountNaira || !chargeReference) {
-      return new Response("ok", { status: 200 });
-    }
-
-    // Find a pending credit whose metadata carries this customer code and whose
-    // amount matches. Parse in JS — metadata is a small JSON blob.
-    const pending = await db
-      .select()
-      .from(transactions)
-      .where(and(eq(transactions.type, "credit"), eq(transactions.status, "pending")));
-
-    const match = pending.find((t) => {
-      if (Number(t.amount) !== amountNaira) return false;
-      try {
-        const m = t.metadata ? JSON.parse(t.metadata) : {};
-        return m.customer_code === customerCode;
-      } catch {
-        return false;
-      }
-    });
-
-    if (!match) {
-      // No matching pending deposit (already settled, or an unknown transfer).
-      return new Response("ok", { status: 200 });
-    }
-
-    // Idempotency: never credit the same Paystack charge twice.
-    const [alreadyUsed] = await db
-      .select({ id: transactions.id })
-      .from(transactions)
-      .where(eq(transactions.paystack_ref, chargeReference))
-      .limit(1);
-    if (alreadyUsed) {
-      return new Response("ok", { status: 200 });
-    }
-
-    await creditDeposit({
-      txId: match.id,
-      userId: match.user_id,
-      amountNaira,
-      currency: match.currency,
-      paystackReference: chargeReference,
-    });
-
-    return new Response("ok", { status: 200 });
-  }
-
-  // ── Creator withdrawals (payouts) ─────────────────────────────────────────
   if (
     ev !== "transfer.success" &&
     ev !== "transfer.failed" &&
     ev !== "transfer.reversed"
   ) {
-    // Not an event we settle here — acknowledge so Paystack stops retrying.
+    // Not a transfer event we settle here (e.g. charge.success) — acknowledge.
     return new Response("ok", { status: 200 });
   }
 
+  const data = event.data ?? {};
   const transferCode: string = data.transfer_code ?? data.transferCode ?? "";
   const reference: string = data.reference ?? "";
 
@@ -122,6 +57,8 @@ export async function POST(req: NextRequest) {
   if (!tx || tx.type !== "withdrawal") {
     return new Response("ok", { status: 200 });
   }
+
+  const now = new Date().toISOString();
 
   if (ev === "transfer.success") {
     if (tx.status !== "completed") {

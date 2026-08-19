@@ -4,29 +4,40 @@ import { config } from "@/lib/config";
 /**
  * MeetSweet transactional email service (Resend).
  *
- * Design system notes:
- *  - Table-based layout with inline styles only — no JavaScript, no external CSS,
- *    no CSS features that Gmail/Outlook strip (no clip-path, no backdrop-filter,
- *    no flexbox, no <style> blocks relied upon).
- *  - The real brand logo is referenced as a hosted asset served from this
- *    deployment's public origin, so it always resolves for the recipient.
- *  - CSS gradients provide the "designed background" without a large raster
- *    image; a solid background-color fallback keeps the email usable in
- *    clients that ignore background-image.
- *  - The wordmark is rendered as text next to the logo so the brand is still
- *    visible even when the image is blocked.
+ * Branding: emails are professional company communications from MeetSuite
+ * Industries (the company behind MeetSweet). The identity mark is the
+ * white/black silhouette — rendered as an INLINE SVG data URI (no dependency
+ * on a hosted raster image), with a hosted-PNG fallback for Outlook (mso) and
+ * the wordmark as plain text so the brand survives even with images blocked.
+ *
+ * Layout notes:
+ *  - Table-based layout with inline styles only — no JavaScript, no external
+ *    CSS, no features Gmail/Outlook strip (no clip-path, no flexbox).
+ *  - Background: an inline SVG data-URI treatment with a solid-color
+ *    fallback for clients that strip SVG/data-URI backgrounds.
+ *  - Verification codes are presented with simple, clear typography — not a
+ *    heavy boxed design.
  */
 
 // ─── Brand tokens ────────────────────────────────────────────────────────────
 
 const ACCENT = "#C45A72";
 const BG = "#0C0C0F";
-const CARD = "#141419";
 const BORDER = "rgba(255,255,255,0.10)";
 const TEXT = "#FFFFFF";
 const TEXT_2 = "rgba(255,255,255,0.62)";
-const TEXT_3 = "rgba(255,255,255,0.34)";
+const TEXT_3 = "rgba(255,255,255,0.38)";
 const FONT = "'Poppins','Helvetica Neue',Helvetica,Arial,sans-serif";
+const COMPANY = "MeetSuite Industries";
+const PRODUCT = "MeetSweet";
+
+/**
+ * The MeetSweet silhouette (white/black logo) traced from the app's
+ * `assets/images/logo.png` as a filled vector path. Rendered white on the
+ * email's dark background. viewBox matches the logo's content bounding box.
+ */
+const LOGO_PATH =
+  "M477,29L449,33L426,44L399,70L392,86L394,126L404,127L398,155L402,167L410,168L414,187L420,188L420,208L465,209L462,225L442,244L404,247L388,278L388,330L400,331L406,359L376,461L373,543L378,615L391,617L391,656L404,657L415,700L414,800L400,849L378,894L336,952L297,984L296,1002L649,1002L649,997L762,977L765,963L765,953L720,948L668,917L637,880L612,831L588,800L644,798L644,781L654,777L656,758L654,708L645,698L670,696L670,663L641,632L632,586L608,565L585,555L672,554L676,362L664,351L670,350L670,339L677,335L676,261L672,240L660,229L681,228L682,198L671,184L650,183L661,176L661,158L596,154L580,132L571,96L551,58L523,37L497,29Z";
 
 // ─── Provider ────────────────────────────────────────────────────────────────
 
@@ -41,23 +52,34 @@ function getResend(): Resend {
   return resend;
 }
 
-/** Sender address with a friendly display name. */
+/** Sender address with a professional company display name. */
 function sender(): string {
   const s = config.resend.sender();
   if (!s) throw new Error("VERIFIED_SENDER_EMAIL is required");
-  return s.includes("<") ? s : `MeetSweet <${s}>`;
+  return s.includes("<") ? s : `${COMPANY} <${s}>`;
 }
 
-/** Absolute URL of the hosted brand logo. */
+/** Absolute URL of the hosted logo PNG — used only as the Outlook (mso) fallback. */
 function logoUrl(): string {
   const base = (config.app.publicUrl() ?? "https://meetsweet.space").replace(/\/+$/, "");
   return `${base}/meetsweet-logo.png`;
 }
 
+/** The silhouette as an inline SVG data URI (primary brand mark). */
+function logoDataUri(): string {
+  const svg = [
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="296 29 469 973" width="40" height="40">`,
+    `<path d="${LOGO_PATH}" fill="#FFFFFF"/>`,
+    `</svg>`,
+  ].join("");
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
+
 /**
  * Inline SVG background (soft accent glows) as a data URI. Clients that render
- * SVG backgrounds (Apple Mail, modern Outlook, etc.) show the glow; clients that
- * strip data-URI/SVG backgrounds (Gmail) fall back to the solid dark background.
+ * SVG backgrounds (Apple Mail, modern Outlook, etc.) show the treatment;
+ * clients that strip data-URI/SVG backgrounds (Gmail) fall back to the solid
+ * dark background color.
  */
 function svgBackground(): string {
   const svg = [
@@ -65,22 +87,17 @@ function svgBackground(): string {
     `<rect width="1200" height="720" fill="${BG}"/>`,
     `<defs>`,
     `<radialGradient id="glowA" cx="50%" cy="0%" r="85%">`,
-    `<stop offset="0%" stop-color="${ACCENT}" stop-opacity="0.22"/>`,
+    `<stop offset="0%" stop-color="${ACCENT}" stop-opacity="0.18"/>`,
     `<stop offset="60%" stop-color="${ACCENT}" stop-opacity="0.05"/>`,
     `<stop offset="100%" stop-color="${ACCENT}" stop-opacity="0"/>`,
     `</radialGradient>`,
     `<radialGradient id="glowB" cx="92%" cy="100%" r="75%">`,
-    `<stop offset="0%" stop-color="#8B5CF6" stop-opacity="0.18"/>`,
+    `<stop offset="0%" stop-color="#8B5CF6" stop-opacity="0.16"/>`,
     `<stop offset="100%" stop-color="#8B5CF6" stop-opacity="0"/>`,
-    `</radialGradient>`,
-    `<radialGradient id="glowC" cx="4%" cy="96%" r="55%">`,
-    `<stop offset="0%" stop-color="#EC4899" stop-opacity="0.14"/>`,
-    `<stop offset="100%" stop-color="#EC4899" stop-opacity="0"/>`,
     `</radialGradient>`,
     `</defs>`,
     `<rect width="1200" height="720" fill="url(#glowA)"/>`,
     `<rect width="1200" height="720" fill="url(#glowB)"/>`,
-    `<rect width="1200" height="720" fill="url(#glowC)"/>`,
     `</svg>`,
   ].join("");
   return `data:image/svg+xml,${encodeURIComponent(svg)}`;
@@ -101,9 +118,6 @@ async function deliver(
       text: opts.text,
     });
   } catch (error) {
-    // Log a useful diagnostic without leaking provider secrets. Resend errors
-    // do not contain the API key, but we deliberately avoid dumping the raw
-    // error object in case a future SDK version includes request metadata.
     const message = error instanceof Error ? error.message : String(error);
     console.error(`[email] failed to send ${kind} email to ${opts.to}: ${message}`);
     throw error;
@@ -112,17 +126,28 @@ async function deliver(
 
 // ─── Shared components ───────────────────────────────────────────────────────
 
+/**
+ * Company header: inline SVG silhouette + wordmark. Non-Outlook clients get
+ * the inline vector (no hosted dependency); Outlook gets the hosted PNG via an
+ * mso conditional; the wordmark is text, so branding is never lost.
+ */
 function logoHeader(): string {
   return `
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 auto 36px auto;">
       <tr>
-        <td style="width:36px;height:36px;vertical-align:middle;">
-          <img src="${logoUrl()}" alt="MeetSweet" width="36" height="36"
-            style="display:block;width:36px;height:36px;border-radius:10px;background-color:#ffffff;border:0;" />
+        <td style="width:40px;height:40px;vertical-align:middle;text-align:center;">
+          <!--[if !mso]><!-->
+          <img src="${logoDataUri()}" alt="${COMPANY}" width="40" height="40"
+            style="display:block;width:40px;height:40px;border:0;outline:none;text-decoration:none;" />
+          <!--<![endif]-->
+          <!--[if mso]>
+          <img src="${logoUrl()}" alt="${COMPANY}" width="40" height="40"
+            style="display:block;width:40px;height:40px;border-radius:10px;background-color:#FFFFFF;border:0;" />
+          <![endif]-->
         </td>
         <td style="padding-left:12px;vertical-align:middle;">
-          <span style="font-family:${FONT};font-size:22px;font-weight:700;letter-spacing:-0.5px;color:${TEXT};">
-            Meet<span style="color:${ACCENT};">Sweet</span>
+          <span style="font-family:${FONT};font-size:20px;font-weight:700;letter-spacing:-0.3px;color:${TEXT};">
+            MeetSuite <span style="color:${ACCENT};">Industries</span>
           </span>
         </td>
       </tr>
@@ -131,76 +156,59 @@ function logoHeader(): string {
 
 function heading(text: string): string {
   return `
-    <h1 style="margin:0 0 10px 0;font-size:26px;line-height:1.2;font-weight:700;color:${TEXT};
+    <h1 style="margin:0 0 10px 0;font-size:25px;line-height:1.25;font-weight:700;color:${TEXT};
       font-family:${FONT};letter-spacing:-0.4px;text-align:center;">${text}</h1>`;
 }
 
 function subheading(text: string): string {
   return `
-    <p style="margin:0 0 32px 0;font-size:15px;line-height:1.6;color:${TEXT_2};
+    <p style="margin:0 0 30px 0;font-size:15px;line-height:1.65;color:${TEXT_2};
       font-family:${FONT};text-align:center;">${text}</p>`;
 }
 
 function divider(): string {
   return `
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 28px 0;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 30px 0;">
       <tr><td style="height:1px;font-size:0;line-height:0;background-color:${BORDER};"></td></tr>
     </table>`;
 }
 
-function codeLabel(): string {
+/**
+ * The verification code as clear, simple typography — a large letter-spaced
+ * number with generous spacing, NOT a heavy boxed treatment.
+ */
+function codeBlock(code: string): string {
   return `
-    <p style="margin:0 0 18px 0;font-size:11px;font-weight:700;letter-spacing:2.5px;
-      color:${ACCENT};text-align:center;text-transform:uppercase;font-family:${FONT};">
-      Your verification code
-    </p>`;
-}
-
-function codeBox(code: string): string {
-  return `
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 18px 0;">
       <tr>
-        <td align="center">
-          <table role="presentation" cellpadding="0" cellspacing="0" border="0">
-            <tr>
-              <td style="padding:20px 32px;background-color:rgba(255,255,255,0.04);
-                border:1px solid ${BORDER};border-radius:14px;">
-                <span style="font-family:${FONT};font-size:36px;font-weight:800;letter-spacing:16px;
-                  color:${TEXT};line-height:1;white-space:nowrap;">${code}</span>
-              </td>
-            </tr>
-          </table>
+        <td align="center" style="padding:8px 0 6px 0;">
+          <p style="margin:0 0 16px 0;font-size:11px;font-weight:700;letter-spacing:3px;
+            color:${TEXT_3};text-align:center;text-transform:uppercase;font-family:${FONT};">
+            Your verification code
+          </p>
+          <p style="margin:0;font-size:44px;font-weight:700;letter-spacing:14px;line-height:1.15;
+            color:${TEXT};font-family:${FONT};text-align:center;">${code}</p>
         </td>
       </tr>
-    </table>
-    <p style="margin:16px 0 0 0;font-size:13px;color:${TEXT_3};text-align:center;font-family:${FONT};">
-      Tap and hold the code to copy it
-    </p>`;
+    </table>`;
 }
 
-function expiryPill(minutes: number): string {
+function codeFootnote(lines: string[]): string {
+  const ps = lines
+    .map(
+      (l) =>
+        `<p style="margin:0 0 6px 0;font-size:14px;line-height:1.6;color:${TEXT_2};text-align:center;font-family:${FONT};">${l}</p>`,
+    )
+    .join("");
   return `
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:32px 0;">
-      <tr>
-        <td align="center">
-          <table role="presentation" cellpadding="0" cellspacing="0" border="0">
-            <tr>
-              <td style="padding:8px 20px;background-color:rgba(255,255,255,0.05);
-                border:1px solid ${BORDER};border-radius:100px;">
-                <span style="font-size:13px;color:${TEXT_2};font-family:${FONT};">
-                  Expires in <strong style="color:${TEXT};font-weight:700;">${minutes} minutes</strong>
-                </span>
-              </td>
-            </tr>
-          </table>
-        </td>
-      </tr>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 26px 0;">
+      <tr><td align="center" style="padding:0 16px;">${ps}</td></tr>
     </table>`;
 }
 
 function securityNote(text: string): string {
   return `
-    <p style="margin:28px 0 0 0;font-size:13px;line-height:1.6;color:${TEXT_3};
+    <p style="margin:26px 0 0 0;font-size:13px;line-height:1.65;color:${TEXT_3};
       font-family:${FONT};text-align:center;padding:0 12px;">${text}</p>`;
 }
 
@@ -209,11 +217,14 @@ function footer(): string {
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:36px;">
       <tr>
         <td align="center">
-          <p style="margin:0 0 6px 0;font-size:13px;color:${TEXT_3};font-family:${FONT};">
-            You're receiving this email because you have a MeetSweet account.
+          <p style="margin:0 0 8px 0;font-size:13px;color:${TEXT_3};font-family:${FONT};">
+            You're receiving this email because you have a ${PRODUCT} account.
+          </p>
+          <p style="margin:0 0 4px 0;font-size:12px;color:rgba(255,255,255,0.28);font-family:${FONT};">
+            ${COMPANY} · help@meetsweet.space
           </p>
           <p style="margin:0;font-size:12px;color:rgba(255,255,255,0.20);font-family:${FONT};">
-            © ${new Date().getFullYear()} MeetSweet · All rights reserved
+            © ${new Date().getFullYear()} ${COMPANY}. All rights reserved.
           </p>
         </td>
       </tr>
@@ -228,7 +239,7 @@ function shell(opts: { preheader: string; content: string }): string {
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
-  <title>MeetSweet</title>
+  <title>${COMPANY}</title>
   <!--[if mso]>
   <noscript><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml></noscript>
   <![endif]-->
@@ -239,7 +250,7 @@ function shell(opts: { preheader: string; content: string }): string {
     ${opts.preheader}&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;
   </div>
 
-  <!-- Designed background: SVG glow accents + solid dark fallback -->
+  <!-- Designed background: SVG treatment + solid dark fallback -->
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
     style="background-color:${BG};background-image:url('${svgBackground()}');background-repeat:no-repeat;background-position:top center;background-size:cover;">
     <tr>
@@ -279,36 +290,91 @@ export async function sendVerificationEmail(opts: {
   const content = `
     ${heading("Verify your email")}
     ${subheading(
-      `Hi ${firstName}, enter the code below to activate your MeetSweet account.`,
+      `Hi ${firstName}, welcome to ${PRODUCT}. Enter the code below to activate your account.`,
     )}
     ${divider()}
-    ${codeLabel()}
-    ${codeBox(code)}
-    ${expiryPill(15)}
+    ${codeBlock(code)}
+    ${codeFootnote([
+      "This code expires in 15 minutes.",
+      "Do not share this code with anyone.",
+    ])}
     ${securityNote(
-      "If you didn't create a MeetSweet account, you can safely ignore this email. Never share this code with anyone.",
+      `If you didn't create a ${PRODUCT} account, you can safely ignore this email — no action is needed.`,
     )}
   `;
 
   const html = shell({
-    preheader: `Your MeetSweet verification code is ${code}`,
+    preheader: `Your ${PRODUCT} verification code is ${code}`,
     content,
   });
 
   const text = [
-    "MeetSweet — Verify your email",
+    `${COMPANY} — Verify your email`,
     "",
-    `Hi ${firstName}, use the code below to activate your MeetSweet account:`,
+    `Hi ${firstName}, welcome to ${PRODUCT}.`,
+    "Enter the code below to activate your account:",
     "",
     code,
     "",
     "This code expires in 15 minutes.",
-    "If you didn't create an account, you can safely ignore this email.",
+    "Do not share this code with anyone.",
+    `If you didn't create a ${PRODUCT} account, you can safely ignore this email.`,
   ].join("\n");
 
   await deliver("verification", {
     to: opts.to,
-    subject: "Your MeetSweet verification code",
+    subject: `Your ${PRODUCT} verification code`,
+    html,
+    text,
+  });
+}
+
+// ─── Two-factor (sign-in) email ──────────────────────────────────────────────
+
+export async function sendTwoFactorEmail(opts: {
+  to: string;
+  name: string;
+  code: string;
+}): Promise<void> {
+  const firstName = (opts.name || opts.to).split(" ")[0];
+  const code = String(opts.code).replace(/\D/g, "");
+
+  const content = `
+    ${heading("Your sign-in code")}
+    ${subheading(
+      `Hi ${firstName}, enter the code below to finish signing in to your ${PRODUCT} account.`,
+    )}
+    ${divider()}
+    ${codeBlock(code)}
+    ${codeFootnote([
+      "This code expires in 15 minutes.",
+      "Do not share this code with anyone.",
+    ])}
+    ${securityNote(
+      `If you didn't try to sign in to your ${PRODUCT} account, someone may have your password. Change it immediately and contact support.`,
+    )}
+  `;
+
+  const html = shell({
+    preheader: `Your ${PRODUCT} sign-in code is ${code}`,
+    content,
+  });
+
+  const text = [
+    `${COMPANY} — Your sign-in code`,
+    "",
+    `Hi ${firstName}, enter the code below to finish signing in:`,
+    "",
+    code,
+    "",
+    "This code expires in 15 minutes.",
+    "Do not share this code with anyone.",
+    "If you didn't try to sign in, someone may have your password — change it immediately.",
+  ].join("\n");
+
+  await deliver("two_fa", {
+    to: opts.to,
+    subject: `Your ${PRODUCT} sign-in code`,
     html,
     text,
   });
@@ -327,36 +393,39 @@ export async function sendPasswordResetEmail(opts: {
   const content = `
     ${heading("Reset your password")}
     ${subheading(
-      `Hi ${firstName}, use the code below to set a new password for your MeetSweet account.`,
+      `Hi ${firstName}, use the code below to set a new password for your ${PRODUCT} account.`,
     )}
     ${divider()}
-    ${codeLabel()}
-    ${codeBox(code)}
-    ${expiryPill(15)}
+    ${codeBlock(code)}
+    ${codeFootnote([
+      "This code expires in 15 minutes.",
+      "Do not share this code with anyone.",
+    ])}
     ${securityNote(
-      "Didn't request a password reset? No action needed — your password is unchanged. Never share this code with anyone.",
+      "Didn't request a password reset? No action needed — your password is unchanged.",
     )}
   `;
 
   const html = shell({
-    preheader: `Your MeetSweet password reset code is ${code}`,
+    preheader: `Your ${PRODUCT} password reset code is ${code}`,
     content,
   });
 
   const text = [
-    "MeetSweet — Reset your password",
+    `${COMPANY} — Reset your password`,
     "",
     `Hi ${firstName}, use the code below to set a new password:`,
     "",
     code,
     "",
     "This code expires in 15 minutes.",
+    "Do not share this code with anyone.",
     "If you didn't request a reset, no action is needed — your password is unchanged.",
   ].join("\n");
 
   await deliver("password_reset", {
     to: opts.to,
-    subject: "Reset your MeetSweet password",
+    subject: `Reset your ${PRODUCT} password`,
     html,
     text,
   });
@@ -377,7 +446,7 @@ function amountHighlight(amount: number, currency: string): string {
       <tr>
         <td align="center">
           <p style="margin:0 0 10px 0;font-size:11px;font-weight:700;letter-spacing:2.5px;
-            color:${ACCENT};text-transform:uppercase;font-family:${FONT};">Amount</p>
+            color:${TEXT_3};text-transform:uppercase;font-family:${FONT};">Amount</p>
           <p style="margin:0;font-size:40px;font-weight:800;letter-spacing:-1px;line-height:1.1;
             color:${TEXT};font-family:${FONT};">${formatMoney(amount, currency)}</p>
         </td>
@@ -418,7 +487,7 @@ export async function sendWalletDepositEmail(opts: {
   const content = `
     ${heading("Wallet topped up")}
     ${subheading(
-      `Hi ${firstName}, your MeetSweet wallet has been credited successfully.`,
+      `Hi ${firstName}, your ${PRODUCT} wallet has been credited successfully.`,
     )}
     ${amountHighlight(opts.amount, currency)}
     ${detailRows([
@@ -426,17 +495,17 @@ export async function sendWalletDepositEmail(opts: {
       ["Method", "Paystack"],
     ])}
     ${securityNote(
-      "If you didn't make this payment, please contact MeetSweet support immediately.",
+      "If you didn't make this payment, please contact support immediately.",
     )}
   `;
 
   const html = shell({
-    preheader: `Your MeetSweet wallet was credited with ${formatMoney(opts.amount, currency)}`,
+    preheader: `Your ${PRODUCT} wallet was credited with ${formatMoney(opts.amount, currency)}`,
     content,
   });
 
   const text = [
-    "MeetSweet — Wallet topped up",
+    `${COMPANY} — Wallet topped up`,
     "",
     `Hi ${firstName}, your wallet has been credited with ${formatMoney(opts.amount, currency)}.`,
     `New balance: ${formatMoney(opts.newBalance, currency)}`,
@@ -446,7 +515,7 @@ export async function sendWalletDepositEmail(opts: {
 
   await deliver("wallet_deposit", {
     to: opts.to,
-    subject: `Your MeetSweet wallet was topped up with ${formatMoney(opts.amount, currency)}`,
+    subject: `Your ${PRODUCT} wallet was topped up with ${formatMoney(opts.amount, currency)}`,
     html,
     text,
   });
@@ -470,7 +539,7 @@ export async function sendWithdrawalRequestedEmail(opts: {
   const content = `
     ${heading("Withdrawal requested")}
     ${subheading(
-      `Hi ${firstName}, we've received your request to withdraw funds from your MeetSweet wallet.`,
+      `Hi ${firstName}, we've received your request to withdraw funds from your ${PRODUCT} wallet.`,
     )}
     ${amountHighlight(opts.amount, currency)}
     ${detailRows([
@@ -488,7 +557,7 @@ export async function sendWithdrawalRequestedEmail(opts: {
   });
 
   const text = [
-    "MeetSweet — Withdrawal requested",
+    `${COMPANY} — Withdrawal requested`,
     "",
     `Hi ${firstName}, we've received your request to withdraw ${formatMoney(opts.amount, currency)}.`,
     `Destination: ${opts.bankName ? `${opts.bankName} ${maskedAccount}` : maskedAccount}`,

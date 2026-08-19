@@ -5,11 +5,19 @@ import { users } from "@/lib/db/schema";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err, unauthorized } from "@/lib/api/response";
 import { twoFaVerifySchema } from "@/schemas/auth";
-import { verifyTotpChallenge } from "@/lib/auth/jwt";
-import { decryptTotpSecret, verifyTotpCode } from "@/lib/security/totp";
+import { verifyTwoFactorChallenge } from "@/lib/auth/jwt";
+import { consumeEmailCode } from "@/lib/auth/codes";
 import { issueSession } from "@/lib/auth/session";
 import { twoFactorVerifyLimit, getClientIp, tooManyRequests } from "@/lib/security/rate-limiter";
 
+/**
+ * POST /api/auth/2fa/verify
+ *
+ * Completes a login for a 2FA-enabled account. The password check already
+ * passed (see /auth/login) and a 6-digit sign-in code was emailed; this route
+ * verifies that code and issues the real session tokens. Codes are single-use
+ * and expire after 15 minutes.
+ */
 export async function POST(req: NextRequest) {
   const ip = getClientIp(req);
 
@@ -23,7 +31,7 @@ export async function POST(req: NextRequest) {
 
   let challenge;
   try {
-    challenge = await verifyTotpChallenge(challenge_token);
+    challenge = await verifyTwoFactorChallenge(challenge_token);
   } catch {
     return unauthorized("Invalid or expired verification session. Please log in again.");
   }
@@ -37,8 +45,7 @@ export async function POST(req: NextRequest) {
       role: users.role,
       is_creator: users.is_creator,
       is_active: users.is_active,
-      totp_secret: users.totp_secret,
-      totp_enabled: users.totp_enabled,
+      two_fa_enabled: users.two_fa_enabled,
     })
     .from(users)
     .where(eq(users.id, challenge.userId))
@@ -47,12 +54,11 @@ export async function POST(req: NextRequest) {
   if (!user || !user.is_active) {
     return unauthorized("Invalid or expired verification session. Please log in again.");
   }
-  if (!user.totp_enabled) {
+  if (!user.two_fa_enabled) {
     return err("Two-factor authentication is not enabled for this account", 400, "NOT_ENABLED");
   }
 
-  const secret = decryptTotpSecret(user.totp_secret);
-  if (!secret || !verifyTotpCode(secret, code)) {
+  if (!(await consumeEmailCode(user.id, "two_fa", code))) {
     return unauthorized("Invalid verification code");
   }
 

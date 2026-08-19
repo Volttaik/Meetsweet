@@ -1,5 +1,17 @@
 import { and, asc, eq, isNull, gte } from "drizzle-orm";
 import { db } from "@/lib/db";
+
+/**
+ * Quality variants for an album media item. Always a single progressive MP4:
+ * album playback runs through expo-av (MsVideoPlayer), which cannot play HLS.
+ * Multi-quality remains exclusive to long-form videos.
+ */
+function buildAlbumQualities(item: {
+  url: string | null;
+  height?: number | null;
+}): Array<{ label: string; url: string; height: number | null; index?: number | null }> {
+  return [{ label: "Auto", url: item.url ?? "", height: item.height ?? null, index: null }];
+}
 import {
   albums,
   album_items,
@@ -80,10 +92,10 @@ export async function loadAlbum(albumId: string, userId?: string | null) {
     width: unlocked ? item.width : null,
     height: unlocked ? item.height : null,
     duration_secs: unlocked ? item.duration_seconds : null,
-    // Server-authoritative playable qualities (single Auto entry today; the
-    // player shows a selector only when multiple variants exist). Nulled for
-    // locked items so no media URL leaks before purchase.
-    qualities: unlocked && item.url ? [{ label: "Auto", url: item.url, height: item.height ?? null }] : [],
+    // Server-authoritative playable qualities (single Auto MP4 entry — album
+    // playback runs through expo-av, which cannot play HLS). Nulled for locked
+    // items so no media URL leaks before purchase.
+    qualities: unlocked && item.url ? buildAlbumQualities(item) : [],
     is_locked: !unlocked,
   }));
 
