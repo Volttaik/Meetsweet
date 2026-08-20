@@ -20,8 +20,9 @@
 - **Runtime:** Next.js 15 (App Router route handlers), Node ≥ 20, TypeScript.
 - **Database:** Turso (libSQL) via Drizzle ORM. Schema source of truth:
   `server/lib/db/schema.ts`.
-- **Storage:** Cloudflare R2 (S3-compatible) — `server/lib/services/r2.ts` and
-  `app/api/media/upload/route.ts`.
+- **Storage:** Cloudflare R2 (S3-compatible) — `server/lib/services/r2.ts`
+  (presigned GETs), `server/lib/services/uploads.ts` + `app/api/uploads/*`
+  (direct-to-storage upload sessions).
 - **Email:** Resend — `server/lib/services/email.ts`.
 - **Payments:** Paystack — `server/app/api/payments/*`.
 - **Auth:** Argon2 password hashing + `jose` JWTs. Access token 15m, refresh
@@ -393,15 +394,35 @@ on submission.
 
 ## 14. Media & Uploads
 
+Media bytes **never pass through the Vercel request body**. Uploads are
+**direct-to-storage** (Cloudflare R2), authorized by the server:
+
+1. `POST /api/uploads` — authorize the upload (mime / file_name / size_bytes /
+   folder / transcode). Returns a single presigned PUT URL for small files, or
+   a multipart upload id + per-part presigned PUT URLs for files > 20 MiB.
+2. The mobile PUTs bytes directly to R2 (one object, or per part with ETag
+   tracking + per-part retry).
+3. `POST /api/uploads/:id/complete` — the server validates ownership + the
+   reported parts, completes the multipart upload (or HEADs the single object),
+   then creates the media row. A media record only exists after the bytes are
+   confirmed in storage.
+
 | Mobile call | Route | Status |
 |---|---|---|
-| `uploadMedia(uri, mime, name)` | `POST /upload` (multipart `file`) | ✅ `/upload` alias over `/media/upload` |
+| `uploadMedia(uri, mime, name)` | `POST /api/uploads` → direct R2 PUT → `POST /api/uploads/:id/complete` | ✅ |
+| re-issue a part URL (resume) | `POST /api/uploads/:id/parts/:partNumber` | ✅ |
+| session status | `GET /api/uploads/:id` | ✅ |
+| cancel/abort | `DELETE /api/uploads/:id` | ✅ |
+| attach metadata (width/height/duration/thumbnail) | `PATCH /media/:id` | ✅ |
 | create-post cleanup | `DELETE /media/:id` | ✅ |
 
-Uploads are associated with the originating user (and optionally `post_id`).
-R2 direct upload/download credential routes (`/credentials/upload-url`,
-`/credentials/download-url`) are the scoped-credential broker for
-client-direct transfers.
+Uploads are associated with the originating user via an `upload_sessions` row
+(status: `pending | uploading | completed | failed | cancelled`); abandoned
+multipart uploads are swept by `server/scripts/cleanup-uploads.ts`. The legacy
+`POST /upload` / `POST /media/upload` multipart route is **removed** (returns
+410) — it buffered the whole file in the serverless body and hit the Vercel
+413 limit. The `/credentials/upload-url` / `/credentials/download-url` broker
+remains only for the seed script; the app's authoritative path is `/uploads/*`.
 
 ---
 
