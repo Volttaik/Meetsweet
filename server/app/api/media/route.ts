@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { media } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
-import { created } from "@/lib/api/response";
+import { created, err } from "@/lib/api/response";
 import { generateId } from "@/lib/auth/codes";
 
 const schema = z.object({
@@ -35,6 +35,17 @@ export async function POST(req: NextRequest) {
 
   const parsed = await parseBody(req, schema);
   if (!parsed.success) return parsed.response;
+
+  // Ownership: the object key must sit under one of the authenticated user's
+  // own storage prefixes. This prevents registering (and thereby claiming)
+  // another user's uploaded object.
+  const key = parsed.data.blob_path;
+  const ownPrefixes = ["posts", "avatars", "uploads", "documents"].map(
+    (folder) => `${folder}/${auth.user.userId}/`,
+  );
+  if (!ownPrefixes.some((prefix) => key.startsWith(prefix))) {
+    return err("You may only register media under your own storage path", 403, "FORBIDDEN");
+  }
 
   const mediaId = generateId();
   await db.insert(media).values({

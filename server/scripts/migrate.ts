@@ -937,6 +937,43 @@ async function run() {
       name: "search: albums.title index",
       sql: `CREATE INDEX IF NOT EXISTS albums_title_idx ON albums(title)`,
     },
+
+    // ── Direct-to-storage upload sessions ─────────────────────────────────
+    // Backs the multipart/resumable R2 upload flow. The media row is only
+    // created on completion, so an abandoned upload never leaves a dangling
+    // media record.
+    {
+      name: "create upload_sessions",
+      sql: `
+        CREATE TABLE IF NOT EXISTS upload_sessions (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          key TEXT NOT NULL,
+          folder TEXT NOT NULL,
+          type TEXT NOT NULL,
+          mime_type TEXT NOT NULL,
+          file_name TEXT,
+          size_bytes INTEGER,
+          upload_id TEXT,
+          part_size INTEGER,
+          part_count INTEGER,
+          transcode INTEGER NOT NULL DEFAULT 0,
+          status TEXT NOT NULL DEFAULT 'pending',
+          media_id TEXT,
+          expires_at TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+          updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        )
+      `,
+    },
+    {
+      name: "upload_sessions: user index",
+      sql: `CREATE INDEX IF NOT EXISTS upload_sessions_user_idx ON upload_sessions(user_id)`,
+    },
+    {
+      name: "upload_sessions: status index",
+      sql: `CREATE INDEX IF NOT EXISTS upload_sessions_status_idx ON upload_sessions(status)`,
+    },
   ];
 
   for (const m of migrations) {

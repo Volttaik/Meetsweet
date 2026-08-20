@@ -265,6 +265,51 @@ export const media = sqliteTable("media", {
   index("media_uploader_idx").on(table.uploader_id),
 ]);
 
+// ─── Direct-to-storage upload sessions ──────────────────────────────────────
+// Authoritative record of a mobile upload. The server issues a presigned PUT
+// (single) or a CreateMultipartUpload + presigned part URLs (multipart); the
+// bytes go straight to R2 and NEVER traverse the Vercel request body. The
+// media row is only created once the client confirms completion.
+//
+// status lifecycle: pending → uploading → completed | failed | cancelled
+//   pending    — session created, authorization handed to the client
+//   uploading  — client reported it started uploading parts
+//   completed  — object finalized in R2 and a media row created (media_id set)
+//   failed     — a finalize/complete attempt failed
+//   cancelled  — client aborted, or the session was swept as abandoned
+export const upload_sessions = sqliteTable(
+  "upload_sessions",
+  {
+    id: id(),
+    user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    // R2 object key — always <folder>/<userId>/<uuid>.<ext> so ownership is
+    // intrinsic to the path and can be re-validated before finalization.
+    key: text("key").notNull(),
+    folder: text("folder").notNull(),
+    type: text("type", { enum: ["image", "video", "audio", "document"] }).notNull(),
+    mime_type: text("mime_type").notNull(),
+    file_name: text("file_name"),
+    size_bytes: integer("size_bytes"),
+    // R2/S3 multipart upload id (null for the single-PUT mode).
+    upload_id: text("upload_id"),
+    part_size: integer("part_size"),
+    part_count: integer("part_count"),
+    // Long-form video: client requested Cloudflare Stream transcoding.
+    transcode: integer("transcode", { mode: "boolean" }).notNull().default(false),
+    status: text("status", { enum: ["pending", "uploading", "completed", "failed", "cancelled"] })
+      .notNull()
+      .default("pending"),
+    media_id: text("media_id"),
+    expires_at: text("expires_at").notNull(),
+    created_at: createdAt(),
+    updated_at: updatedAt(),
+  },
+  (table) => [
+    index("upload_sessions_user_idx").on(table.user_id),
+    index("upload_sessions_status_idx").on(table.status),
+  ],
+);
+
 export const post_likes = sqliteTable("post_likes", {
   id: id(),
   user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
