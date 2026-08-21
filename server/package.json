@@ -20,6 +20,7 @@
     "@libsql/client": "^0.14.0",
     "argon2": "^0.41.1",
     "drizzle-orm": "^0.38.4",
+    "google-auth-library": "^11.0.2",
     "jose": "^5.9.6",
     "next": "^15.1.6",
     "react": "^19.1.0",

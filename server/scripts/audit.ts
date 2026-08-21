@@ -11,8 +11,8 @@
  *
  * Read-only — never writes. Exit code 0 = clean, 1 = findings found.
  *
- * See scripts/audit-data-3.ts and audit-data-5.ts for the detailed,
- * always-report versions of these checks.
+ * The detailed always-report variants (audit-data-*.ts) were one-off scripts
+ * removed during cleanup; they are recoverable from git history.
  */
 import { createClient } from "@libsql/client";
 

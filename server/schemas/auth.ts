@@ -13,6 +13,7 @@ export const registerSchema = z.object({
   date_of_birth: z.string().max(10).optional(),
   dob: z.string().max(10).optional(),
   avatar_url: z.string().url().optional(),
+  referral_code: z.string().trim().min(6).max(32).regex(/^[a-zA-Z0-9]+$/).optional(),
   password: z.string().min(8).max(128),
   confirm_password: z.string(),
 }).refine((d) => d.password === d.confirm_password, {
@@ -24,6 +25,12 @@ export const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
   device_id: z.string().optional(),
+});
+
+export const googleAuthSchema = z.object({
+  id_token: z.string().min(100),
+  device_id: z.string().optional(),
+  referral_code: z.string().trim().min(6).max(32).regex(/^[a-zA-Z0-9]+$/).optional(),
 });
 
 export const verifyEmailSchema = z.object({

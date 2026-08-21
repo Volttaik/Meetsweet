@@ -17,6 +17,7 @@ export type PushPayload = {
   body: string;
   sound?: "default" | null;
   badge?: number;
+  channelId?: string;
   data?: Record<string, unknown>;
 };
 
@@ -26,6 +27,7 @@ type ExpoMessage = {
   body: string;
   sound: "default" | null;
   badge: number;
+  channelId?: string;
   data: Record<string, unknown>;
 };
 
@@ -88,6 +90,7 @@ export async function sendPushToTokens(
     body: payload.body,
     sound: payload.sound ?? "default",
     badge: payload.badge ?? 1,
+    channelId: payload.channelId ?? "default",
     data: payload.data ?? {},
   }));
 

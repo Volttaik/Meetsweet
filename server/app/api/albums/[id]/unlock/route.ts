@@ -1,11 +1,13 @@
 import { NextRequest } from "next/server";
 import { and, eq, gte, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { album_unlocks, albums, transactions, users, wallets } from "@/lib/db/schema";
+import { album_unlocks, albums, notifications, transactions, users, wallets } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
 import { err, ok } from "@/lib/api/response";
 import { generateId } from "@/lib/auth/codes";
 import { loadAlbum } from "@/lib/services/albums";
+import { recordCreatorEarning } from "@/lib/services/creator-finance";
+import { sendPushToUser, getActorUsername } from "@/lib/services/push";
 
 export async function POST(
   req: NextRequest,
@@ -42,31 +44,21 @@ export async function POST(
         .returning({ id: wallets.id });
       if (!updatedBuyer) throw new Error("INSUFFICIENT_BALANCE");
 
-      const [creatorWallet] = await tx.select({ id: wallets.id })
-        .from(wallets).where(eq(wallets.user_id, album.creator_id)).limit(1);
-      if (creatorWallet) {
-        await tx.update(wallets).set({
-          balance: sql`${wallets.balance} + ${price}`,
-          updated_at: new Date().toISOString(),
-        }).where(eq(wallets.id, creatorWallet.id));
-      } else {
-        await tx.insert(wallets).values({
-          id: generateId(), user_id: album.creator_id, balance: price, currency: "NGN",
-        });
-      }
+      await tx.insert(transactions).values({
+        id: generateId(), user_id: auth.user.userId, type: "album_unlock",
+        amount: -price, status: "success", description: "Unlocked paid album",
+        metadata: JSON.stringify({ album_id: id, creator_id: album.creator_id }),
+      });
 
-      await tx.insert(transactions).values([
-        {
-          id: generateId(), user_id: auth.user.userId, type: "album_unlock",
-          amount: -price, status: "success", description: "Unlocked paid album",
-          metadata: JSON.stringify({ album_id: id, creator_id: album.creator_id }),
-        },
-        {
-          id: generateId(), user_id: album.creator_id, type: "album_unlock_earn",
-          amount: price, status: "success", description: "Album unlocked by a fan",
-          metadata: JSON.stringify({ album_id: id, buyer_id: auth.user.userId }),
-        },
-      ]);
+      await recordCreatorEarning(tx, {
+        creatorId: album.creator_id,
+        buyerId: auth.user.userId,
+        sourceType: "album_unlock",
+        sourceId: id,
+        grossAmount: price,
+        description: "Album unlocked by a fan",
+        metadata: { album_id: id, buyer_id: auth.user.userId },
+      });
       await tx.insert(album_unlocks).values({
         id: generateId(), album_id: id, user_id: auth.user.userId, credits_spent: price,
       });
@@ -77,6 +69,23 @@ export async function POST(
     }
     throw error;
   }
+
+  await db.insert(notifications).values({
+    id: generateId(),
+    user_id: album.creator_id,
+    actor_id: auth.user.userId,
+    type: "payment",
+    entity_type: "album",
+    entity_id: id,
+    body: "Your album received a new purchase",
+  }).catch(() => {});
+  getActorUsername(auth.user.userId).then((actor) =>
+    sendPushToUser(album.creator_id, {
+      title: "Album Purchase",
+      body: `${actor} unlocked your album`,
+      data: { type: "payment", wallet: true, content_type: "album", album_id: id, content_id: id },
+    }, "notif_creator_updates"),
+  );
 
   return ok({ unlocked: true, already_unlocked: false, album: await loadAlbum(id, auth.user.userId) });
 }

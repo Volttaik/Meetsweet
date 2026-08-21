@@ -9,6 +9,7 @@ import { ok, err, created } from "@/lib/api/response";
 import { generateId } from "@/lib/auth/codes";
 import { sendPushToUser, getActorUsername } from "@/lib/services/push";
 import { resolveBasePrice } from "@/lib/services/pricing";
+import { recordCreatorEarning } from "@/lib/services/creator-finance";
 
 // Subscription tier pricing:
 //   subscriber      → creator's own subscription_price
@@ -174,6 +175,18 @@ export async function POST(req: NextRequest) {
         });
       }
 
+      if (price > 0) {
+        await recordCreatorEarning(tx, {
+          creatorId: creator_id,
+          buyerId: auth.user.userId,
+          sourceType: "subscription",
+          sourceId: subId,
+          grossAmount: price,
+          description: `Subscription from a fan (${auth.user.userId})`,
+          metadata: { subscriber_id: auth.user.userId, tier: resolvedTier },
+        });
+      }
+
       await tx.insert(subscriptions).values({
         id: subId,
         subscriber_id: auth.user.userId,
@@ -225,6 +238,7 @@ export async function POST(req: NextRequest) {
       body: `${actor} just subscribed to you`,
       data: {
         type: "subscribe",
+        wallet: true,
         actor_id: auth.user.userId,
         actor_username: actor.replace(/^@/, ""),
       },

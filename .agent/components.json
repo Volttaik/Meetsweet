@@ -1,0 +1,217 @@
+{
+  "repo": "Meetsweet (backend)",
+  "description": "Machine-readable map of API route groups, services, lib modules, and their interactions. Paths are relative to server/.",
+  "auth": {
+    "middleware": "middleware/auth.ts",
+    "notes": "Validates Bearer JWT (15m access token), attaches { userId, role } to the request. Refresh-token rotation/revocation in lib/auth/session.ts. 2FA challenge tokens (5m) for accounts with email-code 2FA.",
+    "token_lifetimes": { "access": "15m", "refresh": "30d (unique jti)", "two_fa_challenge": "5m", "verification_codes": "15m" }
+  },
+  "api_routes": {
+    "auth": {
+      "prefix": "/api/auth",
+      "endpoints": {
+        "POST /register": "Create account; returns verification pending",
+        "POST /login": "Password check; 2FA accounts get challenge token; returns access+refresh tokens",
+        "POST /refresh": "Rotate refresh token → new access+refresh",
+        "POST /logout": "Revoke current session/tokens",
+        "POST /logout-all": "Revoke every session for the user",
+        "POST /forgot-password": "Send reset code email",
+        "POST /reset-password": "Verify code + set new password",
+        "POST /verify-email": "Verify registration email via code",
+        "POST /resend-verification": "Resend verification email",
+        "POST /change-password": "Change password while logged in",
+        "POST /delete-account": "Permanently delete account (free identity for re-register)",
+        "GET /username-availability": "Check username is free",
+        "2fa/setup|status|enable|disable|verify": "Email-code 2FA lifecycle",
+        "POST /biometric": "Register/verify biometric credential"
+      }
+    },
+    "users": {
+      "prefix": "/api/users",
+      "endpoints": {
+        "GET/PATCH /me": "Own profile read/update",
+        "GET/PATCH /me/settings": "App settings (alias of /api/settings)",
+        "GET/PATCH /me/privacy": "Privacy settings",
+        "GET/PATCH /me/notifications": "Notification settings",
+        "GET /[username]": "Public profile by username",
+        "GET /[username]/posts": "User's public posts",
+        "POST /[username]/follow|block|mute": "Social actions (per-viewer state)",
+        "POST /[username]/report": "Report user",
+        "GET /search": "User search"
+      }
+    },
+    "content": {
+      "prefix": "/api/posts, /api/shorts, /api/videos, /api/media",
+      "endpoints": {
+        "GET /posts/feed": "Home feed (ranked, per-viewer)",
+        "CRUD /posts": "Posts (draft → publish → archive/restore)",
+        "POST /posts/[id]/like|bookmark|hide|report|view|purchase|publish": "Post actions; like/view return authoritative counts",
+        "GET /shorts/feed, /shorts/recommendations": "Shorts feeds",
+        "POST /shorts/[id]/like|view": "Short actions",
+        "GET /videos, /videos/recommendations": "Long-form video feeds",
+        "POST /videos/[id]/like|view": "Video actions; views are deduped per account (post_views)",
+        "GET/POST /media, GET /media/[id]": "Media metadata + registration"
+      }
+    },
+    "albums": {
+      "prefix": "/api/albums",
+      "endpoints": {
+        "GET/POST /albums": "List/create albums (accepts unlock_price|price|price_credits)",
+        "GET /albums/[id]": "Album detail; locked item URLs nulled; isUnlockedByMe from live rows",
+        "GET/POST /albums/[id]/items": "Album media items (images + videos)",
+        "DELETE /albums/[id]/items/[mediaId]": "Remove item",
+        "POST /albums/[id]/unlock": "Atomic purchase: wallet debit + creator credit + transactions + album_unlocks; 402 INSUFFICIENT_BALANCE on low balance; { purchased, already_unlocked }",
+        "POST /albums/[id]/purchase": "Purchase alias"
+      }
+    },
+    "creators": {
+      "prefix": "/api/creators, /api/creator",
+      "endpoints": {
+        "GET /creators": "Catalog with per-viewer subscribed_to_creator + subscription_tier",
+        "GET /creators/[id]": "Creator profile (gate content server-side)",
+        "GET /creators/[id]/posts|shorts|videos|albums|reviews|stats|subscribers": "Creator content & analytics",
+        "POST /creators/[id]/subscribe": "Subscribe/unsubscribe; returns authoritative state",
+        "GET /creators/[id]/messaging-settings, PATCH /creators/[id]/messaging-settings": "Message permission settings",
+        "POST /creator/become": "Apply to become creator",
+        "GET /creator/dashboard, /creator/statistics": "Creator dashboard data",
+        "GET/PATCH /creator/settings": "Creator settings",
+        "POST /creator/verification": "Creator verification",
+        "GET /creator/wallet/balance, /creator/wallet/bank-details": "Creator wallet",
+        "POST /creator/wallet/withdraw, /creator/wallet/withdraw/finalize": "Withdrawals",
+        "GET /creator/wallet/withdrawals": "Withdrawal history"
+      }
+    },
+    "subscriptions": {
+      "prefix": "/api/subscriptions",
+      "endpoints": {
+        "GET /check/[creatorId]": "Per-viewer subscription state",
+        "GET /": "List my subscriptions",
+        "POST /[id]/cancel|upgrade|downgrade": "Plan changes"
+      }
+    },
+    "wallet_payments": {
+      "prefix": "/api/wallet, /api/payments, /api/transactions",
+      "endpoints": {
+        "GET /wallet": "Wallet balance + state",
+        "GET /payments/balance": "Balance alias",
+        "POST /payments/initiate-paystack": "Create Paystack virtual account (config-gated 503 without keys)",
+        "POST /payments/paystack-webhook": "Paystack confirmation webhook",
+        "POST /payments/verify-paystack": "Client-side verification of funding",
+        "GET /payments/banks, POST /payments/resolve-account, POST /payments/save-bank-details": "Bank transfer support",
+        "POST /payments/withdraw": "Request withdrawal",
+        "GET /payments/withdrawal-history": "Withdrawal history",
+        "GET /transactions": "Transaction ledger"
+      }
+    },
+    "messaging": {
+      "prefix": "/api/chat-rooms",
+      "endpoints": {
+        "GET/POST /chat-rooms": "List/create rooms (idempotent; strictly scoped to authenticated user)",
+        "GET/PATCH /chat-rooms/[id]": "Room detail/update",
+        "GET/POST /chat-rooms/[id]/messages": "Messages (paginated)",
+        "PATCH/DELETE /chat-rooms/[id]/messages/[messageId]": "Edit/delete message",
+        "POST /chat-rooms/[id]/messages/[messageId]/reactions": "Reactions",
+        "POST /chat-rooms/[id]/read|mute|archive|clear": "Room state",
+        "GET /chat-rooms/[id]/context": "Room context",
+        "GET /chat-rooms/[id]/changes": "Poll-based incremental updates"
+      }
+    },
+    "comments": {
+      "prefix": "/api/comment-rooms",
+      "endpoints": {
+        "GET/POST /comment-rooms/[id]/comments": "Comments (pinned composer flow)",
+        "POST /comment-rooms/[id]/comments/[commentId]/like": "Comment likes (authoritative)",
+        "GET/POST /comment-rooms/[id]/comments/[commentId]/replies": "Replies",
+        "PATCH/DELETE /comment-rooms/[id]/comments/[commentId]": "Edit/delete",
+        "GET /comment-rooms/[id]/comments/changes": "Poll-based incremental updates"
+      }
+    },
+    "notifications": {
+      "prefix": "/api/notifications",
+      "endpoints": {
+        "GET /notifications": "Notification feed (likes, comments, subscriptions, messages, new posts)",
+        "POST /notifications/[id]/read": "Mark one read",
+        "POST /notifications/read-all": "Mark all read",
+        "POST /notifications/push-token": "Register push token"
+      }
+    },
+    "sharing": {
+      "prefix": "/api/share, /api/shares",
+      "endpoints": {
+        "POST /share/create": "Mint share token for post/album/creator",
+        "POST /share/resolve/[token]": "Resolve token → { type, id }",
+        "GET /shares/[token]": "Resolve alias"
+      }
+    },
+    "discovery": {
+      "prefix": "/api/explore, /api/search, /api/categories",
+      "endpoints": {
+        "GET /explore": "Discovery feed",
+        "GET /search, /search/trending, /search/recent": "Search + trending + recent searches",
+        "GET /categories": "Categories",
+        "GET /collections": "Saved/bookmarked collections"
+      }
+    },
+    "uploads": {
+      "prefix": "/api/uploads",
+      "endpoints": {
+        "POST /uploads": "Authorize direct-to-R2 upload → upload_sessions + presigned URLs",
+        "POST /uploads/[id]/parts/[partNumber]": "Multipart part presign (files > 20 MiB)",
+        "POST /uploads/[id]/complete": "Verify bytes in R2, create media row",
+        "GET/DELETE /uploads/[id]": "Inspect/abort session",
+        "POST /upload": "LEGACY multipart route — returns 410 Gone"
+      }
+    },
+    "settings": {
+      "prefix": "/api/settings",
+      "endpoints": {
+        "GET/PATCH /settings": "App settings",
+        "GET/PATCH /settings/notifications": "Notification settings",
+        "GET/PATCH /settings/privacy": "Privacy settings"
+      }
+    },
+    "system": {
+      "prefix": "/api/health, /api/healthz, /api/diagnostic, /api/credentials, /api/webhooks/stream",
+      "endpoints": {
+        "GET /health, /healthz": "Liveness",
+        "GET /diagnostic": "Which external services are configured",
+        "credentials/*": "Credential broker endpoints (token grant/refresh/revoke, config, db, email, payment, upload-url, download-url)",
+        "POST /webhooks/stream": "Cloudflare Stream webhook (HLS ready)"
+      }
+    }
+  },
+  "services": {
+    "lib/services/albums.ts": "Album load/access rules: owner/purchaser/locked; nulls item URLs when locked; unlock transaction",
+    "lib/services/chat-rooms.ts": "Chat room + message CRUD, scoped to authenticated user; changes polling",
+    "lib/services/comment-rooms.ts": "Comment room CRUD, comments, likes, replies; changes polling",
+    "lib/services/content.ts": "Posts/shorts/videos/albums content model, feed queries, share token mint+resolve",
+    "lib/services/email.ts": "Resend transactional email; MeetSweet branding; 5 templates with silhouette SVG",
+    "lib/services/paystack.ts": "Paystack virtual-account funding + withdrawals (config-gated)",
+    "lib/services/pricing.ts": "Authoritative creator pricing (resolveBasePrice, default ₦200, album price aliases)",
+    "lib/services/push.ts": "Push notification dispatch",
+    "lib/services/r2.ts": "S3-compatible R2 client, presigning, immutable CacheControl",
+    "lib/services/stream.ts": "Cloudflare Stream HLS multi-quality (optional; MP4 fallback)",
+    "lib/services/uploads.ts": "Direct-to-R2 upload sessions: presign, multipart orchestration, complete",
+    "lib/services/views.ts": "View counting, deduped per account (post_views)"
+  },
+  "lib_modules": {
+    "lib/api/response.ts": "ok/created/err/unauthorized/forbidden/notFound/serverError; envelope { ok, data|error, code }",
+    "lib/api/validate.ts": "parseBody / parseQuery (zod) → 422 with field errors",
+    "lib/auth/codes.ts": "6-digit verification codes with expiry",
+    "lib/auth/jwt.ts": "jose HS256: access 15m, refresh 30d (unique jti), 2FA challenge 5m",
+    "lib/auth/password.ts": "Password hash/verify",
+    "lib/auth/session.ts": "Session rows + refresh-token rotation/revocation",
+    "lib/config.ts": "Env config with production-name fallbacks; serviceConfigured() gates",
+    "lib/db/index.ts": "libsql client (TURSO_DATABASE_URL, never DATABASE_URL)",
+    "lib/db/schema.ts": "Drizzle schema, 40 tables (see db-schema.json)",
+    "lib/security/rate-limiter.ts": "Per-IP in-memory sliding window (e.g. 10 logins/15min)"
+  },
+  "key_interactions": {
+    "auth_flow": "register → verify-email (code) → auto-login; login → (2FA challenge → 2fa/verify) → access+refresh tokens; refresh rotates; logout revokes; expired/revoked refresh → 401 → client forces re-login",
+    "upload_flow": "POST /uploads → presigned R2 PUT (or parts) → POST /uploads/:id/complete → media row → attach to post/album/short",
+    "album_purchase_flow": "GET /albums/:id (locked) → POST /albums/:id/unlock (atomic debit+credit+unlocks) → GET /albums/:id now unlocked; client wallet + header balance update from server response",
+    "wallet_flow": "POST /payments/initiate-paystack (virtual account) → paystack-webhook confirms → transactions row + wallet credit → client polls/refetches balance",
+    "share_flow": "POST /share/create → token → client opens meetsweet://s/<token> → POST /share/resolve/:token → deep-link to post/album/creator screen",
+    "realtime_flow": "Mutations (like/comment/subscribe/unlock) return authoritative state in the response; chat/comment rooms expose /changes polling endpoints"
+  }
+}

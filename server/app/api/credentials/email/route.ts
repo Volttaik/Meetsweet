@@ -3,6 +3,7 @@ import { Resend } from "resend";
 import { requireAuth } from "@/middleware/auth";
 import { ok, err } from "@/lib/api/response";
 import { config } from "@/lib/config";
+import { emailSender } from "@/lib/services/email";
 import { z } from "zod";
 
 const emailSchema = z.object({
@@ -39,8 +40,10 @@ export async function POST(req: NextRequest) {
   const auth = await requireAuth(req);
   if ("response" in auth) return auth.response;
 
-  const sender = config.resend.sender();
-  if (!sender) return err("Email sender is not configured on this broker", 503);
+  if (!config.resend.sender()) return err("Email sender is not configured on this broker", 503);
+  // The display name is always the company identity; the verified address is
+  // preserved from config.
+  const sender = emailSender();
 
   let body: unknown;
   try {

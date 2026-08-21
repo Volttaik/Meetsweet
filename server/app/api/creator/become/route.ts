@@ -12,13 +12,26 @@ export async function POST(req: NextRequest) {
   if ("response" in auth) return auth.response;
 
   const [user] = await db
-    .select({ id: users.id, is_creator: users.is_creator })
+    .select({ id: users.id, is_creator: users.is_creator, creator_activation_paid: users.creator_activation_paid })
     .from(users)
     .where(eq(users.id, auth.user.userId))
     .limit(1);
 
   if (!user) return err("User not found", 404);
-  if (user.is_creator) return err("You are already a creator", 409);
+  if (user.is_creator && user.creator_activation_paid) {
+    return err("You are already a creator", 409);
+  }
+
+  // Require the one-time ₦1,000 creator activation fee to have been paid.
+  // The client should call /api/creator/activation first to initiate Paystack
+  // payment, then /api/creator/activation/verify to confirm it.
+  if (!user.creator_activation_paid) {
+    return err(
+      "A one-time creator activation fee of ₦1,000 is required before you can become a creator. Please complete the payment.",
+      402,
+      "ACTIVATION_REQUIRED",
+    );
+  }
 
   const now = new Date().toISOString();
 
@@ -39,8 +52,6 @@ export async function POST(req: NextRequest) {
     await db.insert(creator_settings).values({
       id: generateId(),
       user_id: auth.user.userId,
-      // New creators start at the default ₦200/mo price — a 0 here would
-      // surface as "Free" everywhere (profile, dashboard, subscribe modal).
       subscription_price: DEFAULT_SUBSCRIPTION_PRICE,
     });
   }

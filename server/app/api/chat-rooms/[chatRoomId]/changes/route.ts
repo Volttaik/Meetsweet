@@ -1,7 +1,25 @@
 import { NextRequest } from "next/server";
+import { eq, and, sql } from "drizzle-orm";
 import { requireAuth } from "@/middleware/auth";
 import { ok } from "@/lib/api/response";
+import { db } from "@/lib/db";
 import { getMember, listRoomMessages } from "@/lib/services/chat-rooms";
+import { typing_states } from "@/lib/db/schema";
+
+/** Return userIds currently typing in a room, excluding the requesting user. */
+async function getTypingUsers(chatRoomId: string, excludeUserId: string): Promise<string[]> {
+  const now = new Date().toISOString();
+  const rows = await db
+    .select({ user_id: typing_states.user_id })
+    .from(typing_states)
+    .where(
+      and(
+        eq(typing_states.chat_room_id, chatRoomId),
+        sql`${typing_states.expires_at} > ${now}`,
+      ),
+    );
+  return rows.map((r) => r.user_id).filter((id) => id !== excludeUserId);
+}
 
 export async function GET(
   req: NextRequest,
@@ -22,5 +40,6 @@ export async function GET(
   }
 
   const messages = await listRoomMessages(chatRoomId, auth.user.userId, { after: since });
-  return ok({ changed: messages.length > 0, marker, messages });
+  const typingUserIds = await getTypingUsers(chatRoomId, auth.user.userId);
+  return ok({ changed: messages.length > 0, marker, messages, typing: typingUserIds });
 }

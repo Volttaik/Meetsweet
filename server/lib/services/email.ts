@@ -4,7 +4,7 @@ import { config } from "@/lib/config";
 /**
  * MeetSweet transactional email service (Resend).
  *
- * Branding: emails are professional company communications from MeetSuite
+ * Branding: emails are professional company communications from MeetSweet
  * Industries (the company behind MeetSweet). The identity mark is the
  * white/black silhouette — rendered as an INLINE SVG data URI (no dependency
  * on a hosted raster image), with a hosted-PNG fallback for Outlook (mso) and
@@ -28,7 +28,7 @@ const TEXT = "#FFFFFF";
 const TEXT_2 = "rgba(255,255,255,0.62)";
 const TEXT_3 = "rgba(255,255,255,0.38)";
 const FONT = "'Poppins','Helvetica Neue',Helvetica,Arial,sans-serif";
-const COMPANY = "MeetSuite Industries";
+const COMPANY = "MeetSweet Industries";
 const PRODUCT = "MeetSweet";
 
 /**
@@ -52,8 +52,12 @@ function getResend(): Resend {
   return resend;
 }
 
-/** Sender address with a professional company display name. */
-function sender(): string {
+/**
+ * Sender address with a professional company display name (MeetSweet
+ * Industries). The verified sending address itself comes from config and is
+ * never changed here — only the display name is added when missing.
+ */
+export function emailSender(): string {
   const s = config.resend.sender();
   if (!s) throw new Error("VERIFIED_SENDER_EMAIL is required");
   return s.includes("<") ? s : `${COMPANY} <${s}>`;
@@ -65,10 +69,14 @@ function logoUrl(): string {
   return `${base}/meetsweet-logo.png`;
 }
 
-/** The silhouette as an inline SVG data URI (primary brand mark). */
+/**
+ * The silhouette as an inline SVG data URI (primary brand mark). The mark is
+ * a portrait silhouette on a square canvas, so the SVG box keeps the path's
+ * natural aspect ratio (469×973) — never stretched into a square.
+ */
 function logoDataUri(): string {
   const svg = [
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="296 29 469 973" width="40" height="40">`,
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="296 29 469 973" width="24" height="50">`,
     `<path d="${LOGO_PATH}" fill="#FFFFFF"/>`,
     `</svg>`,
   ].join("");
@@ -111,7 +119,7 @@ async function deliver(
 ): Promise<void> {
   try {
     await getResend().emails.send({
-      from: sender(),
+      from: emailSender(),
       to: opts.to,
       subject: opts.subject,
       html: opts.html,
@@ -127,28 +135,31 @@ async function deliver(
 // ─── Shared components ───────────────────────────────────────────────────────
 
 /**
- * Company header: inline SVG silhouette + wordmark. Non-Outlook clients get
- * the inline vector (no hosted dependency); Outlook gets the hosted PNG via an
- * mso conditional; the wordmark is text, so branding is never lost.
+ * Company header: MeetSweet Industries wordmark above the silhouette. Non-
+ * Outlook clients get the inline vector (no hosted dependency); Outlook gets
+ * the hosted PNG via an mso conditional; the wordmark is text, so branding is
+ * never lost even with images blocked.
  */
 function logoHeader(): string {
   return `
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 auto 36px auto;">
       <tr>
-        <td style="width:40px;height:40px;vertical-align:middle;text-align:center;">
+        <td align="center" style="padding:0 0 16px 0;">
+          <span style="font-family:${FONT};font-size:22px;font-weight:700;letter-spacing:-0.4px;color:${TEXT};">
+            MeetSweet <span style="color:${ACCENT};">Industries</span>
+          </span>
+        </td>
+      </tr>
+      <tr>
+        <td align="center" style="line-height:0;">
           <!--[if !mso]><!-->
-          <img src="${logoDataUri()}" alt="${COMPANY}" width="40" height="40"
-            style="display:block;width:40px;height:40px;border:0;outline:none;text-decoration:none;" />
+          <img src="${logoDataUri()}" alt="${PRODUCT}" width="24" height="50"
+            style="display:inline-block;width:24px;height:50px;border:0;outline:none;text-decoration:none;" />
           <!--<![endif]-->
           <!--[if mso]>
-          <img src="${logoUrl()}" alt="${COMPANY}" width="40" height="40"
-            style="display:block;width:40px;height:40px;border-radius:10px;background-color:#FFFFFF;border:0;" />
+          <img src="${logoUrl()}" alt="${PRODUCT}" width="50" height="50"
+            style="display:inline-block;width:50px;height:50px;border-radius:10px;background-color:#FFFFFF;border:0;" />
           <![endif]-->
-        </td>
-        <td style="padding-left:12px;vertical-align:middle;">
-          <span style="font-family:${FONT};font-size:20px;font-weight:700;letter-spacing:-0.3px;color:${TEXT};">
-            MeetSuite <span style="color:${ACCENT};">Industries</span>
-          </span>
         </td>
       </tr>
     </table>`;
@@ -290,16 +301,17 @@ export async function sendVerificationEmail(opts: {
   const content = `
     ${heading("Verify your email")}
     ${subheading(
-      `Hi ${firstName}, welcome to ${PRODUCT}. Enter the code below to activate your account.`,
+      `Hi ${firstName}, welcome to ${PRODUCT}. We received a request to verify your ${PRODUCT} account.`,
     )}
     ${divider()}
     ${codeBlock(code)}
     ${codeFootnote([
+      "Enter this code in the MeetSweet application to continue.",
       "This code expires in 15 minutes.",
       "Do not share this code with anyone.",
     ])}
     ${securityNote(
-      `If you didn't create a ${PRODUCT} account, you can safely ignore this email — no action is needed.`,
+      `If you did not request this code, you can safely ignore this email — no action is needed and your account remains protected.`,
     )}
   `;
 
@@ -312,13 +324,14 @@ export async function sendVerificationEmail(opts: {
     `${COMPANY} — Verify your email`,
     "",
     `Hi ${firstName}, welcome to ${PRODUCT}.`,
-    "Enter the code below to activate your account:",
+    "We received a request to verify your MeetSweet account.",
+    "Enter the code below in the MeetSweet application to continue:",
     "",
     code,
     "",
     "This code expires in 15 minutes.",
     "Do not share this code with anyone.",
-    `If you didn't create a ${PRODUCT} account, you can safely ignore this email.`,
+    "If you did not request this code, you can safely ignore this email.",
   ].join("\n");
 
   await deliver("verification", {
@@ -340,18 +353,19 @@ export async function sendTwoFactorEmail(opts: {
   const code = String(opts.code).replace(/\D/g, "");
 
   const content = `
-    ${heading("Your sign-in code")}
+    ${heading("New login verification")}
     ${subheading(
-      `Hi ${firstName}, enter the code below to finish signing in to your ${PRODUCT} account.`,
+      `Hi ${firstName}, someone is attempting to sign in to your ${PRODUCT} account. Use the code below to complete the sign-in.`,
     )}
     ${divider()}
     ${codeBlock(code)}
     ${codeFootnote([
+      "Enter this code in the MeetSweet application to finish signing in.",
       "This code expires in 15 minutes.",
       "Do not share this code with anyone.",
     ])}
     ${securityNote(
-      `If you didn't try to sign in to your ${PRODUCT} account, someone may have your password. Change it immediately and contact support.`,
+      `If you did not attempt to sign in, do not share this code and consider changing your password immediately.`,
     )}
   `;
 
@@ -361,15 +375,16 @@ export async function sendTwoFactorEmail(opts: {
   });
 
   const text = [
-    `${COMPANY} — Your sign-in code`,
+    `${COMPANY} — New login verification`,
     "",
-    `Hi ${firstName}, enter the code below to finish signing in:`,
+    `Hi ${firstName}, someone is attempting to sign in to your MeetSweet account.`,
+    "Enter the code below in the MeetSweet application to finish signing in:",
     "",
     code,
     "",
     "This code expires in 15 minutes.",
     "Do not share this code with anyone.",
-    "If you didn't try to sign in, someone may have your password — change it immediately.",
+    "If you did not attempt to sign in, do not share this code and consider changing your password immediately.",
   ].join("\n");
 
   await deliver("two_fa", {
@@ -391,18 +406,19 @@ export async function sendPasswordResetEmail(opts: {
   const code = String(opts.code).replace(/\D/g, "");
 
   const content = `
-    ${heading("Reset your password")}
+    ${heading("Password reset request")}
     ${subheading(
-      `Hi ${firstName}, use the code below to set a new password for your ${PRODUCT} account.`,
+      `Hi ${firstName}, we received a request to reset the password associated with your ${PRODUCT} account. Use the verification code below to continue.`,
     )}
     ${divider()}
     ${codeBlock(code)}
     ${codeFootnote([
-      "This code expires in 15 minutes.",
-      "Do not share this code with anyone.",
+      "Enter this code in the MeetSweet application to set a new password.",
+      "This code is intended only for your account and should not be shared with anyone.",
+      "This code will expire after 15 minutes.",
     ])}
     ${securityNote(
-      "Didn't request a password reset? No action needed — your password is unchanged.",
+      `If you did not request a password reset, you can safely ignore this email — your account remains protected.`,
     )}
   `;
 
@@ -412,15 +428,16 @@ export async function sendPasswordResetEmail(opts: {
   });
 
   const text = [
-    `${COMPANY} — Reset your password`,
+    `${COMPANY} — Password reset request`,
     "",
-    `Hi ${firstName}, use the code below to set a new password:`,
+    `Hi ${firstName}, we received a request to reset the password associated with your MeetSweet account.`,
+    "Enter the code below in the MeetSweet application to set a new password:",
     "",
     code,
     "",
-    "This code expires in 15 minutes.",
-    "Do not share this code with anyone.",
-    "If you didn't request a reset, no action is needed — your password is unchanged.",
+    "This code is intended only for your account and should not be shared with anyone.",
+    "This code will expire after 15 minutes.",
+    "If you did not request a password reset, you can safely ignore this email — your account remains protected.",
   ].join("\n");
 
   await deliver("password_reset", {

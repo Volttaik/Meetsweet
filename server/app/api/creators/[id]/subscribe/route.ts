@@ -18,6 +18,7 @@ import { generateId } from "@/lib/auth/codes";
 import { sendPushToUser, getActorUsername } from "@/lib/services/push";
 import { tierIndex } from "@/lib/services/content";
 import { resolveBasePrice } from "@/lib/services/pricing";
+import { recordCreatorEarning } from "@/lib/services/creator-finance";
 
 const TIER_MULTIPLIER: Record<string, number> = { subscriber: 1, subscriber_plus: 2 };
 
@@ -130,36 +131,14 @@ export async function POST(
             metadata: JSON.stringify({ creator_id, tier, from_tier: existingTier }),
           });
 
-          // Credit the creator's wallet for the upgrade diff so creator
-          // earnings/withdrawals reflect real subscription revenue (matches
-          // the album-unlock earning path).
-          const [creatorWallet] = await tx
-            .select({ id: wallets.id })
-            .from(wallets)
-            .where(eq(wallets.user_id, creator_id))
-            .limit(1);
-          if (creatorWallet) {
-            await tx
-              .update(wallets)
-              .set({ balance: sql`${wallets.balance} + ${priceDiff}`, updated_at: now })
-              .where(eq(wallets.id, creatorWallet.id));
-          } else {
-            await tx.insert(wallets).values({
-              id: generateId(),
-              user_id: creator_id,
-              balance: priceDiff,
-              currency: "NGN",
-            });
-          }
-          await tx.insert(transactions).values({
-            id: generateId(),
-            user_id: creator_id,
-            type: "subscription_earn",
-            amount: priceDiff,
-            currency: "NGN",
-            status: "success",
+          await recordCreatorEarning(tx, {
+            creatorId: creator_id,
+            buyerId: auth.user.userId,
+            sourceType: "subscription",
+            sourceId: existing.id,
+            grossAmount: priceDiff,
             description: `Subscription upgrade from a fan (${auth.user.userId})`,
-            metadata: JSON.stringify({ subscriber_id: auth.user.userId, tier, from_tier: existingTier }),
+            metadata: { subscriber_id: auth.user.userId, tier, from_tier: existingTier },
           });
         }
 
@@ -201,37 +180,14 @@ export async function POST(
           metadata: JSON.stringify({ creator_id, tier }),
         });
 
-        // Credit the creator's wallet + record an earning so creator analytics
-        // and withdrawals reflect real subscription revenue (matches the
-        // album-unlock earning path). Previously this was never credited, so
-        // creator earnings from subscriptions were invisible.
-        const [creatorWallet] = await tx
-          .select({ id: wallets.id })
-          .from(wallets)
-          .where(eq(wallets.user_id, creator_id))
-          .limit(1);
-        if (creatorWallet) {
-          await tx
-            .update(wallets)
-            .set({ balance: sql`${wallets.balance} + ${price}`, updated_at: now })
-            .where(eq(wallets.id, creatorWallet.id));
-        } else {
-          await tx.insert(wallets).values({
-            id: generateId(),
-            user_id: creator_id,
-            balance: price,
-            currency: "NGN",
-          });
-        }
-        await tx.insert(transactions).values({
-          id: generateId(),
-          user_id: creator_id,
-          type: "subscription_earn",
-          amount: price,
-          currency: "NGN",
-          status: "success",
+        await recordCreatorEarning(tx, {
+          creatorId: creator_id,
+          buyerId: auth.user.userId,
+          sourceType: "subscription",
+          sourceId: subId,
+          grossAmount: price,
           description: `Subscription from a fan (${auth.user.userId})`,
-          metadata: JSON.stringify({ subscriber_id: auth.user.userId, tier }),
+          metadata: { subscriber_id: auth.user.userId, tier },
         });
       }
 
@@ -302,7 +258,7 @@ export async function POST(
     sendPushToUser(creator_id, {
       title: "New Subscriber",
       body: `${actor} just subscribed to you`,
-      data: { type: "subscribe", actor_id: auth.user.userId, actor_username: actor.replace(/^@/, "") },
+      data: { type: "subscribe", wallet: true, actor_id: auth.user.userId, actor_username: actor.replace(/^@/, "") },
     }, "notif_new_subscribers"),
   );
 

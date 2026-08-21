@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { SignJWT, jwtVerify, type JWTPayload } from "jose";
 import { config } from "@/lib/config";
 
@@ -21,9 +22,15 @@ export async function signAccessToken(payload: Omit<TokenPayload, "iat" | "exp">
 }
 
 export async function signRefreshToken(payload: Omit<TokenPayload, "iat" | "exp">): Promise<string> {
+  // A unique jti makes every signed token distinct even when two tokens are
+  // created within the same second (the default `iat` has second granularity).
+  // Without it, two rapid logins / a login+refresh inside one second produced
+  // byte-identical JWTs whose sha256 hashes collided on the unique
+  // refresh_tokens.token_hash index and the route died with a 500.
   return new SignJWT(payload)
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
+    .setJti(randomUUID())
     .setExpirationTime("30d")
     .sign(secret());
 }

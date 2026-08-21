@@ -417,6 +417,91 @@ async function run() {
       name: "transactions: status index",
       sql: `CREATE INDEX IF NOT EXISTS transactions_status_idx ON transactions(status)`,
     },
+    // ── Referral and creator accounting ledgers ──────────────────────────────
+    {
+      name: "users: add creator_activation_paid",
+      sql: `ALTER TABLE users ADD COLUMN creator_activation_paid INTEGER NOT NULL DEFAULT 0`,
+    },
+    {
+      name: "users: add referral_code",
+      sql: `ALTER TABLE users ADD COLUMN referral_code TEXT`,
+    },
+    {
+      name: "users: add referred_by",
+      sql: `ALTER TABLE users ADD COLUMN referred_by TEXT`,
+    },
+    {
+      name: "users: referral code index",
+      sql: `CREATE UNIQUE INDEX IF NOT EXISTS users_referral_code_idx ON users(referral_code)`,
+    },
+    // ── Google OpenID Connect identity ─────────────────────────────────────
+    // Nullable fields preserve all existing password accounts. The Google
+    // subject is the stable provider identity; email is retained for audit and
+    // safe account-link checks.
+    {
+      name: "users: add google_subject",
+      sql: `ALTER TABLE users ADD COLUMN google_subject TEXT`,
+    },
+    {
+      name: "users: add google_email",
+      sql: `ALTER TABLE users ADD COLUMN google_email TEXT`,
+    },
+    {
+      name: "users: google subject index",
+      sql: `CREATE UNIQUE INDEX IF NOT EXISTS users_google_subject_idx ON users(google_subject) WHERE google_subject IS NOT NULL`,
+    },
+    {
+      name: "create creator_earnings",
+      sql: `
+        CREATE TABLE IF NOT EXISTS creator_earnings (
+          id TEXT PRIMARY KEY,
+          creator_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          buyer_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+          source_type TEXT NOT NULL,
+          source_id TEXT,
+          transaction_id TEXT NOT NULL,
+          gross_amount REAL NOT NULL,
+          platform_fee REAL NOT NULL,
+          net_amount REAL NOT NULL,
+          currency TEXT NOT NULL DEFAULT 'NGN',
+          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        )
+      `,
+    },
+    {
+      name: "creator_earnings: transaction index",
+      sql: `CREATE UNIQUE INDEX IF NOT EXISTS creator_earnings_transaction_idx ON creator_earnings(transaction_id)`,
+    },
+    {
+      name: "creator_earnings: creator index",
+      sql: `CREATE INDEX IF NOT EXISTS creator_earnings_creator_created_idx ON creator_earnings(creator_id, created_at)`,
+    },
+    {
+      name: "create referral_rewards",
+      sql: `
+        CREATE TABLE IF NOT EXISTS referral_rewards (
+          id TEXT PRIMARY KEY,
+          referrer_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          referred_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          activation_transaction_id TEXT NOT NULL,
+          amount REAL NOT NULL DEFAULT 200,
+          currency TEXT NOT NULL DEFAULT 'NGN',
+          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        )
+      `,
+    },
+    {
+      name: "referral_rewards: referred user index",
+      sql: `CREATE UNIQUE INDEX IF NOT EXISTS referral_rewards_referred_user_idx ON referral_rewards(referred_user_id)`,
+    },
+    {
+      name: "referral_rewards: activation transaction index",
+      sql: `CREATE UNIQUE INDEX IF NOT EXISTS referral_rewards_activation_tx_idx ON referral_rewards(activation_transaction_id)`,
+    },
+    {
+      name: "referral_rewards: referrer index",
+      sql: `CREATE INDEX IF NOT EXISTS referral_rewards_referrer_idx ON referral_rewards(referrer_id)`,
+    },
 
     // ── Remove legacy pay-to-unlock system ────────────────────────────────────
     // Per-post purchasing and paid DMs have been removed. Subscriptions are the

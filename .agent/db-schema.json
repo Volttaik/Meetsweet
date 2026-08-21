@@ -1,0 +1,61 @@
+{
+  "description": "All 40 tables in lib/db/schema.ts. Auth tables are the identity core; content/media feed the app; social/payment tables drive the economy. FKs are logical (Drizzle relations) unless noted.",
+  "identity": {
+    "users": "Accounts: email, username, password_hash, role (user/creator), two_fa_enabled, avatar, deleted flag. Deleting frees the identity for re-registration.",
+    "profiles": "Public profile: display name, bio, avatar, banner, links, verification badge.",
+    "sessions": "Auth sessions (device rows) used by lib/auth/session.ts.",
+    "refresh_tokens": "Hashed refresh tokens with unique token_hash index (jti guarantees uniqueness); rotation + revocation live here.",
+    "devices": "Registered devices (push tokens, biometric credential ids).",
+    "verification_codes": "6-digit codes for email verification, 2FA, password reset; expiry enforced.",
+    "login_history": "Audit trail of sign-ins.",
+    "credential_grants": "Credential-broker grants (token lifecycle for the credentials/* routes)."
+  },
+  "content": {
+    "posts": "Posts: creator_id, caption, media, tier/gating (free/subscriber/paid), price, status (draft/published/archived), publish flow via POST /posts/:id/publish.",
+    "media": "Media rows: mediaType (image/video), urls (from R2_PUBLIC_BASE_URL), dimensions, duration, thumbnail, qualities (Stream HLS), immutable CacheControl.",
+    "post_views": "View rows deduped per account (one counted view per account per post).",
+    "feed_impressions": "Feed ranking impressions.",
+    "post_categories": "Post ↔ categories join.",
+    "categories": "Content categories for discovery.",
+    "albums": "Paid albums: creator_id, title, description, unlock_price (authoritative pricing), cover, is_published.",
+    "album_items": "Album ↔ media items (images + videos), ordering.",
+    "album_unlocks": "Purchases: user_id + album_id (one row per unlock).",
+    "shorts": "Shorts (short-form videos) — gated content model.",
+    "videos": "Long-form videos with qualities/duration.",
+    "comment_rooms": "Comment rooms attached to content.",
+    "comments": "Comments in a room: author, body, counts.",
+    "comment_replies": "Replies to comments.",
+    "comment_likes": "Comment likes (user_id + comment_id).",
+    "post_likes": "Post likes (user_id + post_id)."
+  },
+  "social": {
+    "follows": "Follow graph (user_id → creator_id).",
+    "blocked_users": "Block list (blocker_id + blocked_id); server-enforced visibility.",
+    "muted_users": "Mute list; excluded from feeds/notifications.",
+    "hidden_posts": "Per-user hidden posts.",
+    "saved_posts": "Bookmarks (saved_posts rows; collections API).",
+    "reports": "Content/user reports.",
+    "recent_searches": "Per-user recent search terms.",
+    "subscriptions": "Creator subscriptions: subscriber_id, creator_id, tier, status (active/cancelled), price, period. Server resolves per-viewer subscription state.",
+    "creator_settings": "Creator profile settings: messaging permission, payout prefs, subscription tiers.",
+    "creator_reviews": "Creator reviews/ratings."
+  },
+  "messaging": {
+    "chat_rooms": "DM rooms (direct or group); strictly scoped to authenticated user.",
+    "chat_room_members": "Room membership (user_id + room_id).",
+    "chat_room_messages": "Messages: sender, body, media refs, edited/deleted flags, reactions."
+  },
+  "economy": {
+    "wallets": "Wallet rows: user_id, balance (integer naira, ₦).",
+    "transactions": "Ledger: type (deposit/withdraw/subscribe/album_unlock), amount, status, refs to paystack/webhook. Wallet + transactions updated atomically.",
+    "upload_sessions": "Direct-to-R2 upload sessions: status, part tracking, etags, target media metadata. Created by POST /uploads, completed by POST /uploads/:id/complete."
+  },
+  "system": {
+    "notifications": "Notification feed: type (like/comment/subscribe/message/new_post/withdrawal), actor, target, read flag.",
+    "shares": "Share tokens: short token → { type: post|album|creator, targetId } for deep links."
+  },
+  "migration_notes": {
+    "how": "pnpm migrate runs scripts/migrate.ts (idempotent). Add new tables there or via Drizzle generate + migrate.",
+    "recent": "upload_sessions (direct-to-R2), album_unlocks, chat_rooms*, comment_rooms*, shares, transactions, two_fa_enabled on users — all applied in recent commits; live DB must be migrated before deploy."
+  }
+}

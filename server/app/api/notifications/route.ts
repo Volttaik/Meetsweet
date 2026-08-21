@@ -18,6 +18,7 @@ function notificationTitle(type: string): string {
     payment: "Payment Received",
     message: "New Message",
     withdrawal: "Withdrawal Update",
+    referral_reward: "Referral Reward",
     system: "MeetSweet",
   };
   return map[type] ?? "Notification";

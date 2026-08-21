@@ -55,6 +55,16 @@ export const config = {
   auth: {
     jwtSecret: () => firstSet("JWT_SECRET", "SESSION_SECRET"),
   },
+  google: {
+    webClientId: () => firstSet("GOOGLE_WEB_CLIENT_ID"),
+    androidClientId: () => firstSet("GOOGLE_ANDROID_CLIENT_ID"),
+    iosClientId: () => firstSet("GOOGLE_IOS_CLIENT_ID"),
+    clientIds: () => [
+      firstSet("GOOGLE_WEB_CLIENT_ID"),
+      firstSet("GOOGLE_ANDROID_CLIENT_ID"),
+      firstSet("GOOGLE_IOS_CLIENT_ID"),
+    ].filter((value): value is string => Boolean(value)),
+  },
   app: {
     url: () => firstSet("APP_URL"),
     // Public web/API origin. Keep this separate from APP_URL so an older

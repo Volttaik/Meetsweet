@@ -3,6 +3,8 @@ import { eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { wallets, transactions } from "@/lib/db/schema";
 import { verifyWebhookSignature } from "@/lib/services/paystack";
+import { settleCreatorActivation, CREATOR_ACTIVATION_NAIRA } from "@/lib/services/referrals";
+import { sendPushToUser } from "@/lib/services/push";
 
 /**
  * POST /api/payments/paystack-webhook
@@ -29,12 +31,28 @@ export async function POST(req: NextRequest) {
   }
 
   const ev = event.event ?? "";
+
+  // Handle charge.success for creator_activation payments
+  if (ev === "charge.success") {
+    const data = event.data ?? {};
+    const metadata = data.metadata ?? {};
+    if (
+      metadata.type === "creator_activation" &&
+      metadata.user_id &&
+      metadata.transaction_id &&
+      Number(data.amount) === CREATOR_ACTIVATION_NAIRA * 100
+    ) {
+      await handleActivationSuccess(metadata.user_id, metadata.transaction_id, data.reference ?? "");
+    }
+    return new Response("ok", { status: 200 });
+  }
+
   if (
     ev !== "transfer.success" &&
     ev !== "transfer.failed" &&
     ev !== "transfer.reversed"
   ) {
-    // Not a transfer event we settle here (e.g. charge.success) — acknowledge.
+    // Not a recognized event — acknowledge.
     return new Response("ok", { status: 200 });
   }
 
@@ -82,4 +100,24 @@ export async function POST(req: NextRequest) {
   }
 
   return new Response("ok", { status: 200 });
+}
+
+/** Settle activation only after the signed Paystack webhook and amount pass. */
+async function handleActivationSuccess(
+  userId: string,
+  transactionId: string,
+  paystackRef: string,
+): Promise<void> {
+  try {
+    const settled = await settleCreatorActivation(userId, transactionId, paystackRef);
+    if (settled.referrerId && settled.rewardAmount > 0) {
+      void sendPushToUser(settled.referrerId, {
+        title: "Referral Reward",
+        body: "You received ₦200 in your MeetSweet wallet.",
+        data: { type: "referral_reward", wallet: true, referred_user_id: userId },
+      }, "notif_creator_updates");
+    }
+  } catch {
+    // Non-critical — Paystack retries the webhook and the mobile verify path is idempotent.
+  }
 }

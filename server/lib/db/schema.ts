@@ -37,15 +37,32 @@ export const users = sqliteTable(
     created_at: createdAt(),
     updated_at: updatedAt(),
     deleted_at: text("deleted_at"),
-    // ── Two-factor authentication (email-code based) ───────────────────────
-    // 2FA uses a 6-digit code emailed to the account owner — no authenticator
-    // app, no TOTP secret. The code is stored in verification_codes (type
-    // "two_fa") and consumed on login / enable / disable.
-    two_fa_enabled: integer("two_fa_enabled", { mode: "boolean" }).notNull().default(false),
+  // ── Two-factor authentication (email-code based) ───────────────────────
+  // 2FA uses a 6-digit code emailed to the account owner — no authenticator
+  // app, no TOTP secret. The code is stored in verification_codes (type
+  // "two_fa") and consumed on login / enable / disable.
+  two_fa_enabled: integer("two_fa_enabled", { mode: "boolean" }).notNull().default(false),
+  // ── Creator activation ─────────────────────────────────────────────────
+  // One-time ₦1,000 activation fee: once paid, creator functionality is
+  // permanently unlocked. Server-authoritative — client must never trust a
+  // local flag to grant creator access.
+  creator_activation_paid: integer("creator_activation_paid", { mode: "boolean" }).notNull().default(false),
+  // Last-seen timestamp for online/presence (updated on each authenticated request).
+  last_seen_at: text("last_seen_at"),
+  // ── Referral ───────────────────────────────────────────────────────────
+  // Unique referral code for this user (set on first use; used in links).
+  referral_code: text("referral_code"),    // Which user referred this account (null if organic).
+    referred_by: text("referred_by"),
+    // Stable Google OpenID Connect subject. Nullable so password-only accounts
+    // remain unchanged; uniqueness is enforced for linked Google identities.
+    google_subject: text("google_subject"),
+    google_email: text("google_email"),
   },
   (table) => [
     uniqueIndex("users_email_idx").on(table.email),
     uniqueIndex("users_username_idx").on(table.username),
+    uniqueIndex("users_referral_code_idx").on(table.referral_code),
+    uniqueIndex("users_google_subject_idx").on(table.google_subject).where(sql`${table.google_subject} IS NOT NULL`),
   ],
 );
 
@@ -656,6 +673,22 @@ export const chat_room_messages = sqliteTable(
   (table) => [index("chat_room_messages_room_created_idx").on(table.chat_room_id, table.created_at)],
 );
 
+// ─── Chat typing state (ephemeral — client-reported, short-lived) ─────────────
+// Records that user X is currently typing in room Y. The client broadcasts
+// "I'm typing" on input change and the server returns current typing state on
+// the room changes endpoint. expires_at enforces a hard timeout so a stale
+// "User is typing…" cannot survive a crashed client.
+export const typing_states = sqliteTable("typing_states", {
+  id: id(),
+  chat_room_id: text("chat_room_id").notNull(),
+  user_id: text("user_id").notNull(),
+  expires_at: text("expires_at").notNull(),
+  created_at: createdAt(),
+}, (table) => [
+  uniqueIndex("typing_states_room_user_idx").on(table.chat_room_id, table.user_id),
+  index("typing_states_expires_idx").on(table.expires_at),
+]);
+
 // ─── Notifications ────────────────────────────────────────────────────────
 
 export const notifications = sqliteTable("notifications", {
@@ -719,6 +752,45 @@ export const subscriptions = sqliteTable("subscriptions", {
   created_at: createdAt(),
   updated_at: updatedAt(),
 });
+
+export const creator_earnings = sqliteTable(
+  "creator_earnings",
+  {
+    id: id(),
+    creator_id: text("creator_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    buyer_id: text("buyer_id").references(() => users.id, { onDelete: "set null" }),
+    source_type: text("source_type").notNull(),
+    source_id: text("source_id"),
+    transaction_id: text("transaction_id").notNull(),
+    gross_amount: real("gross_amount").notNull(),
+    platform_fee: real("platform_fee").notNull(),
+    net_amount: real("net_amount").notNull(),
+    currency: text("currency").notNull().default("NGN"),
+    created_at: createdAt(),
+  },
+  (table) => [
+    index("creator_earnings_creator_created_idx").on(table.creator_id, table.created_at),
+    uniqueIndex("creator_earnings_transaction_idx").on(table.transaction_id),
+  ],
+);
+
+export const referral_rewards = sqliteTable(
+  "referral_rewards",
+  {
+    id: id(),
+    referrer_id: text("referrer_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    referred_user_id: text("referred_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    activation_transaction_id: text("activation_transaction_id").notNull(),
+    amount: real("amount").notNull().default(200),
+    currency: text("currency").notNull().default("NGN"),
+    created_at: createdAt(),
+  },
+  (table) => [
+    uniqueIndex("referral_rewards_referred_user_idx").on(table.referred_user_id),
+    uniqueIndex("referral_rewards_activation_tx_idx").on(table.activation_transaction_id),
+    index("referral_rewards_referrer_idx").on(table.referrer_id),
+  ],
+);
 
 export const creator_settings = sqliteTable("creator_settings", {
   id: id(),

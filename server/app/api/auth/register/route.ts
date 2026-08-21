@@ -9,6 +9,7 @@ import { created, err } from "@/lib/api/response";
 import { registerSchema } from "@/schemas/auth";
 import { registerLimit, getClientIp, tooManyRequests } from "@/lib/security/rate-limiter";
 import { sendVerificationEmail } from "@/lib/services/email";
+import { lookupReferral, normalizeReferralCode } from "@/lib/services/referrals";
 
 export async function POST(req: NextRequest) {
   const ip = getClientIp(req);
@@ -20,7 +21,13 @@ export async function POST(req: NextRequest) {
   const parsed = await parseBody(req, registerSchema);
   if (!parsed.success) return parsed.response;
 
-  const { full_name, username, email, phone, password, bio, date_of_birth, dob, avatar_url } = parsed.data;
+  const { full_name, username, email, phone, password, bio, date_of_birth, dob, avatar_url, referral_code } = parsed.data;
+
+  // Resolve referral attribution before creating the account. The stored
+  // referrer id, not the client-provided code, is the value used for rewards.
+  const normalizedReferralCode = normalizeReferralCode(referral_code);
+  const referrer = normalizedReferralCode ? await lookupReferral(normalizedReferralCode) : null;
+  if (referral_code && !referrer) return err("Referral link not found or expired", 400, "REFERRAL_NOT_FOUND");
 
   // ── Duplicate check ──────────────────────────────────────────────────────
   // Soft-deleted accounts are EXCLUDED: once an account is deleted, its email
@@ -50,6 +57,7 @@ export async function POST(req: NextRequest) {
     phone: phone ?? null,
     password_hash,
     role: "user",
+    referred_by: referrer?.creator_id ?? null,
     // is_verified defaults to false — login is blocked until verified
   });
 
@@ -91,5 +99,11 @@ export async function POST(req: NextRequest) {
     message: "Account created. Please check your email for a verification code.",
     requires_verification: true,
     email,
+    referral_code: normalizedReferralCode,
+    referred_by: referrer ? {
+      id: referrer.creator_id,
+      name: referrer.creator_name,
+      username: referrer.creator_username,
+    } : null,
   });
 }

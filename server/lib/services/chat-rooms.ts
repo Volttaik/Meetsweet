@@ -9,10 +9,18 @@ import {
   profiles,
   subscriptions,
   users,
+  user_settings,
 } from "@/lib/db/schema";
 import { generateId } from "@/lib/auth/codes";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** An account is "online" when last_seen_at was within the last 5 minutes. */
+function isOnline(lastSeenAt: string | null): boolean {
+  if (!lastSeenAt) return false;
+  const FIVE_MINUTES = 5 * 60 * 1000;
+  return Date.now() - new Date(lastSeenAt).getTime() < FIVE_MINUTES;
+}
 
 function parseJsonArray(value: string | null): string[] {
   if (!value) return [];
@@ -294,9 +302,24 @@ export async function buildRoom(chatRoomId: string, viewerId: string): Promise<a
     last_message_sender_id: lastMessage?.sender_id ?? null,
     lastMessageSenderId: lastMessage?.sender_id ?? null,
     participants: participants.map((p) => participantShape(p, p.is_creator)),
-    other_user: other ? participantShape(other, other.is_creator) : null,
-    otherUser: other ? participantShape(other, other.is_creator) : null,
+    other_user: other
+      ? { ...participantShape(other, other.is_creator), is_online: isOnline(users_row_last_seen(other.id)), isOnline: isOnline(users_row_last_seen(other.id)) }
+      : null,
+    otherUser: other
+      ? { ...participantShape(other, other.is_creator), is_online: isOnline(users_row_last_seen(other.id)), isOnline: isOnline(users_row_last_seen(other.id)) }
+      : null,
   };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const _lastSeenCache = new Map<string, string | null>();
+function users_row_last_seen(userId: string): string | null {
+  return _lastSeenCache.get(userId) ?? null;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function cacheLastSeen(userId: string, lastSeenAt: string | null): void {
+  _lastSeenCache.set(userId, lastSeenAt);
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
