@@ -81,11 +81,11 @@ export async function POST(
   // Realtime: everyone viewing the post sees the like count change instantly.
   const likeCount = updated?.like_count ?? 0;
   void emitEvent({
-    type: "post.like.updated",
+    type: "like:created",
     channel: `post:${id}`,
     resourceId: id,
     userId: auth.user.userId,
-    payload: { liked: true, likeCount, actorId: auth.user.userId },
+    payload: { postId: id, liked: true, likeCount, actorId: auth.user.userId },
   });
 
   return ok({ liked: true, like_count: likeCount });
@@ -119,11 +119,11 @@ export async function DELETE(
   // Realtime: unlike propagates instantly to active viewers.
   const likeCount = updated?.like_count ?? 0;
   void emitEvent({
-    type: "post.like.updated",
+    type: "like:removed",
     channel: `post:${id}`,
     resourceId: id,
     userId: auth.user.userId,
-    payload: { liked: false, likeCount, actorId: auth.user.userId },
+    payload: { postId: id, liked: false, likeCount, actorId: auth.user.userId },
   });
 
   return ok({ liked: false, like_count: likeCount });

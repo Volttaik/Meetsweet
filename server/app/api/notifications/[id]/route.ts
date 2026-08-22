@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { notifications } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
 import { ok, err } from "@/lib/api/response";
+import { emitEvent } from "@/lib/realtime/emit";
 
 export async function DELETE(
   req: NextRequest,
@@ -24,6 +25,7 @@ export async function DELETE(
   if (notif.user_id !== auth.user.userId) return err("Forbidden", 403);
 
   await db.delete(notifications).where(eq(notifications.id, id));
+  void emitEvent({ type: "notification:deleted", channel: `user:${auth.user.userId}`, resourceId: id, userId: auth.user.userId, payload: { notificationId: id } });
 
   return ok({ deleted: true });
 }

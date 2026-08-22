@@ -241,3 +241,84 @@ deduped by server event id; typing relays are throttled (server + client).
 - [ ] Subscribing to a chat room you are not a member of is denied
 - [ ] Relay of a durable event type (e.g. `chat.message.created`) is rejected
 - [ ] A token from a deleted/deactivated account is rejected at connect (4401)
+
+## Messaging architecture — canonical contract (final pass, 2026-08-22)
+
+The messaging system is local-first with realtime sync. The layers and their
+responsibilities:
+
+```
+Turso (durable truth)  ←  Next.js API validates + persists
+        ▲
+        │ emitEvent after every DB write (durable) / relay (ephemeral)
+WebSocket (realtime delivery)  →  chat:{roomId} channel, authorized server-side
+        │
+SQLite on device (instant render layer)  ←  WS events + HTTP confirmations write here
+        │
+Chat UI (React state mirrors SQLite; optimistic bubbles keyed by temp id)
+```
+
+**One message contract everywhere.** Mobile `types/chat-message.ts` (`MsMessage`)
+is the canonical client model; the server's `buildMessage` (lib/services/chat-rooms.ts)
+returns the same fields (snake + camel). `toMsMessage` normalizes any server
+payload — HTTP response, WS event, SQLite row — into the same shape. The same
+message means the same thing in the UI, SQLite, the WS payload, and the API.
+
+**Explicit message types** (never inferred from a URL/extension):
+`text | image | gif | sticker | video | audio | voice | file | system`.
+`gif`/`sticker` are first-class media types — a GIF is `messageType: 'gif'`
+with `mime_type: image/gif`; it is NEVER degraded to `image`. Stickers are
+`messageType: 'sticker'` (sent with `media_type: 'sticker'` + emoji body) and
+render as floating emoji — they are NOT routed through the text pipeline.
+
+**Ordering is deterministic.** Server: `ORDER BY created_at (DESC|ASC), id
+(DESC|ASC)` — the id tie-break keeps same-millisecond messages stable across
+pagination and the changes feed. Client: every merge re-sorts the list by
+`createdAt` desc (`byNewestFirst`) so an inverted list never shows a message in
+the wrong position, regardless of WS delivery order or clock skew. Optimistic
+messages keep their list key through confirmation (`finalizeTemp`: `_id` stays
+the temp id, `msServerId` carries the real id) — the bubble never remounts or
+jumps.
+
+**Client message id / dedup.** Every optimistic message gets a unique temp id
+(`temp_<ts>`); the server id becomes `msServerId` on confirmation. Dedup keys on
+`realMessageId()` (server id when known), preferring the confirmed copy — so a
+WS echo racing the HTTP confirmation can never produce a visible duplicate.
+(Same event id dedup also exists at the socket layer in `services/realtime.ts`.)
+
+**Persistence rule.** The HTTP send response is the authoritative confirmation:
+every send path (text, voice, image/video/gif/document, sticker) writes the
+confirmed message into SQLite immediately (`cacheMessages`). Local durability
+never depends on the WS echo or the changes-poll — a missed echo (socket down,
+reconnect gap) can no longer make a sent message vanish on re-entry. Media
+files are mirrored into the room's persistent document directory
+(`chat-media/<room>/<messageId>.<ext>`) keyed by the STABLE message id, never
+by a signed URL.
+
+**Lifecycle / status.** `pending` (optimistic) → `sent` (server-confirmed,
+`finalizeTemp`) → `received`/read (only when the backend reports the other
+participant read past it) — and `failed` (`pending: false, sent: false`) on
+error, with a retry affordance. The UI never infers state from whether a URL
+exists.
+
+**GIF provider (Giphy).** The GIF button opens a REAL Giphy search picker
+(`components/chat/MsGifPicker` + `services/gifs.ts`). The Giphy API key lives
+ONLY on the server (`GIPHY_API_KEY` env var — never in the mobile bundle): the
+client calls the authenticated proxy `GET /api/gifs?q=…` (search/trending,
+`app/api/gifs/route.ts`), which calls Giphy server-side and returns
+`{ id, title, previewUrl (fixed_width .gif), gifUrl (original .gif), width,
+height }`. The selected GIF is downloaded to cache, uploaded as `image/gif`,
+stored as `.gif`, and rendered ANIMATED via expo-image — never degraded to a
+static image. (Giphy's original/fixed_width are animated .gif URLs; Expo
+converts GIFs to static on Android only when re-encoding below quality 1.0,
+which this pipeline never does.)
+
+**Android keyboard GIF/sticker input — researched and documented.** Android
+keyboards (Gboard) deliver GIF/sticker content through `commitContent` /
+ContentProvider URIs. React Native's core `TextInput` does NOT expose this in
+Expo Go, and there is no Expo API for it — supporting it requires a native
+build (expo-dev-client) with a custom native module (e.g. a
+`ReactTextInput` `commitContent` bridge). This is a platform limitation, not a
+bug in the app: the in-app Giphy picker is the supported GIF entry point (and
+the composer has a dedicated sticker button + emoji sticker sheet), so no JS
+workaround is attempted inside Expo Go.

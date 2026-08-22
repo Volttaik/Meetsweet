@@ -1,262 +1,182 @@
-/**
- * Unified Realtime WebSocket endpoint.
- *
- *   wss://meetsweet.space/api/realtime?token=<access-token>
- *
- * Served by Vercel Functions with Fluid compute (WebSockets require Fluid
- * compute; enabled project-wide in vercel.json). A connection is pinned to one
- * Function instance and is closed at the function max duration — the mobile
- * client reconnects with exponential backoff and recovers missed durable
- * events through the outbox (`sync`), which also covers reconnects onto a
- * different instance.
- *
- * AUTH: the access token arrives as a query parameter because React Native's
- * WebSocket cannot reliably send custom headers. It is verified here and the
- * live account state is re-checked from the DB (same policy as requireAuth).
- * The token is short-lived (15m) and the transport is wss; on 4401 the client
- * refreshes its token and reconnects.
- *
- * PROTOCOL (JSON):
- *   client → { type: 'subscribe', channels } | { type: 'unsubscribe', channels }
- *           | { type: 'ping' } | { type: 'sync', since }
- *           | { type: 'relay', channel, eventType, payload }  (ephemeral only)
- *   server → { type: 'hello', seq } | { type: 'subscribed', channels, denied }
- *           | { type: 'event', event } | { type: 'pong' } | { type: 'synced', since }
- *           | { type: 'error', code, message }
- *
- * SECURITY: every subscription is authorized server-side (user:{me} only for
- * the owner; chat:{room} only for room members; post:{id} for any
- * authenticated user). Clients can never publish durable events — only
- * allow-listed ephemeral types (typing/recording/presence) via `relay`, and
- * the acting userId is always set server-side.
- */
-
 import { experimental_upgradeWebSocket, type WebSocketData } from "@vercel/functions";
 import type { NextRequest } from "next/server";
-import { eq } from "drizzle-orm";
-import { db } from "@/lib/db";
-import { posts } from "@/lib/db/schema";
 import { verifyToken } from "@/lib/auth/jwt";
 import { fetchLiveAccount } from "@/middleware/auth";
-import { getMember } from "@/lib/services/chat-rooms";
-import {
-  registerConnection,
-  sendTo,
-  subscribe,
-  unsubscribe,
-  channelsOf,
-  touch,
-} from "@/lib/realtime/hub";
 import { currentOutboxSeq, readOutboxSince, pruneOutbox } from "@/lib/realtime/outbox";
-import { broadcast } from "@/lib/realtime/hub";
 import { registerBusConnection, unregisterBusConnection } from "@/lib/realtime/bus";
-import { RELAYABLE_TYPES, type ClientMessage } from "@/lib/realtime/types";
-import { randomUUID } from "crypto";
-
-// Throttle relayed typing broadcasts per (user, channel) so keystroke-level
-// frames can never storm the socket (spec: typing events especially must be
-// throttled). Recording/presence relays are not throttled — they are discrete.
-const TYPING_RELAY_THROTTLE_MS = 2_000;
-const typingRelayLast = new Map<string, number>();
-
-function typingRelayAllowed(userId: string, channel: string): boolean {
-  const now = Date.now();
-  const key = `${userId}:${channel}`;
-  if ((typingRelayLast.get(key) ?? 0) + TYPING_RELAY_THROTTLE_MS > now) return false;
-  typingRelayLast.set(key, now);
-  return true;
-}
+import * as manager from "@/lib/realtime/sweet-socket/connection-manager";
+import { connected, disconnected } from "@/lib/realtime/sweet-socket/presence-manager";
+import { createEvent } from "@/lib/realtime/sweet-socket/event-emitter";
+import { handleClientMessage, authorizeChannel } from "@/lib/realtime/sweet-socket/router";
+import { parseFrame } from "@/lib/realtime/sweet-socket/validator";
+import type { SweetSocketClientMessage } from "@/lib/realtime/sweet-socket/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-// Fluid compute: the connection lives until this duration, then Vercel closes
-// it — the client reconnects (backoff) and recovers missed events via `sync`.
 export const maxDuration = 300;
-
-function splitChannel(channel: string): [string, string] {
-  const idx = channel.indexOf(":");
-  if (idx === -1) return ["", channel];
-  return [channel.slice(0, idx), channel.slice(idx + 1)];
-}
 
 export function GET(req: NextRequest) {
   const token = req.nextUrl.searchParams.get("token") ?? "";
+  if (!token) return new Response("Unauthorized", { status: 401 });
 
-  // Fail fast (before upgrade) when there is no token at all.
-  if (!token) {
-    return new Response("Unauthorized", { status: 401 });
-  }
-
-  return experimental_upgradeWebSocket(async (ws) => {
-    // Attach the message listener SYNCHRONOUSLY (before the async auth below)
-    // and buffer frames until authentication completes — per the Vercel chat
-    // guide, a client's first frame sent on open must never be dropped. The
-    // client also waits for `hello` before subscribing, so this is belt and
-    // suspenders.
-    const pendingFrames: WebSocketData[] = [];
+  return experimental_upgradeWebSocket((ws) => {
+    // Register the listener synchronously. Vercel's upgrade can deliver the
+    // first client frame immediately, so authentication frames are buffered
+    // until the async JWT/account check finishes.
+    const pending: WebSocketData[] = [];
     let authenticated = false;
-    let handleFrame: ((raw: WebSocketData) => void) | null = null;
+    let connection: ReturnType<typeof manager.register> | null = null;
+    let frameHandler: ((raw: WebSocketData) => void) | null = null;
+    let processing = Promise.resolve();
+
     ws.on("message", (raw: WebSocketData) => {
-      if (!authenticated || !handleFrame) {
-        pendingFrames.push(raw);
-        return;
-      }
-      handleFrame(raw);
+      if (!authenticated || !frameHandler) pending.push(raw);
+      else frameHandler(raw);
     });
 
-    // ── Authenticate the connection (verify JWT + live account) ───────────
-    let user: { userId: string; role: string };
-    try {
-      const tokenUser = await verifyToken(token);
-      const live = await fetchLiveAccount(tokenUser.userId);
-      if (!live?.isActive || !live.role) throw new Error("Account inactive");
-      user = { userId: tokenUser.userId, role: live.role };
-    } catch {
+    void (async () => {
       try {
-        ws.close(4401, "Unauthorized");
+        const tokenUser = await verifyToken(token);
+        const live = await fetchLiveAccount(tokenUser.userId);
+        if (!live?.isActive || !live.role) throw new Error("Account inactive");
+
+        connection = manager.register(ws, tokenUser.userId);
+        registerBusConnection();
+        manager.send(connection, { type: "auth", state: "connected" });
+        ws.on("close", () => {
+          unregisterBusConnection();
+          if (connection && disconnected(connection)) {
+            const event = createEvent({
+              type: "presence.offline",
+              userId: connection.userId,
+              payload: { userId: connection.userId },
+            });
+            // Presence is ephemeral and only useful to current subscribers.
+            for (const channel of connection.channels) manager.broadcast(channel, event);
+          }
+        });
+
+        const sequence = await currentOutboxSeq().catch(() => null);
+        manager.send(connection, { type: "auth", state: "authenticated" });
+        manager.send(connection, { type: "connection", state: "authenticated" });
+        manager.send(connection, { type: "hello", sequence });
+        manager.send(connection, { type: "connection", state: "ready" });
+        if (connected(connection)) {
+          const event = createEvent({
+            type: "presence.online",
+            userId: connection.userId,
+            payload: { userId: connection.userId },
+          });
+          for (const channel of connection.channels) manager.broadcast(channel, event);
+        }
+        void pruneOutbox().catch(() => {});
+
+        const process = async (raw: WebSocketData) => {
+          manager.touch(connection!);
+          const message = parseFrame(raw);
+          if (!message) {
+            manager.send(connection!, { type: "error", code: "INVALID_FRAME", message: "Invalid or oversized frame" });
+            return;
+          }
+          await processMessage(connection!, message);
+        };
+        // Preserve client command order. In particular, a reconnecting client
+        // sends subscribe followed by sync; replay must see the restored room
+        // membership before events are delivered.
+        frameHandler = (raw) => {
+          processing = processing.then(() => process(raw)).catch(() => {});
+        };
+        authenticated = true;
+        for (const raw of pending) frameHandler(raw);
+        pending.length = 0;
       } catch {
-        // ignore
+        try {
+          if (connection) manager.send(connection, { type: "auth", state: "session_expired", reason: "Session is no longer valid" });
+          ws.close(4401, "Unauthorized");
+        } catch { /* ignore */ }
       }
+    })();
+  });
+}
+
+async function processMessage(
+  connection: NonNullable<ReturnType<typeof manager.register>>,
+  message: SweetSocketClientMessage,
+): Promise<void> {
+  switch (message.type) {
+    case "ping": {
+      // Re-check the live account on heartbeat. JWT validation at upgrade time
+      // is not enough when a session is revoked or an account is deactivated
+      // while the socket remains open.
+      if (Date.now() - connection.lastAuthCheck >= 60_000) {
+        const live = await fetchLiveAccount(connection.userId);
+        connection.lastAuthCheck = Date.now();
+        if (!live?.isActive || !live.role) {
+          manager.send(connection, { type: "auth", state: "session_expired", reason: "Account is no longer active" });
+          for (const channel of manager.channelsOf(connection)) manager.unsubscribe(connection, channel);
+          try { connection.ws.close(4401, "Session expired"); } catch { /* ignore */ }
+          return;
+        }
+      }
+      manager.send(connection, { type: "pong" });
       return;
     }
-
-    const conn = registerConnection(ws, user.userId);
-    // This instance now holds a connection — start the cross-instance reader.
-    registerBusConnection();
-    ws.on("close", () => unregisterBusConnection());
-
-    // Baseline sequence so the client can recover anything it missed while
-    // disconnected (fresh connection: everything after this is new).
-    const baseline = await currentOutboxSeq().catch(() => null);
-    sendTo(conn, { type: "hello", seq: baseline });
-    void pruneOutbox().catch(() => {});
-
-    /** Server-side authorization for a channel subscription. */
-    const authorizeChannel = async (channel: string): Promise<boolean> => {
-      const [kind, id] = splitChannel(channel);
-      if (!id) return false;
-      if (kind === "user") return id === user.userId;
-      if (kind === "chat") {
-        const member = await getMember(id, user.userId).catch(() => null);
-        return !!member;
-      }
-      if (kind === "post") {
-        const [post] = await db
-          .select({ id: posts.id })
-          .from(posts)
-          .where(eq(posts.id, id))
-          .limit(1)
-          .catch(() => []);
-        return !!post;
-      }
-      return false;
-    };
-
-    handleFrame = async (raw: WebSocketData) => {
-      touch(conn);
-      let msg: ClientMessage;
-      try {
-        msg = JSON.parse(String(raw)) as ClientMessage;
-      } catch {
-        sendTo(conn, { type: "error", code: "BAD_JSON", message: "Invalid JSON" });
-        return;
-      }
-
-      switch (msg.type) {
-        case "ping":
-          sendTo(conn, { type: "pong" });
-          return;
-
-        case "subscribe": {
-          const requested = Array.isArray(msg.channels)
-            ? msg.channels.filter((c): c is string => typeof c === "string")
-            : [];
-          const granted: string[] = [];
-          for (const channel of requested) {
-            if (await authorizeChannel(channel)) {
-              subscribe(conn, channel);
-              granted.push(channel);
-            }
-          }
-          const denied = requested.filter((c) => !granted.includes(c));
-          sendTo(conn, { type: "subscribed", channels: granted, denied });
-          return;
+    case "subscribe": {
+      const granted: string[] = [];
+      for (const channel of message.channels) {
+        if (await authorizeChannel(channel, connection.userId)) {
+          manager.subscribe(connection, channel);
+          granted.push(channel);
         }
-
-        case "unsubscribe": {
-          const requested = Array.isArray(msg.channels)
-            ? msg.channels.filter((c): c is string => typeof c === "string")
-            : [];
-          for (const channel of requested) unsubscribe(conn, channel);
-          sendTo(conn, { type: "unsubscribed", channels: requested });
-          return;
-        }
-
-        case "sync": {
-          const since = typeof msg.since === "number" && Number.isFinite(msg.since) ? msg.since : null;
-          const channels = channelsOf(conn);
-          if (since != null && channels.length > 0) {
-            const events = await readOutboxSince(since, channels).catch(() => []);
-            for (const event of events) {
-              sendTo(conn, { type: "event", event });
-            }
-          }
-          sendTo(conn, { type: "synced", since });
-          return;
-        }
-
-        case "relay": {
-          // Ephemeral presence relay — only allow-listed types, channel must
-          // be authorized, and the acting userId is ALWAYS server-set. Durable
-          // events can never originate from a client.
-          if (typeof msg.channel !== "string" || typeof msg.eventType !== "string") {
-            sendTo(conn, { type: "error", code: "BAD_RELAY", message: "Invalid relay" });
-            return;
-          }
-          if (!RELAYABLE_TYPES.has(msg.eventType)) {
-            sendTo(conn, {
-              type: "error",
-              code: "FORBIDDEN_RELAY",
-              message: "Event type cannot be relayed by clients",
-            });
-            return;
-          }
-          if (!(await authorizeChannel(msg.channel))) {
-            sendTo(conn, { type: "error", code: "FORBIDDEN", message: "Not subscribed" });
-            return;
-          }
-          // Throttle typing.started (the client fires it on every debounce).
-          if (msg.eventType === "chat.typing.started" && !typingRelayAllowed(user.userId, msg.channel)) {
-            return;
-          }
-          broadcast(msg.channel, {
-            id: randomUUID(),
-            seq: null,
-            type: msg.eventType,
-            channel: msg.channel,
-            ts: new Date().toISOString(),
-            userId: user.userId,
-            payload: msg.payload ?? {},
-          });
-          return;
-        }
-
-        default:
-          sendTo(conn, { type: "error", code: "UNKNOWN_TYPE", message: "Unknown message type" });
       }
-    };
-
-    // Flush any frames that arrived while authentication was in flight.
-    authenticated = true;
-    for (const raw of pendingFrames) handleFrame(raw);
-    pendingFrames.length = 0;
-
-    ws.on("error", () => {
-      try {
-        ws.close();
-      } catch {
-        // ignore
+      manager.send(connection, {
+        type: "subscribed",
+        channels: granted,
+        denied: message.channels.filter((channel) => !granted.includes(channel)),
+      });
+      return;
+    }
+    case "unsubscribe":
+      for (const channel of message.channels) manager.unsubscribe(connection, channel);
+      manager.send(connection, { type: "unsubscribed", channels: message.channels });
+      return;
+    case "sync": {
+      const since = message.since;
+      if (since !== null) {
+        const events = await readOutboxSince(since, manager.channelsOf(connection)).catch(() => []);
+        for (const event of events) manager.send(connection, { type: "event", event: toSweetEvent(event) });
       }
-    });
-  });
+      manager.send(connection, { type: "synced", since });
+      return;
+    }
+    case "command":
+    case "relay":
+      await handleClientMessage(connection, message);
+      return;
+  }
+}
+
+function toSweetEvent(event: {
+  id: string;
+  seq: number | null;
+  type: string;
+  channel: string;
+  ts: string;
+  resourceId?: string;
+  userId?: string;
+  payload: Record<string, unknown>;
+}) {
+  return {
+    id: event.id,
+    version: 1 as const,
+    type: event.type,
+    timestamp: new Date(event.ts).getTime(),
+    userId: event.userId ?? "",
+    channel: event.channel,
+    roomId: event.channel.replace(/^(chat|conversation|post):/, "") || undefined,
+    resourceId: event.resourceId,
+    clientMessageId: typeof event.payload.clientMessageId === "string" ? event.payload.clientMessageId : undefined,
+    sequence: event.seq,
+    payload: event.payload,
+  };
 }

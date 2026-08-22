@@ -502,7 +502,16 @@ export async function listRoomMessages(
     .innerJoin(users, eq(users.id, chat_room_messages.sender_id))
     .leftJoin(profiles, eq(profiles.user_id, chat_room_messages.sender_id))
     .where(and(...conds))
-    .orderBy(opts.after ? chat_room_messages.created_at : desc(chat_room_messages.created_at))
+    // Deterministic ordering: created_at is not unique (two messages can be
+    // written in the same millisecond), so tie-break on the id (also
+    // monotonically increasing per insert). Without this, pagination and the
+    // changes feed could return the same message twice or skip one on
+    // same-timestamp boundaries, and the client's list could wobble.
+    .orderBy(
+      opts.after
+        ? sql`${chat_room_messages.created_at} ASC, ${chat_room_messages.id} ASC`
+        : sql`${chat_room_messages.created_at} DESC, ${chat_room_messages.id} DESC`,
+    )
     .limit(limit);
 
   // Hide messages the viewer deleted-for-me / recalled / cleared.

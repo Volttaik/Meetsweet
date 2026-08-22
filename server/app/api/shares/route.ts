@@ -9,6 +9,7 @@ import { parseBody } from "@/lib/api/validate";
 import { ok, err, created } from "@/lib/api/response";
 import { generateId } from "@/lib/auth/codes";
 import { config } from "@/lib/config";
+import { emitEvent } from "@/lib/realtime/emit";
 
 const createSchema = z.object({
   content_type: z.enum(["post", "video", "short", "album", "creator"]).optional(),
@@ -51,7 +52,7 @@ export async function POST(req: NextRequest) {
     case "post":
     case "video":
     case "short": {
-      const [post] = await db.select({ id: posts.id }).from(posts)
+      const [post] = await db.select({ id: posts.id, creator_id: posts.creator_id, share_count: posts.share_count }).from(posts)
         .where(and(eq(posts.id, content_id), eq(posts.status, "published"), isNull(posts.deleted_at)))
         .limit(1);
       if (!post) return err("Content not found", 404);
@@ -59,6 +60,18 @@ export async function POST(req: NextRequest) {
       await db.update(posts)
         .set({ share_count: sql`${posts.share_count} + 1` })
         .where(eq(posts.id, content_id));
+      void emitEvent({
+        type: "share:created",
+        channel: `post:${content_id}`,
+        resourceId: content_id,
+        userId,
+        payload: {
+          postId: content_id,
+          creatorId: post.creator_id,
+          shareCount: Number(post.share_count ?? 0) + 1,
+          shareId: null,
+        },
+      });
       break;
     }
     case "album": {

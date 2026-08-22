@@ -1,0 +1,17 @@
+export const MESSAGE_EVENTS = {
+  send: "message:send",
+  created: "message:created",
+  acknowledged: "message:acknowledged",
+  updated: "message:updated",
+  deleted: "message:deleted",
+  failed: "message:failed",
+  delivered: "message:delivered",
+  read: "message:read",
+  reply: "message:reply",
+  media: "message:media",
+  typingStart: "typing:start",
+  typingStop: "typing:stop",
+  voiceStart: "voice:start",
+  voiceStop: "voice:stop",
+  presenceUpdate: "presence:update",
+} as const;

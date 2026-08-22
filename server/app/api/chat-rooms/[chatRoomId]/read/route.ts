@@ -6,7 +6,7 @@ import { requireAuth } from "@/middleware/auth";
 import { ok } from "@/lib/api/response";
 import { getMember } from "@/lib/services/chat-rooms";
 import { emitEvent } from "@/lib/realtime/emit";
-import { EVENT } from "@/lib/realtime/types";
+import { SWEETSOCKET_EVENT } from "@/lib/realtime/sweet-socket/types";
 
 export async function POST(
   _req: NextRequest,
@@ -29,7 +29,7 @@ export async function POST(
   // instantly. Ephemeral: on reconnect the read state is re-derived from the
   // member's last_read_at via the normal message fetch.
   void emitEvent({
-    type: EVENT.chatMessageRead,
+    type: SWEETSOCKET_EVENT.messageRead,
     channel: `chat:${chatRoomId}`,
     resourceId: chatRoomId,
     userId: auth.user.userId,

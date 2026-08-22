@@ -659,6 +659,8 @@ export const chat_room_messages = sqliteTable(
     // request so renderers never guess from the URL.
     file_type: text("file_type"),
     is_voice_note: integer("is_voice_note", { mode: "boolean" }).notNull().default(false),
+    // Stable client identity used for idempotent SweetSocket/HTTP retries.
+    client_message_id: text("client_message_id"),
     // JSON: [{ emoji, user_ids: [userId, ...] }]
     reactions: text("reactions"),
     // JSON array of user ids that have delete-for-me'd this message.
@@ -669,7 +671,12 @@ export const chat_room_messages = sqliteTable(
     updated_at: updatedAt(),
     deleted_at: text("deleted_at"),
   },
-  (table) => [index("chat_room_messages_room_created_idx").on(table.chat_room_id, table.created_at)],
+  (table) => [
+    index("chat_room_messages_room_created_idx").on(table.chat_room_id, table.created_at),
+    uniqueIndex("chat_room_messages_sender_client_idx")
+      .on(table.sender_id, table.client_message_id)
+      .where(sql`${table.client_message_id} IS NOT NULL`),
+  ],
 );
 
 // ─── Chat typing state (ephemeral — client-reported, short-lived) ─────────────

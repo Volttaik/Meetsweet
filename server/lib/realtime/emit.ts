@@ -16,6 +16,7 @@ import { broadcast } from "./hub";
 import { publishEvent } from "./bus";
 import { appendOutboxEvent } from "./outbox";
 import type { EmitOptions, RealtimeEvent } from "./types";
+import { canonicalEventType } from "./sweet-socket/event-emitter";
 
 export async function emitEvent(opts: EmitOptions): Promise<void> {
   try {
@@ -23,7 +24,7 @@ export async function emitEvent(opts: EmitOptions): Promise<void> {
     const event: RealtimeEvent = {
       id: randomUUID(),
       seq: null,
-      type: opts.type,
+      type: canonicalEventType(opts.type),
       channel: opts.channel,
       ts,
       resourceId: opts.resourceId,
@@ -31,18 +32,17 @@ export async function emitEvent(opts: EmitOptions): Promise<void> {
       payload: opts.payload ?? {},
     };
 
-    // Durable events go to the outbox first (source for missed-event recovery
-    // and cross-instance delivery). Ephemeral events are broadcast only.
-    if (opts.durable !== false) {
-      event.seq = await appendOutboxEvent(event);
-    }
-
-    // 1. Local fan-out first (instant within this instance).
+    // Local fanout is the realtime path and must not wait for Turso. Durable
+    // recovery and cross-instance relay continue asynchronously afterward.
     broadcast(opts.channel, event);
-    // 2. Then publish to the shared Redis stream so OTHER instances (their
-    //    blocking readers wake immediately) deliver it to their subscribers.
-    //    No-op when REDIS_URL is not configured — single-instance fallback.
-    void publishEvent(event);
+    void (async () => {
+      if (opts.durable !== false) {
+        event.seq = await appendOutboxEvent(event);
+      }
+      // Redis is shared coordination for instances pinned to different
+      // WebSocket Function instances; it is intentionally best-effort.
+      await publishEvent(event);
+    })();
   } catch {
     // Realtime emission is best-effort — never break the API response.
   }

@@ -321,15 +321,22 @@ export async function notifySubscribersOfNewPost(input: {
     };
 
     await Promise.all(
-      recipientIds.map((userId) =>
-        createNotification(userId, "notif_creator_updates", {
+      recipientIds.map(async (userId) => {
+        void emitEvent({
+          type: "post:created",
+          channel: `user:${userId}`,
+          resourceId: input.postId,
+          userId: input.creatorId,
+          payload: { postId: input.postId, contentType: input.contentType, title: input.title ?? null },
+        });
+        return createNotification(userId, "notif_creator_updates", {
           actor_id: input.creatorId,
           type: "new_post",
           entity_type: input.contentType,
           entity_id: input.postId,
           body,
-        }),
-      ),
+        });
+      }),
     );
 
     await sendPushToUsers(

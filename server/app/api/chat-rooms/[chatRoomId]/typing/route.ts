@@ -5,31 +5,24 @@
  * the input field. Typing is an EPHEMERAL realtime state: it is broadcast
  * immediately over the WebSocket layer (chat:typing.started) and never
  * written to the database per keystroke. A throttled short-lived row (30s
- * timeout) is kept ONLY as a fallback so the /changes polling path still sees
- * typing when the WebSocket is unavailable — the DB write is throttled to at
- * most once every 5s per (user, room).
+ * timeout) is no longer persisted; the event is ephemeral and lives only on
+ * the authorized SweetSocket channel.
  *
  * DELETE — called when the user stops typing, sends a message, or leaves the
- * room. Clears the typing state immediately (realtime + fallback row).
+ * room. Clears the typing state immediately over SweetSocket.
  */
 
 import { NextRequest } from "next/server";
-import { eq, and } from "drizzle-orm";
 import { requireAuth } from "@/middleware/auth";
-import { ok } from "@/lib/api/response";
-import { db } from "@/lib/db";
-import { typing_states } from "@/lib/db/schema";
-import { generateId } from "@/lib/auth/codes";
+import { ok, err } from "@/lib/api/response";
+import { getMember } from "@/lib/services/chat-rooms";
 import { emitEvent } from "@/lib/realtime/emit";
-import { EVENT } from "@/lib/realtime/types";
+import { SWEETSOCKET_EVENT } from "@/lib/realtime/sweet-socket/types";
 
-const TYPING_TIMEOUT_SECS = 30; // auto-expire after 30s (fallback row only)
-const DB_WRITE_THROTTLE_MS = 5_000;
 const BROADCAST_THROTTLE_MS = 2_000;
 
 // In-memory throttle state (per Function instance). Used only to pace writes
 // and broadcasts — never authoritative; resets are harmless.
-const lastDbWrite = new Map<string, number>();
 const lastBroadcast = new Map<string, number>();
 
 const key = (userId: string, roomId: string) => `${userId}:${roomId}`;
@@ -42,6 +35,7 @@ export async function POST(
   if ("response" in auth) return auth.response;
 
   const { chatRoomId } = await params;
+  if (!(await getMember(chatRoomId, auth.user.userId).catch(() => null))) return err("Chat room not found", 404);
   const now = Date.now();
   const k = key(auth.user.userId, chatRoomId);
 
@@ -49,48 +43,12 @@ export async function POST(
   if ((lastBroadcast.get(k) ?? 0) + BROADCAST_THROTTLE_MS <= now) {
     lastBroadcast.set(k, now);
     void emitEvent({
-      type: EVENT.chatTypingStarted,
+      type: SWEETSOCKET_EVENT.typingStart,
       channel: `chat:${chatRoomId}`,
       resourceId: chatRoomId,
       userId: auth.user.userId,
       payload: { userId: auth.user.userId },
       durable: false,
-    });
-  }
-
-  // Fallback DB row (for the polling path) — throttled so typing is not
-  // continuously written into Turso. 30s expiry keeps it fresh either way.
-  if ((lastDbWrite.get(k) ?? 0) + DB_WRITE_THROTTLE_MS > now) {
-    return ok({ success: true });
-  }
-  lastDbWrite.set(k, now);
-
-  const expiresAt = new Date(now + TYPING_TIMEOUT_SECS * 1000).toISOString();
-
-  // Upsert: if this user already has a typing record for this room, refresh the
-  // expiry. Otherwise insert a new one.
-  const [existing] = await db
-    .select({ id: typing_states.id })
-    .from(typing_states)
-    .where(
-      and(
-        eq(typing_states.chat_room_id, chatRoomId),
-        eq(typing_states.user_id, auth.user.userId),
-      ),
-    )
-    .limit(1);
-
-  if (existing) {
-    await db
-      .update(typing_states)
-      .set({ expires_at: expiresAt })
-      .where(eq(typing_states.id, existing.id));
-  } else {
-    await db.insert(typing_states).values({
-      id: generateId(),
-      chat_room_id: chatRoomId,
-      user_id: auth.user.userId,
-      expires_at: expiresAt,
     });
   }
 
@@ -105,29 +63,20 @@ export async function DELETE(
   if ("response" in auth) return auth.response;
 
   const { chatRoomId } = await params;
+  if (!(await getMember(chatRoomId, auth.user.userId).catch(() => null))) return err("Chat room not found", 404);
 
   const k = key(auth.user.userId, chatRoomId);
   lastBroadcast.delete(k);
-  lastDbWrite.delete(k);
 
   // Realtime: typing.stopped immediately.
   void emitEvent({
-    type: EVENT.chatTypingStopped,
+    type: SWEETSOCKET_EVENT.typingStop,
     channel: `chat:${chatRoomId}`,
     resourceId: chatRoomId,
     userId: auth.user.userId,
     payload: { userId: auth.user.userId },
     durable: false,
   });
-
-  await db
-    .delete(typing_states)
-    .where(
-      and(
-        eq(typing_states.chat_room_id, chatRoomId),
-        eq(typing_states.user_id, auth.user.userId),
-      ),
-    );
 
   return ok({ success: true });
 }

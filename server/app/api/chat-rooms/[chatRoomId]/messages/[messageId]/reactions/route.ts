@@ -8,7 +8,7 @@ import { parseBody } from "@/lib/api/validate";
 import { ok, err } from "@/lib/api/response";
 import { getMember } from "@/lib/services/chat-rooms";
 import { emitEvent } from "@/lib/realtime/emit";
-import { EVENT } from "@/lib/realtime/types";
+import { SWEETSOCKET_EVENT } from "@/lib/realtime/sweet-socket/types";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function parseReactions(value: string | null): any[] {
@@ -75,7 +75,7 @@ export async function POST(
   // Realtime: both participants' clients update the reaction bar instantly.
   // Durable so a reconnecting client converges on the same reactions.
   void emitEvent({
-    type: EVENT.chatReactionUpdated,
+    type: SWEETSOCKET_EVENT.reactionUpdated,
     channel: `chat:${chatRoomId}`,
     resourceId: messageId,
     userId: auth.user.userId,

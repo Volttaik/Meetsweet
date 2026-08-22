@@ -218,6 +218,12 @@ export async function POST(
     .from(subscriptions)
     .where(and(eq(subscriptions.creator_id, creator_id), eq(subscriptions.status, "active")));
   const subscriber_count = subCountRow?.n ?? 0;
+  const [walletRow] = await db
+    .select({ balance: wallets.balance })
+    .from(wallets)
+    .where(eq(wallets.user_id, auth.user.userId))
+    .limit(1);
+  const balance = walletRow?.balance ?? 0;
 
   // Realtime — emitted ONLY after the confirmed DB transaction (financial
   // state is never optimistic): the creator's connected devices update their
@@ -235,7 +241,7 @@ export async function POST(
     channel: `user:${auth.user.userId}`,
     resourceId: auth.user.userId,
     userId: auth.user.userId,
-    payload: { reason: "subscription", creatorId: creator_id },
+    payload: { reason: "subscription", creatorId: creator_id, balance },
   });
 
   if (outcome.kind === "existing") {

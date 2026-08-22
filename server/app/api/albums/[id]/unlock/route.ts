@@ -98,6 +98,13 @@ export async function POST(
     }, "notif_creator_updates"),
   );
 
+  const [walletRow] = await db
+    .select({ balance: wallets.balance })
+    .from(wallets)
+    .where(eq(wallets.user_id, auth.user.userId))
+    .limit(1);
+  const balance = walletRow?.balance ?? 0;
+
   // Realtime — emitted ONLY after the confirmed transaction (financial state
   // is never optimistic): the buyer's wallet balance and album purchase state
   // update instantly on their connected devices.
@@ -106,14 +113,21 @@ export async function POST(
     channel: `user:${auth.user.userId}`,
     resourceId: auth.user.userId,
     userId: auth.user.userId,
-    payload: { reason: "album_unlock", albumId: id },
+    payload: { reason: "album_unlock", albumId: id, balance },
   });
   void emitEvent({
-    type: "purchase.completed",
+    type: "album:purchased",
     channel: `user:${auth.user.userId}`,
     resourceId: id,
     userId: auth.user.userId,
-    payload: { albumId: id, creatorId: album.creator_id, amount: price },
+    payload: { albumId: id, creatorId: album.creator_id, amount: price, balance },
+  });
+  void emitEvent({
+    type: "album:purchased",
+    channel: `user:${album.creator_id}`,
+    resourceId: id,
+    userId: auth.user.userId,
+    payload: { albumId: id, creatorId: album.creator_id, buyerId: auth.user.userId, amount: price },
   });
 
   // Buyer confirmation email with full purchase context. Best-effort — a

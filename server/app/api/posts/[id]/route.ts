@@ -7,6 +7,7 @@ import { requireAuth, optionalAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err } from "@/lib/api/response";
 import { canViewContent, buildQualities } from "@/lib/services/content";
+import { emitEvent } from "@/lib/realtime/emit";
 
 const patchSchema = z.object({
   caption: z.string().max(2200).nullable().optional(),
@@ -204,6 +205,13 @@ export async function PATCH(
     .from(posts)
     .where(eq(posts.id, id))
     .limit(1);
+  void emitEvent({
+    type: "post:updated",
+    channel: `post:${id}`,
+    resourceId: id,
+    userId: auth.user.userId,
+    payload: { post: updated ? { ...updated, tags: updated.tags ? JSON.parse(updated.tags) : [] } : null },
+  });
   return ok({
     post: {
       ...updated,
@@ -235,6 +243,13 @@ export async function DELETE(
     .set({ deleted_at: new Date().toISOString() })
     .where(eq(posts.id, id));
 
+  void emitEvent({
+    type: "post:deleted",
+    channel: `post:${id}`,
+    resourceId: id,
+    userId: auth.user.userId,
+    payload: { postId: id },
+  });
   return ok({ deleted: true });
 }
 
