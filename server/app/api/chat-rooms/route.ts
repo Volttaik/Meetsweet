@@ -1,8 +1,8 @@
 import { NextRequest } from "next/server";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, or, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { users, typing_states } from "@/lib/db/schema";
+import { users, typing_states, user_settings } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err, created } from "@/lib/api/response";
@@ -20,9 +20,14 @@ async function typingMap(roomIds: string[], excludeUserId: string): Promise<Reco
   const rows = await db
     .select({ chat_room_id: typing_states.chat_room_id, user_id: typing_states.user_id })
     .from(typing_states)
+    .leftJoin(user_settings, eq(user_settings.user_id, typing_states.user_id))
     .where(
       and(
         sql`${typing_states.expires_at} > ${now}`,
+        // Privacy: a user who turned off the Typing Indicator never appears
+        // as typing to others — enforced server-side, not just hidden on the
+        // client. Missing settings rows default to visible.
+        or(isNull(user_settings.typing_indicator), eq(user_settings.typing_indicator, true)),
       ),
     );
   const result: Record<string, string[]> = {};

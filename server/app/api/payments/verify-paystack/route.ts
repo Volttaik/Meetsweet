@@ -173,7 +173,10 @@ export async function POST(req: NextRequest) {
   }
 
   // Confirmation email — best-effort, must never block or roll back the credit.
-  // Failures are logged inside deliver() and swallowed here.
+  // Failures are logged inside deliver() and swallowed here. Reached only on
+  // the freshly-transitioned path above: the atomic non-success → success
+  // update guarantees this runs exactly once per transaction, so repeated
+  // "I have paid" taps or webhook retries can never produce a duplicate email.
   try {
     const [userRow] = await db
       .select({ email: users.email, full_name: users.full_name })
@@ -187,6 +190,9 @@ export async function POST(req: NextRequest) {
         amount,
         currency: tx.currency,
         newBalance,
+        reference: tx.reference ?? tx.id,
+        status: "Successful",
+        date: now,
       }).catch(() => null);
     }
   } catch {

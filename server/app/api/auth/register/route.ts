@@ -73,7 +73,6 @@ export async function POST(req: NextRequest) {
   await db.insert(user_settings).values({
     id: generateId(),
     user_id: userId,
-    biometric_login: false,
   });
 
   // ── Send verification email ───────────────────────────────────────────────

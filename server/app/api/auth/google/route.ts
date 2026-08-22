@@ -225,7 +225,6 @@ export async function POST(req: NextRequest) {
       await tx.insert(user_settings).values({
         id: generateId(),
         user_id: userId,
-        biometric_login: false,
       });
     });
   } catch {

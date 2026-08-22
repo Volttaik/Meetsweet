@@ -17,7 +17,6 @@ const patchSchema = z.object({
   high_quality_media: z.boolean().optional(),
   sensitive_content: z.boolean().optional(),
   language: z.string().max(50).optional(),
-  biometric_login: z.boolean().optional(),
 });
 
 export async function GET(req: NextRequest) {
@@ -45,7 +44,6 @@ export async function GET(req: NextRequest) {
     high_quality_media: settings!.high_quality_media,
     sensitive_content: settings!.sensitive_content,
     language: settings!.language,
-    biometric_login: settings!.biometric_login,
   });
 }
 
@@ -80,6 +78,5 @@ export async function PATCH(req: NextRequest) {
     high_quality_media: settings!.high_quality_media,
     sensitive_content: settings!.sensitive_content,
     language: settings!.language,
-    biometric_login: settings!.biometric_login,
   });
 }

@@ -6,6 +6,7 @@ import { users, verification_codes } from "@/lib/db/schema";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err } from "@/lib/api/response";
 import { verifyEmailLimit, getClientIp, tooManyRequests } from "@/lib/security/rate-limiter";
+import { sendWelcomeEmail } from "@/lib/services/email";
 
 export async function POST(req: NextRequest) {
   const ip = getClientIp(req);
@@ -19,7 +20,7 @@ export async function POST(req: NextRequest) {
 
   const { code, email } = parsed.data;
 
-  const [user] = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);
+  const [user] = await db.select({ id: users.id, full_name: users.full_name }).from(users).where(eq(users.email, email)).limit(1);
   if (!user) return err("Invalid verification code", 400);
 
   const now = new Date().toISOString();
@@ -41,6 +42,13 @@ export async function POST(req: NextRequest) {
 
   await db.update(verification_codes).set({ used_at: now }).where(eq(verification_codes.id, vcRow.id));
   await db.update(users).set({ is_verified: true, updated_at: now }).where(eq(users.id, user.id));
+
+  // First verification = the account is now live — send the welcome email.
+  // Best-effort; a delivery failure must never fail the verification itself.
+  await sendWelcomeEmail({
+    to: email,
+    name: user.full_name ?? email,
+  }).catch(() => null);
 
   return ok({ verified: true });
 }

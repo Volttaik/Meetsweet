@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { eq, like, or, and, isNull, desc, sql, notInArray, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { users, profiles, posts, albums, hidden_posts } from "@/lib/db/schema";
+import { users, profiles, posts, albums, hidden_posts, user_settings } from "@/lib/db/schema";
 import { optionalAuth } from "@/middleware/auth";
 import { ok } from "@/lib/api/response";
 import { generateId } from "@/lib/auth/codes";
@@ -90,6 +90,7 @@ export async function GET(req: NextRequest) {
       })
       .from(users)
       .leftJoin(profiles, eq(profiles.user_id, users.id))
+      .leftJoin(user_settings, eq(user_settings.user_id, users.id))
       .where(
         and(
           eq(users.is_active, true),
@@ -100,6 +101,9 @@ export async function GET(req: NextRequest) {
             like(users.full_name, pattern),
             like(profiles.display_name, pattern),
           ),
+          // Privacy: accounts that turned off Search Visibility never appear
+          // in search — enforced server-side, not filtered on the client.
+          or(isNull(user_settings.search_visible), eq(user_settings.search_visible, true)),
           ...hiddenCond,
         ),
       )
@@ -184,6 +188,26 @@ export async function GET(req: NextRequest) {
             like(users.username, pattern),
             like(profiles.display_name, pattern),
           ),
+          // Private accounts: posts are only searchable by the owner and
+          // active subscribers — enforced server-side.
+          userId
+            ? sql`(
+                NOT EXISTS (
+                  SELECT 1 FROM user_settings us
+                  WHERE us.user_id = ${posts.creator_id} AND us.private_account = 1
+                )
+                OR ${posts.creator_id} = ${userId}
+                OR EXISTS (
+                  SELECT 1 FROM subscriptions s
+                  WHERE s.subscriber_id = ${userId}
+                    AND s.creator_id = ${posts.creator_id}
+                    AND s.status = 'active'
+                )
+              )`
+            : sql`NOT EXISTS (
+                SELECT 1 FROM user_settings us
+                WHERE us.user_id = ${posts.creator_id} AND us.private_account = 1
+              )`,
           ...hiddenCreatorIds.length > 0 ? [notInArray(posts.creator_id, hiddenCreatorIds)] : [],
           ...hiddenPostCond,
         ),

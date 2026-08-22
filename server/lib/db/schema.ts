@@ -95,7 +95,6 @@ export const user_settings = sqliteTable("user_settings", {
   high_quality_media: integer("high_quality_media", { mode: "boolean" }).notNull().default(true),
   sensitive_content: integer("sensitive_content", { mode: "boolean" }).notNull().default(false),
   language: text("language").notNull().default("English"),
-  biometric_login: integer("biometric_login", { mode: "boolean" }).notNull().default(false),
   // ── Privacy settings ──────────────────────────────────────────────────────
   private_account: integer("private_account", { mode: "boolean" }).default(false),
   online_status: integer("online_status", { mode: "boolean" }).default(true),

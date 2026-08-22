@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { eq, and } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { creator_settings, subscriptions, users } from "@/lib/db/schema";
+import { creator_settings, subscriptions, user_settings, users } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
 import { ok } from "@/lib/api/response";
 
@@ -56,9 +56,25 @@ export async function GET(
     .limit(1);
   const subscribed = Boolean(sub);
 
-  const can_message =
+  // The recipient's own privacy policy (Settings → Privacy → Who Can Message
+  // Me) is enforced here too, mirroring messagingAllowedError() so the client
+  // pre-check and the server gate always agree.
+  const [privacy] = await db
+    .select({ allow_dms: user_settings.allow_dms, message_perm: user_settings.message_perm })
+    .from(user_settings)
+    .where(eq(user_settings.user_id, id))
+    .limit(1);
+  let privacy_allows = true;
+  if (privacy) {
+    if (privacy.allow_dms === false || privacy.message_perm === "nobody") privacy_allows = false;
+    else if (privacy.message_perm === "subscribers") privacy_allows = subscribed;
+  }
+
+  const creator_allows =
     who_can_message === "everyone" ||
     (who_can_message === "subscribers" && subscribed);
+
+  const can_message = creator_allows && privacy_allows;
 
   return ok({
     who_can_message,

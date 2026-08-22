@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { eq, and, count, isNull, gte } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { users, profiles, follows, subscriptions, posts, creator_settings, albums, devices } from "@/lib/db/schema";
+import { users, profiles, follows, subscriptions, posts, creator_settings, albums, devices, user_settings } from "@/lib/db/schema";
 import { optionalAuth } from "@/middleware/auth";
 import { ok, err } from "@/lib/api/response";
 import { resolveBasePrice } from "@/lib/services/pricing";
@@ -89,14 +89,24 @@ export async function GET(
 
   // Presence: "online" = a device seen within the last 10 minutes. This is the
   // app's real activity signal (devices.last_seen_at is updated on push-token
-  // registration / app foreground) — not a hardcoded value.
-  const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-  const [recentDevice] = await db
-    .select({ id: devices.id })
-    .from(devices)
-    .where(and(eq(devices.user_id, user.id), gte(devices.last_seen_at, tenMinutesAgo)))
+  // registration / app foreground) — not a hardcoded value. The creator's own
+  // privacy settings gate the indicator: turning off Online Status or Activity
+  // Status hides it from everyone, enforced server-side.
+  const [presenceSettings] = await db
+    .select({ online_status: user_settings.online_status, activity_status: user_settings.activity_status })
+    .from(user_settings)
+    .where(eq(user_settings.user_id, user.id))
     .limit(1);
-  const isOnline = Boolean(recentDevice);
+  const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+  let isOnline = false;
+  if (presenceSettings?.online_status !== false && presenceSettings?.activity_status !== false) {
+    const [recentDevice] = await db
+      .select({ id: devices.id })
+      .from(devices)
+      .where(and(eq(devices.user_id, user.id), gte(devices.last_seen_at, tenMinutesAgo)))
+      .limit(1);
+    isOnline = Boolean(recentDevice);
+  }
 
   // Pricing source of truth: creator_settings, falling back to the legacy
   // profiles.subscription_price. subscriber_plus falls back to 2× the base

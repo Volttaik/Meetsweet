@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
-import { eq, and, count, inArray, gte, isNull } from "drizzle-orm";
+import { eq, and, count, inArray, gte, isNull, or } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { users, profiles, subscriptions, creator_settings, devices } from "@/lib/db/schema";
+import { users, profiles, subscriptions, creator_settings, devices, user_settings } from "@/lib/db/schema";
 import { optionalAuth } from "@/middleware/auth";
 import { ok } from "@/lib/api/response";
 import { resolveBasePrice } from "@/lib/services/pricing";
@@ -70,6 +70,22 @@ export async function GET(req: NextRequest) {
           .groupBy(devices.user_id)
       : [];
   const onlineSet = new Set(onlineRows.map((r) => r.user_id));
+
+  // Privacy: accounts that turned off Online Status / Activity Status are
+  // never reported as online, regardless of device activity (server-enforced).
+  const hiddenPresenceRows =
+    creatorIds.length > 0
+      ? await db
+          .select({ user_id: user_settings.user_id })
+          .from(user_settings)
+          .where(
+            and(
+              inArray(user_settings.user_id, creatorIds),
+              or(eq(user_settings.online_status, false), eq(user_settings.activity_status, false)),
+            ),
+          )
+      : [];
+  for (const r of hiddenPresenceRows) onlineSet.delete(r.user_id);
 
   // Per-viewer subscription state — LIVE server data, so Explore never shows a
   // stale "Subscribe" button for a user who already subscribed (even after a

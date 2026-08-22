@@ -6,6 +6,7 @@ import {
   chat_room_messages,
   chat_rooms,
   creator_settings,
+  devices,
   profiles,
   subscriptions,
   users,
@@ -15,11 +16,33 @@ import { generateId } from "@/lib/auth/codes";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/** An account is "online" when last_seen_at was within the last 5 minutes. */
-function isOnline(lastSeenAt: string | null): boolean {
-  if (!lastSeenAt) return false;
-  const FIVE_MINUTES = 5 * 60 * 1000;
-  return Date.now() - new Date(lastSeenAt).getTime() < FIVE_MINUTES;
+/**
+ * Whether a user should be presented as online to others. A device seen within
+ * the last 10 minutes counts as online (devices.last_seen_at is updated on
+ * push-token registration / app foreground). The user's OWN privacy settings
+ * gate the indicator: turning off Online Status or Activity Status hides it
+ * from everyone, so "hide my online status" is enforced server-side.
+ */
+async function participantOnline(userId: string): Promise<boolean> {
+  const [settings] = await db
+    .select({
+      online_status: user_settings.online_status,
+      activity_status: user_settings.activity_status,
+    })
+    .from(user_settings)
+    .where(eq(user_settings.user_id, userId))
+    .limit(1);
+  if (settings && (settings.online_status === false || settings.activity_status === false)) {
+    return false;
+  }
+  const TEN_MINUTES = 10 * 60 * 1000;
+  const cutoff = new Date(Date.now() - TEN_MINUTES).toISOString();
+  const [recentDevice] = await db
+    .select({ id: devices.id })
+    .from(devices)
+    .where(and(eq(devices.user_id, userId), sql`${devices.last_seen_at} >= ${cutoff}`))
+    .limit(1);
+  return Boolean(recentDevice);
 }
 
 function parseJsonArray(value: string | null): string[] {
@@ -82,7 +105,45 @@ export async function getParticipantUser(userId: string) {
   return row ?? null;
 }
 
-/** Enforce the creator messaging rule server-side. Returns null when allowed. */
+/**
+ * The recipient's privacy policy for "who can message me": user_settings
+ * allow_dms (hard off-switch) and message_perm (everyone | subscribers |
+ * nobody). Missing settings rows default to fully open — same defaults as the
+ * schema.
+ */
+async function userMessagingPolicyError(callerId: string, participantId: string): Promise<string | null> {
+  const [policy] = await db
+    .select({ allow_dms: user_settings.allow_dms, message_perm: user_settings.message_perm })
+    .from(user_settings)
+    .where(eq(user_settings.user_id, participantId))
+    .limit(1);
+
+  if (!policy) return null;
+  if (policy.allow_dms === false) return "This user has disabled direct messages";
+  if (policy.message_perm === "nobody") return "This user has disabled direct messages";
+  if (policy.message_perm === "subscribers") {
+    const [sub] = await db
+      .select({ id: subscriptions.id })
+      .from(subscriptions)
+      .where(
+        and(
+          eq(subscriptions.subscriber_id, callerId),
+          eq(subscriptions.creator_id, participantId),
+          eq(subscriptions.status, "active"),
+        ),
+      )
+      .limit(1);
+    if (!sub) return "Subscribing is required to message this user";
+  }
+  return null;
+}
+
+/**
+ * Enforce the messaging rules server-side — the recipient's creator rule AND
+ * their privacy policy (allow_dms / message_perm). Returns null when allowed.
+ * The stricter of the two rules wins; every chat-room open and message send
+ * goes through here so the setting cannot be bypassed by calling the API.
+ */
 export async function messagingAllowedError(callerId: string, participantId: string): Promise<string | null> {
   const [creator] = await db
     .select({ who_can_message: creator_settings.who_can_message })
@@ -91,7 +152,7 @@ export async function messagingAllowedError(callerId: string, participantId: str
     .limit(1);
 
   if (!creator || creator.who_can_message === "everyone" || creator.who_can_message == null) {
-    return null;
+    return userMessagingPolicyError(callerId, participantId);
   }
   if (creator.who_can_message === "none") {
     return "This creator has disabled direct messages";
@@ -113,7 +174,8 @@ export async function messagingAllowedError(callerId: string, participantId: str
   if (!sub) {
     return "Subscribing is required to message this creator";
   }
-  return null;
+  // The creator rule passed — still respect the recipient's own privacy policy.
+  return userMessagingPolicyError(callerId, participantId);
 }
 
 export async function findOrCreateChatRoom(callerId: string, participantId: string) {
@@ -273,6 +335,7 @@ export async function buildRoom(chatRoomId: string, viewerId: string): Promise<a
   const unreadCount = unreadCandidates.filter(isVisibleToViewer).length;
 
   const isBlocked = other ? await isBlockedBetween(viewerId, other.id) : false;
+  const otherOnline = other ? await participantOnline(other.id) : false;
 
   return {
     chat_room_id: chatRoomId,
@@ -303,23 +366,12 @@ export async function buildRoom(chatRoomId: string, viewerId: string): Promise<a
     lastMessageSenderId: lastMessage?.sender_id ?? null,
     participants: participants.map((p) => participantShape(p, p.is_creator)),
     other_user: other
-      ? { ...participantShape(other, other.is_creator), is_online: isOnline(users_row_last_seen(other.id)), isOnline: isOnline(users_row_last_seen(other.id)) }
+      ? { ...participantShape(other, other.is_creator), is_online: otherOnline, isOnline: otherOnline }
       : null,
     otherUser: other
-      ? { ...participantShape(other, other.is_creator), is_online: isOnline(users_row_last_seen(other.id)), isOnline: isOnline(users_row_last_seen(other.id)) }
+      ? { ...participantShape(other, other.is_creator), is_online: otherOnline, isOnline: otherOnline }
       : null,
   };
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const _lastSeenCache = new Map<string, string | null>();
-function users_row_last_seen(userId: string): string | null {
-  return _lastSeenCache.get(userId) ?? null;
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function cacheLastSeen(userId: string, lastSeenAt: string | null): void {
-  _lastSeenCache.set(userId, lastSeenAt);
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -328,14 +380,19 @@ export async function buildMessage(
   viewerId: string,
   replyLookup?: Map<string, any>,
   readThrough?: string | null,
+  readReceiptsEnabled = true,
 ): Promise<any> {
   const reactions = parseReactions(raw.reactions);
   const deletedFor = parseJsonArray(raw.deleted_for);
   const isOwn = raw.sender_id === viewerId;
   // Honest status: "delivered" = persisted server-side (true for every stored
   // message); "read" = the OTHER participant's last_read_at has passed this
-  // message's timestamp. Only meaningful for the viewer's own messages.
-  const read = isOwn ? Boolean(readThrough && raw.created_at && raw.created_at <= readThrough) : false;
+  // message's timestamp. Only meaningful for the viewer's own messages, and
+  // only reported when the other participant has Read Receipts enabled — when
+  // they turned it off, no read signal is ever sent, enforced server-side.
+  const read = isOwn
+    ? Boolean(readReceiptsEnabled && readThrough && raw.created_at && raw.created_at <= readThrough)
+    : false;
 
   let replyTo: any = null;
   if (raw.reply_to_id) {
@@ -480,12 +537,18 @@ export async function listRoomMessages(
 
   // Read marker for the viewer's outgoing messages: the OTHER participant's
   // last_read_at. When it has passed a message's timestamp, that message was
-  // read by the recipient.
+  // read by the recipient — but only when that participant has Read Receipts
+  // enabled (their privacy setting, read from user_settings and enforced here).
   let readThrough: string | null = null;
+  let readReceiptsEnabled = true;
   if (member) {
     const [otherMember] = await db
-      .select({ last_read_at: chat_room_members.last_read_at })
+      .select({
+        last_read_at: chat_room_members.last_read_at,
+        read_receipts: user_settings.read_receipts,
+      })
       .from(chat_room_members)
+      .leftJoin(user_settings, eq(user_settings.user_id, chat_room_members.user_id))
       .where(
         and(
           eq(chat_room_members.chat_room_id, chatRoomId),
@@ -494,11 +557,12 @@ export async function listRoomMessages(
       )
       .limit(1);
     readThrough = otherMember?.last_read_at ?? null;
+    readReceiptsEnabled = otherMember?.read_receipts !== false;
   }
 
   const messages = [];
   for (const r of visible) {
-    messages.push(await buildMessage(r, viewerId, replyLookup, readThrough));
+    messages.push(await buildMessage(r, viewerId, replyLookup, readThrough, readReceiptsEnabled));
   }
   return messages;
 }

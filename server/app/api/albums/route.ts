@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { and, desc, eq, inArray, isNull, gte, or, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { albums, album_items, album_unlocks, media, profiles, users, devices, subscriptions } from "@/lib/db/schema";
+import { albums, album_items, album_unlocks, media, profiles, users, devices, subscriptions, user_settings } from "@/lib/db/schema";
 import { optionalAuth, requireAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { created, err, ok } from "@/lib/api/response";
@@ -271,6 +271,8 @@ export async function POST(req: NextRequest) {
 // ─── Formatting helper ─────────────────────────────────────────────────────
 
 // Presence: "online" = a device seen within the last 10 minutes (real signal).
+// Accounts that turned off Online / Activity status are excluded — the privacy
+// setting is enforced server-side, never reported as online.
 async function buildOnlineSet(creatorIds: string[]): Promise<Set<string>> {
   if (creatorIds.length === 0) return new Set();
   const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
@@ -279,7 +281,21 @@ async function buildOnlineSet(creatorIds: string[]): Promise<Set<string>> {
     .from(devices)
     .where(and(inArray(devices.user_id, creatorIds), gte(devices.last_seen_at, tenMinutesAgo)))
     .groupBy(devices.user_id);
-  return new Set(rows.map((r) => r.user_id));
+  const onlineSet = new Set(rows.map((r) => r.user_id));
+  const hiddenRows =
+    creatorIds.length > 0
+      ? await db
+          .select({ user_id: user_settings.user_id })
+          .from(user_settings)
+          .where(
+            and(
+              inArray(user_settings.user_id, creatorIds),
+              or(eq(user_settings.online_status, false), eq(user_settings.activity_status, false)),
+            ),
+          )
+      : [];
+  for (const r of hiddenRows) onlineSet.delete(r.user_id);
+  return onlineSet;
 }
 
 function formatAlbum(

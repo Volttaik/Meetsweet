@@ -5,7 +5,6 @@ import { db } from "@/lib/db";
 import {
   comment_replies,
   comments,
-  notifications,
   posts,
   profiles,
   users,
@@ -15,7 +14,8 @@ import { parseBody } from "@/lib/api/validate";
 import { ok, err, created } from "@/lib/api/response";
 import { generateId } from "@/lib/auth/codes";
 import { listRoomComments, commentShape, ensureCommentRoom } from "@/lib/services/comment-rooms";
-import { sendPushToUser, getActorUsername } from "@/lib/services/push";
+import { sendPushToUser, getActorUsername, createNotification } from "@/lib/services/push";
+import { notifyMentionedUsers } from "@/lib/services/mentions";
 
 export async function GET(
   req: NextRequest,
@@ -40,7 +40,13 @@ export async function POST(
   const { id } = await params;
 
   const [post] = await db
-    .select({ id: posts.id, creator_id: posts.creator_id, content_type: posts.content_type })
+    .select({
+      id: posts.id,
+      creator_id: posts.creator_id,
+      content_type: posts.content_type,
+      title: posts.title,
+      caption: posts.caption,
+    })
     .from(posts)
     .where(eq(posts.id, id))
     .limit(1);
@@ -100,6 +106,16 @@ export async function POST(
       .where(eq(comment_replies.id, replyId))
       .limit(1);
 
+    // @username tags inside a reply notify the tagged users (gated server-side
+    // by their Allow Mentions privacy + Mentions preference).
+    void notifyMentionedUsers({
+      actorId: auth.user.userId,
+      text: parsed.data.body,
+      entityType: post.content_type ?? "post",
+      entityId: id,
+      entityTitle: post.title ?? post.caption,
+    });
+
     return created({ comment: commentShape(row, id, false, parentId) });
   }
 
@@ -112,23 +128,26 @@ export async function POST(
   });
   await db.update(posts).set({ comment_count: sql`${posts.comment_count} + 1` }).where(eq(posts.id, id));
 
-  // Notify the post creator (skip self-comments).
+  // Notify the post creator (skip self-comments). The in-app notification row
+  // is gated by their Comments preference — when OFF, no event is written and
+  // no push is sent (the push below is already gated). Context includes the
+  // post title + comment preview so the notification is meaningful, not generic.
+  const postTitle = (post.title ?? post.caption ?? "").trim();
+  const commentContext = postTitle ? `commented on "${postTitle.slice(0, 60)}"` : "commented on your post";
   if (post.creator_id && post.creator_id !== auth.user.userId) {
-    await db.insert(notifications).values({
-      id: generateId(),
-      user_id: post.creator_id,
+    await createNotification(post.creator_id, "notif_comments", {
       actor_id: auth.user.userId,
       type: "comment",
       entity_type: "post",
       entity_id: id,
-      body: parsed.data.body.slice(0, 100),
-    }).catch(() => {});
+      body: commentContext,
+    });
 
     const preview = parsed.data.body.length > 60 ? parsed.data.body.slice(0, 57) + "…" : parsed.data.body;
     getActorUsername(auth.user.userId).then((actor) =>
       sendPushToUser(post.creator_id!, {
         title: "New Comment",
-        body: `${actor}: ${preview}`,
+        body: `${actor} ${commentContext}${preview ? `: “${preview}”` : ""}`,
         data: {
           type: "comment",
           post_id: id,
@@ -139,6 +158,16 @@ export async function POST(
       }, "notif_comments"),
     );
   }
+
+  // @username tags inside a comment notify the tagged users (gated server-side
+  // by their Allow Mentions privacy + Mentions notification preference).
+  void notifyMentionedUsers({
+    actorId: auth.user.userId,
+    text: parsed.data.body,
+    entityType: post.content_type ?? "post",
+    entityId: id,
+    entityTitle: post.title ?? post.caption,
+  });
 
   const [row] = await db
     .select({

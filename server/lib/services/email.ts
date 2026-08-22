@@ -4,40 +4,36 @@ import { config } from "@/lib/config";
 /**
  * MeetSweet transactional email service (Resend).
  *
- * Branding: emails are professional company communications from MeetSweet
- * Industries (the company behind MeetSweet). The identity mark is the
- * white/black silhouette — rendered as an INLINE SVG data URI (no dependency
- * on a hosted raster image), with a hosted-PNG fallback for Outlook (mso) and
- * the wordmark as plain text so the brand survives even with images blocked.
+ * Branding: the app's header wordmark rendered as TEXT — "Meet" in white and
+ * "Sweet" in the MeetSweet rose — sitting inside a subtle gray crystal-style
+ * header band. There is deliberately NO hosted logo image and NO remote asset:
+ * a wordmark made of spans renders everywhere, even with images blocked.
  *
  * Layout notes:
  *  - Table-based layout with inline styles only — no JavaScript, no external
- *    CSS, no features Gmail/Outlook strip (no clip-path, no flexbox).
- *  - Background: an inline SVG data-URI treatment with a solid-color
- *    fallback for clients that strip SVG/data-URI backgrounds.
- *  - Verification codes are presented with simple, clear typography — not a
- *    heavy boxed design.
+ *    CSS, no features Gmail/Outlook strip (no flexbox, no clip-path).
+ *  - The crystal header uses an inline SVG data-URI gradient treatment with a
+ *    solid dark-gray fallback (bgcolor + background-color) for clients that
+ *    strip SVG/data-URI backgrounds — the wordmark remains readable either way.
+ *  - Content sits on a clean white card with dark text for maximum
+ *    readability; the decorative treatment stays in the header only.
+ *  - Every event has its own template with the correct dynamic data — nothing
+ *    is hard-coded into the shared shell.
  */
 
 // ─── Brand tokens ────────────────────────────────────────────────────────────
 
-const ACCENT = "#C45A72";
-const BG = "#0C0C0F";
-const BORDER = "rgba(255,255,255,0.10)";
-const TEXT = "#FFFFFF";
-const TEXT_2 = "rgba(255,255,255,0.62)";
-const TEXT_3 = "rgba(255,255,255,0.38)";
+const ROSE = "#C45A72";
+const INK = "#1B1B24"; // primary body text
+const INK_2 = "#5C5C6B"; // secondary text
+const INK_3 = "#8E8E9C"; // tertiary / labels
+const PAGE_BG = "#EEEEF2"; // page background (light gray)
+const CARD_BG = "#FFFFFF";
+const CARD_BORDER = "#E4E4EA";
+const HEADER_BG = "#15151B"; // crystal header solid fallback
 const FONT = "'Poppins','Helvetica Neue',Helvetica,Arial,sans-serif";
 const COMPANY = "MeetSweet Industries";
 const PRODUCT = "MeetSweet";
-
-/**
- * The MeetSweet silhouette (white/black logo) traced from the app's
- * `assets/images/logo.png` as a filled vector path. Rendered white on the
- * email's dark background. viewBox matches the logo's content bounding box.
- */
-const LOGO_PATH =
-  "M477,29L449,33L426,44L399,70L392,86L394,126L404,127L398,155L402,167L410,168L414,187L420,188L420,208L465,209L462,225L442,244L404,247L388,278L388,330L400,331L406,359L376,461L373,543L378,615L391,617L391,656L404,657L415,700L414,800L400,849L378,894L336,952L297,984L296,1002L649,1002L649,997L762,977L765,963L765,953L720,948L668,917L637,880L612,831L588,800L644,798L644,781L654,777L656,758L654,708L645,698L670,696L670,663L641,632L632,586L608,565L585,555L672,554L676,362L664,351L670,350L670,339L677,335L676,261L672,240L660,229L681,228L682,198L671,184L650,183L661,176L661,158L596,154L580,132L571,96L551,58L523,37L497,29Z";
 
 // ─── Provider ────────────────────────────────────────────────────────────────
 
@@ -63,49 +59,33 @@ export function emailSender(): string {
   return s.includes("<") ? s : `${COMPANY} <${s}>`;
 }
 
-/** Absolute URL of the hosted logo PNG — used only as the Outlook (mso) fallback. */
-function logoUrl(): string {
-  const base = (config.app.publicUrl() ?? "https://meetsweet.space").replace(/\/+$/, "");
-  return `${base}/meetsweet-logo.png`;
-}
-
 /**
- * The silhouette as an inline SVG data URI (primary brand mark). The mark is
- * a portrait silhouette on a square canvas, so the SVG box keeps the path's
- * natural aspect ratio (469×973) — never stretched into a square.
+ * The crystal header treatment: a subtle charcoal-gray gradient with soft rose
+ * and violet glows, as an inline SVG data URI (no hosted asset). Clients that
+ * render SVG backgrounds show the full treatment; Gmail and Outlook desktop
+ * fall back to the solid HEADER_BG — the wordmark is text, so branding is
+ * never lost.
  */
-function logoDataUri(): string {
+function crystalHeaderBg(): string {
   const svg = [
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="296 29 469 973" width="24" height="50">`,
-    `<path d="${LOGO_PATH}" fill="#FFFFFF"/>`,
-    `</svg>`,
-  ].join("");
-  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
-}
-
-/**
- * Inline SVG background (soft accent glows) as a data URI. Clients that render
- * SVG backgrounds (Apple Mail, modern Outlook, etc.) show the treatment;
- * clients that strip data-URI/SVG backgrounds (Gmail) fall back to the solid
- * dark background color.
- */
-function svgBackground(): string {
-  const svg = [
-    `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720">`,
-    `<rect width="1200" height="720" fill="${BG}"/>`,
+    `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="300" viewBox="0 0 600 300">`,
     `<defs>`,
-    `<radialGradient id="glowA" cx="50%" cy="0%" r="85%">`,
-    `<stop offset="0%" stop-color="${ACCENT}" stop-opacity="0.18"/>`,
-    `<stop offset="60%" stop-color="${ACCENT}" stop-opacity="0.05"/>`,
-    `<stop offset="100%" stop-color="${ACCENT}" stop-opacity="0"/>`,
+    `<linearGradient id="g" x1="0" y1="0" x2="0" y2="1">`,
+    `<stop offset="0" stop-color="#1E1E27"/>`,
+    `<stop offset="1" stop-color="#121217"/>`,
+    `</linearGradient>`,
+    `<radialGradient id="a" cx="50%" cy="0%" r="90%">`,
+    `<stop offset="0" stop-color="${ROSE}" stop-opacity="0.30"/>`,
+    `<stop offset="100%" stop-color="${ROSE}" stop-opacity="0"/>`,
     `</radialGradient>`,
-    `<radialGradient id="glowB" cx="92%" cy="100%" r="75%">`,
-    `<stop offset="0%" stop-color="#8B5CF6" stop-opacity="0.16"/>`,
-    `<stop offset="100%" stop-color="#8B5CF6" stop-opacity="0"/>`,
+    `<radialGradient id="b" cx="94%" cy="100%" r="75%">`,
+    `<stop offset="0" stop-color="#7A5CC7" stop-opacity="0.24"/>`,
+    `<stop offset="100%" stop-color="#7A5CC7" stop-opacity="0"/>`,
     `</radialGradient>`,
     `</defs>`,
-    `<rect width="1200" height="720" fill="url(#glowA)"/>`,
-    `<rect width="1200" height="720" fill="url(#glowB)"/>`,
+    `<rect width="600" height="300" fill="url(#g)"/>`,
+    `<rect width="600" height="300" fill="url(#a)"/>`,
+    `<rect width="600" height="300" fill="url(#b)"/>`,
     `</svg>`,
   ].join("");
   return `data:image/svg+xml,${encodeURIComponent(svg)}`;
@@ -135,31 +115,22 @@ async function deliver(
 // ─── Shared components ───────────────────────────────────────────────────────
 
 /**
- * Company header: MeetSweet Industries wordmark above the silhouette. Non-
- * Outlook clients get the inline vector (no hosted dependency); Outlook gets
- * the hosted PNG via an mso conditional; the wordmark is text, so branding is
- * never lost even with images blocked.
+ * Crystal-style header band: dark charcoal-gray with a subtle glow treatment,
+ * holding the MeetSweet wordmark ("Meet" white / "Sweet" rose) plus a short
+ * event tagline. Pure text — no images, no hosted assets.
  */
-function logoHeader(): string {
+function crystalHeader(tagline: string): string {
   return `
-    <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 auto 36px auto;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
       <tr>
-        <td align="center" style="padding:0 0 16px 0;">
-          <span style="font-family:${FONT};font-size:22px;font-weight:700;letter-spacing:-0.4px;color:${TEXT};">
-            MeetSweet <span style="color:${ACCENT};">Industries</span>
-          </span>
-        </td>
-      </tr>
-      <tr>
-        <td align="center" style="line-height:0;">
-          <!--[if !mso]><!-->
-          <img src="${logoDataUri()}" alt="${PRODUCT}" width="24" height="50"
-            style="display:inline-block;width:24px;height:50px;border:0;outline:none;text-decoration:none;" />
-          <!--<![endif]-->
-          <!--[if mso]>
-          <img src="${logoUrl()}" alt="${PRODUCT}" width="50" height="50"
-            style="display:inline-block;width:50px;height:50px;border-radius:10px;background-color:#FFFFFF;border:0;" />
-          <![endif]-->
+        <td bgcolor="${HEADER_BG}"
+          style="background-color:${HEADER_BG};background-image:url('${crystalHeaderBg()}');background-repeat:no-repeat;background-position:center top;background-size:cover;border-radius:20px 20px 0 0;padding:46px 24px 38px 24px;">
+          <p style="margin:0;font-size:30px;font-weight:700;letter-spacing:-1px;line-height:1.1;color:#FFFFFF;font-family:${FONT};text-align:center;">
+            Meet<span style="color:${ROSE};">Sweet</span>
+          </p>
+          <p style="margin:10px 0 0 0;font-size:11px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:rgba(255,255,255,0.48);font-family:${FONT};text-align:center;">
+            ${tagline}
+          </p>
         </td>
       </tr>
     </table>`;
@@ -167,38 +138,38 @@ function logoHeader(): string {
 
 function heading(text: string): string {
   return `
-    <h1 style="margin:0 0 10px 0;font-size:25px;line-height:1.25;font-weight:700;color:${TEXT};
+    <h1 style="margin:0 0 12px 0;font-size:24px;line-height:1.3;font-weight:700;color:${INK};
       font-family:${FONT};letter-spacing:-0.4px;text-align:center;">${text}</h1>`;
 }
 
 function subheading(text: string): string {
   return `
-    <p style="margin:0 0 30px 0;font-size:15px;line-height:1.65;color:${TEXT_2};
+    <p style="margin:0 0 26px 0;font-size:15px;line-height:1.7;color:${INK_2};
       font-family:${FONT};text-align:center;">${text}</p>`;
 }
 
 function divider(): string {
   return `
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 30px 0;">
-      <tr><td style="height:1px;font-size:0;line-height:0;background-color:${BORDER};"></td></tr>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 26px 0;">
+      <tr><td style="height:1px;font-size:0;line-height:0;background-color:${CARD_BORDER};"></td></tr>
     </table>`;
 }
 
 /**
- * The verification code as clear, simple typography — a large letter-spaced
- * number with generous spacing, NOT a heavy boxed treatment.
+ * The verification code as clear, simple typography on a subtle light box —
+ * large letter-spaced digits, not a heavy treatment.
  */
 function codeBlock(code: string): string {
   return `
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 18px 0;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px 0;">
       <tr>
-        <td align="center" style="padding:8px 0 6px 0;">
-          <p style="margin:0 0 16px 0;font-size:11px;font-weight:700;letter-spacing:3px;
-            color:${TEXT_3};text-align:center;text-transform:uppercase;font-family:${FONT};">
+        <td align="center" style="background-color:#F5F5F8;border:1px solid ${CARD_BORDER};border-radius:14px;padding:20px 16px;">
+          <p style="margin:0 0 14px 0;font-size:11px;font-weight:700;letter-spacing:2.5px;
+            color:${INK_3};text-align:center;text-transform:uppercase;font-family:${FONT};">
             Your verification code
           </p>
-          <p style="margin:0;font-size:44px;font-weight:700;letter-spacing:14px;line-height:1.15;
-            color:${TEXT};font-family:${FONT};text-align:center;">${code}</p>
+          <p style="margin:0;font-size:40px;font-weight:700;letter-spacing:12px;line-height:1.1;
+            color:${INK};font-family:${FONT};text-align:center;">${code}</p>
         </td>
       </tr>
     </table>`;
@@ -208,33 +179,88 @@ function codeFootnote(lines: string[]): string {
   const ps = lines
     .map(
       (l) =>
-        `<p style="margin:0 0 6px 0;font-size:14px;line-height:1.6;color:${TEXT_2};text-align:center;font-family:${FONT};">${l}</p>`,
+        `<p style="margin:0 0 6px 0;font-size:14px;line-height:1.6;color:${INK_2};text-align:center;font-family:${FONT};">${l}</p>`,
     )
     .join("");
   return `
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 26px 0;">
-      <tr><td align="center" style="padding:0 16px;">${ps}</td></tr>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px 0;">
+      <tr><td align="center" style="padding:0 8px;">${ps}</td></tr>
     </table>`;
 }
 
 function securityNote(text: string): string {
   return `
-    <p style="margin:26px 0 0 0;font-size:13px;line-height:1.65;color:${TEXT_3};
-      font-family:${FONT};text-align:center;padding:0 12px;">${text}</p>`;
+    <p style="margin:22px 0 0 0;font-size:13px;line-height:1.65;color:${INK_3};
+      font-family:${FONT};text-align:center;padding:0 6px;">${text}</p>`;
+}
+
+/** Table-based call-to-action button (rounded, rose, white label). */
+function button(href: string, label: string): string {
+  return `
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:26px auto 6px auto;">
+      <tr>
+        <td align="center" bgcolor="${ROSE}" style="background-color:${ROSE};border-radius:28px;">
+          <a href="${href}" target="_blank"
+            style="display:inline-block;padding:14px 34px;font-family:${FONT};font-size:15px;font-weight:600;color:#FFFFFF;text-decoration:none;border-radius:28px;">
+            ${label}
+          </a>
+        </td>
+      </tr>
+    </table>`;
+}
+
+function formatMoney(amount: number, currency: string): string {
+  const symbol = currency.toUpperCase() === "NGN" ? "₦" : `${currency} `;
+  const [int, frac] = amount.toFixed(2).split(".");
+  const grouped = int.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return `${symbol}${grouped}.${frac}`;
+}
+
+function amountHighlight(amount: number, currency: string): string {
+  return `
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 26px 0;">
+      <tr>
+        <td align="center">
+          <p style="margin:0 0 8px 0;font-size:11px;font-weight:700;letter-spacing:2.5px;
+            color:${INK_3};text-transform:uppercase;font-family:${FONT};">Amount</p>
+          <p style="margin:0;font-size:38px;font-weight:800;letter-spacing:-1px;line-height:1.1;
+            color:${INK};font-family:${FONT};">${formatMoney(amount, currency)}</p>
+        </td>
+      </tr>
+    </table>`;
+}
+
+function detailRows(rows: [string, string][]): string {
+  const trs = rows
+    .map(
+      ([label, value]) => `
+        <tr>
+          <td style="padding:10px 0;font-size:12px;letter-spacing:1px;text-transform:uppercase;
+            color:${INK_3};font-family:${FONT};">${label}</td>
+          <td style="padding:10px 0;font-size:14px;font-weight:600;color:${INK};
+            font-family:${FONT};text-align:right;">${value}</td>
+        </tr>`,
+    )
+    .join("");
+  return `
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+      style="margin:0 0 22px 0;border-top:1px solid ${CARD_BORDER};">
+      ${trs}
+    </table>`;
 }
 
 function footer(): string {
   return `
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:36px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
       <tr>
         <td align="center">
-          <p style="margin:0 0 8px 0;font-size:13px;color:${TEXT_3};font-family:${FONT};">
+          <p style="margin:0 0 8px 0;font-size:13px;color:${INK_3};font-family:${FONT};">
             You're receiving this email because you have a ${PRODUCT} account.
           </p>
-          <p style="margin:0 0 4px 0;font-size:12px;color:rgba(255,255,255,0.28);font-family:${FONT};">
+          <p style="margin:0 0 4px 0;font-size:12px;color:${INK_3};font-family:${FONT};">
             ${COMPANY} · help@meetsweet.space
           </p>
-          <p style="margin:0;font-size:12px;color:rgba(255,255,255,0.20);font-family:${FONT};">
+          <p style="margin:0;font-size:12px;color:#A9A9B5;font-family:${FONT};">
             © ${new Date().getFullYear()} ${COMPANY}. All rights reserved.
           </p>
         </td>
@@ -242,8 +268,8 @@ function footer(): string {
     </table>`;
 }
 
-/** Full email document shell. */
-function shell(opts: { preheader: string; content: string }): string {
+/** Full email document shell: crystal header + white content card + footer. */
+function shell(opts: { preheader: string; tagline: string; content: string }): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -255,30 +281,34 @@ function shell(opts: { preheader: string; content: string }): string {
   <noscript><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml></noscript>
   <![endif]-->
 </head>
-<body style="margin:0;padding:0;background-color:${BG};-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
+<body style="margin:0;padding:0;background-color:${PAGE_BG};-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
   <!-- Preheader preview text -->
   <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">
     ${opts.preheader}&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;
   </div>
 
-  <!-- Designed background: SVG treatment + solid dark fallback -->
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
-    style="background-color:${BG};background-image:url('${svgBackground()}');background-repeat:no-repeat;background-position:top center;background-size:cover;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${PAGE_BG}">
     <tr>
-      <td align="center" style="padding:44px 16px 48px 16px;">
+      <td align="center" style="padding:32px 16px 40px 16px;">
 
         <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0"
           style="width:100%;max-width:600px;">
 
-          <tr><td>${logoHeader()}</td></tr>
+          <tr><td>${crystalHeader(opts.tagline)}</td></tr>
 
           <tr>
-            <td style="padding:8px 8px 0 8px;">
+            <td bgcolor="${CARD_BG}"
+              style="background-color:${CARD_BG};padding:32px 32px 28px 32px;border-left:1px solid ${CARD_BORDER};border-right:1px solid ${CARD_BORDER};">
               ${opts.content}
             </td>
           </tr>
 
-          <tr><td>${footer()}</td></tr>
+          <tr>
+            <td bgcolor="#E9E9EF"
+              style="background-color:#E9E9EF;border:1px solid ${CARD_BORDER};border-top:0;border-radius:0 0 20px 20px;padding:24px 24px 26px 24px;">
+              ${footer()}
+            </td>
+          </tr>
 
         </table>
       </td>
@@ -301,7 +331,7 @@ export async function sendVerificationEmail(opts: {
   const content = `
     ${heading("Verify your email")}
     ${subheading(
-      `Hi ${firstName}, welcome to ${PRODUCT}. We received a request to verify your ${PRODUCT} account.`,
+      `Hi ${firstName}, welcome to ${PRODUCT}. We received a request to verify your ${PRODUCT} account — enter the code below to finish.`,
     )}
     ${divider()}
     ${codeBlock(code)}
@@ -317,6 +347,7 @@ export async function sendVerificationEmail(opts: {
 
   const html = shell({
     preheader: `Your ${PRODUCT} verification code is ${code}`,
+    tagline: "Account verification",
     content,
   });
 
@@ -337,6 +368,68 @@ export async function sendVerificationEmail(opts: {
   await deliver("verification", {
     to: opts.to,
     subject: `Your ${PRODUCT} verification code`,
+    html,
+    text,
+  });
+}
+
+// ─── Welcome email ───────────────────────────────────────────────────────────
+
+export async function sendWelcomeEmail(opts: {
+  to: string;
+  name: string;
+}): Promise<void> {
+  const firstName = (opts.name || opts.to).split(" ")[0];
+  const publicUrl = (config.app.publicUrl() ?? "https://meetsweet.space").replace(/\/+$/, "");
+
+  const content = `
+    ${heading("Welcome to MeetSweet")}
+    ${subheading(
+      `Hi ${firstName}, your account is verified and ready. Explore exclusive creator content, join communities, and chat privately with the creators you love.`,
+    )}
+    ${divider()}
+    <p style="margin:0 0 8px 0;font-size:14px;line-height:1.7;color:${INK_2};text-align:center;font-family:${FONT};">
+      Here's what you can do now:
+    </p>
+    <p style="margin:0 0 4px 0;font-size:14px;line-height:1.7;color:${INK_2};text-align:center;font-family:${FONT};">
+      • Discover creators and subscribe to exclusive content
+    </p>
+    <p style="margin:0 0 4px 0;font-size:14px;line-height:1.7;color:${INK_2};text-align:center;font-family:${FONT};">
+      • Send private messages to your favourite creators
+    </p>
+    <p style="margin:0;font-size:14px;line-height:1.7;color:${INK_2};text-align:center;font-family:${FONT};">
+      • Support creators directly — every subscription counts
+    </p>
+    ${button(`${publicUrl}`, "Explore MeetSweet")}
+    ${securityNote(
+      `If you didn't create this account, please contact support so we can secure it.`,
+    )}
+  `;
+
+  const html = shell({
+    preheader: `Welcome to ${PRODUCT}, ${firstName}! Your account is ready.`,
+    tagline: "You're in",
+    content,
+  });
+
+  const text = [
+    `${COMPANY} — Welcome to MeetSweet`,
+    "",
+    `Hi ${firstName}, your account is verified and ready.`,
+    "",
+    "Here's what you can do now:",
+    "- Discover creators and subscribe to exclusive content",
+    "- Send private messages to your favourite creators",
+    "- Support creators directly — every subscription counts",
+    "",
+    "Open MeetSweet to get started.",
+    "",
+    "If you didn't create this account, please contact support so we can secure it.",
+  ].join("\n");
+
+  await deliver("welcome", {
+    to: opts.to,
+    subject: `Welcome to ${PRODUCT}, ${firstName}!`,
     html,
     text,
   });
@@ -371,6 +464,7 @@ export async function sendTwoFactorEmail(opts: {
 
   const html = shell({
     preheader: `Your ${PRODUCT} sign-in code is ${code}`,
+    tagline: "Security check",
     content,
   });
 
@@ -406,16 +500,15 @@ export async function sendPasswordResetEmail(opts: {
   const code = String(opts.code).replace(/\D/g, "");
 
   const content = `
-    ${heading("Password reset request")}
+    ${heading("Reset your password")}
     ${subheading(
-      `Hi ${firstName}, we received a request to reset the password associated with your ${PRODUCT} account. Use the verification code below to continue.`,
+      `Hi ${firstName}, we received a request to reset the password on your ${PRODUCT} account. Use the code below to continue.`,
     )}
     ${divider()}
     ${codeBlock(code)}
     ${codeFootnote([
       "Enter this code in the MeetSweet application to set a new password.",
-      "This code is intended only for your account and should not be shared with anyone.",
-      "This code will expire after 15 minutes.",
+      "This code is intended only for your account and expires in 15 minutes.",
     ])}
     ${securityNote(
       `If you did not request a password reset, you can safely ignore this email — your account remains protected.`,
@@ -424,20 +517,20 @@ export async function sendPasswordResetEmail(opts: {
 
   const html = shell({
     preheader: `Your ${PRODUCT} password reset code is ${code}`,
+    tagline: "Password reset",
     content,
   });
 
   const text = [
-    `${COMPANY} — Password reset request`,
+    `${COMPANY} — Reset your password`,
     "",
-    `Hi ${firstName}, we received a request to reset the password associated with your MeetSweet account.`,
+    `Hi ${firstName}, we received a request to reset the password on your MeetSweet account.`,
     "Enter the code below in the MeetSweet application to set a new password:",
     "",
     code,
     "",
-    "This code is intended only for your account and should not be shared with anyone.",
-    "This code will expire after 15 minutes.",
-    "If you did not request a password reset, you can safely ignore this email — your account remains protected.",
+    "This code is intended only for your account and expires in 15 minutes.",
+    "If you did not request a password reset, you can safely ignore this email.",
   ].join("\n");
 
   await deliver("password_reset", {
@@ -448,91 +541,71 @@ export async function sendPasswordResetEmail(opts: {
   });
 }
 
-// ─── Payment / wallet emails ─────────────────────────────────────────────
+// ─── Payment / wallet emails ─────────────────────────────────────────────────
 
-function formatMoney(amount: number, currency: string): string {
-  const symbol = currency.toUpperCase() === "NGN" ? "₦" : `${currency} `;
-  const [int, frac] = amount.toFixed(2).split(".");
-  const grouped = int.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-  return `${symbol}${grouped}.${frac}`;
-}
-
-function amountHighlight(amount: number, currency: string): string {
-  return `
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 28px 0;">
-      <tr>
-        <td align="center">
-          <p style="margin:0 0 10px 0;font-size:11px;font-weight:700;letter-spacing:2.5px;
-            color:${TEXT_3};text-transform:uppercase;font-family:${FONT};">Amount</p>
-          <p style="margin:0;font-size:40px;font-weight:800;letter-spacing:-1px;line-height:1.1;
-            color:${TEXT};font-family:${FONT};">${formatMoney(amount, currency)}</p>
-        </td>
-      </tr>
-    </table>`;
-}
-
-function detailRows(rows: [string, string][]): string {
-  const trs = rows
-    .map(
-      ([label, value]) => `
-        <tr>
-          <td style="padding:10px 0;font-size:12px;letter-spacing:1px;text-transform:uppercase;
-            color:${TEXT_3};font-family:${FONT};">${label}</td>
-          <td style="padding:10px 0;font-size:14px;font-weight:600;color:${TEXT};
-            font-family:${FONT};text-align:right;">${value}</td>
-        </tr>`,
-    )
-    .join("");
-  return `
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
-      style="margin:0 0 24px 0;border-top:1px solid ${BORDER};">
-      ${trs}
-    </table>`;
-}
-
-/** Wallet top-up confirmed. */
+/** Wallet funding confirmed — sent only after the backend/Paystack verification. */
 export async function sendWalletDepositEmail(opts: {
   to: string;
   name: string;
   amount: number;
   currency: string;
   newBalance: number;
+  reference: string;
+  status?: string;
+  date?: string;
 }): Promise<void> {
   const firstName = (opts.name || opts.to).split(" ")[0];
   const currency = opts.currency || "NGN";
+  const status = opts.status || "Successful";
+  const date = opts.date
+    ? new Date(opts.date).toLocaleString("en-GB", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : "";
 
   const content = `
-    ${heading("Wallet topped up")}
+    ${heading("Wallet funding successful")}
     ${subheading(
-      `Hi ${firstName}, your ${PRODUCT} wallet has been credited successfully.`,
+      `Hi ${firstName}, your ${PRODUCT} wallet has been successfully funded with ${formatMoney(opts.amount, currency)}.`,
     )}
     ${amountHighlight(opts.amount, currency)}
     ${detailRows([
+      ["Reference", opts.reference],
+      ["Status", status],
+      ...(date ? [["Date", date] as [string, string]] : []),
       ["New balance", formatMoney(opts.newBalance, currency)],
-      ["Method", "Paystack"],
     ])}
     ${securityNote(
-      "If you didn't make this payment, please contact support immediately.",
+      "Your funds are now available in your MeetSweet wallet. If you didn't make this payment, please contact support immediately.",
     )}
   `;
 
   const html = shell({
-    preheader: `Your ${PRODUCT} wallet was credited with ${formatMoney(opts.amount, currency)}`,
+    preheader: `Your ${PRODUCT} wallet was successfully funded with ${formatMoney(opts.amount, currency)}`,
+    tagline: "Wallet funding",
     content,
   });
 
   const text = [
-    `${COMPANY} — Wallet topped up`,
+    `${COMPANY} — Wallet funding successful`,
     "",
-    `Hi ${firstName}, your wallet has been credited with ${formatMoney(opts.amount, currency)}.`,
+    `Hi ${firstName}, your wallet has been successfully funded with ${formatMoney(opts.amount, currency)}.`,
+    `Reference: ${opts.reference}`,
+    `Status: ${status}`,
+    ...(date ? [`Date: ${date}`] : []),
     `New balance: ${formatMoney(opts.newBalance, currency)}`,
     "",
+    "Your funds are now available in your MeetSweet wallet.",
     "If you didn't make this payment, please contact support immediately.",
   ].join("\n");
 
   await deliver("wallet_deposit", {
     to: opts.to,
-    subject: `Your ${PRODUCT} wallet was topped up with ${formatMoney(opts.amount, currency)}`,
+    subject: `Your ${PRODUCT} wallet was funded with ${formatMoney(opts.amount, currency)}`,
     html,
     text,
   });
@@ -570,6 +643,7 @@ export async function sendWithdrawalRequestedEmail(opts: {
 
   const html = shell({
     preheader: `Your ${formatMoney(opts.amount, currency)} withdrawal request was received`,
+    tagline: "Withdrawal",
     content,
   });
 
@@ -586,6 +660,127 @@ export async function sendWithdrawalRequestedEmail(opts: {
   await deliver("withdrawal", {
     to: opts.to,
     subject: `Your ${formatMoney(opts.amount, currency)} withdrawal request was received`,
+    html,
+    text,
+  });
+}
+
+// ─── Album purchase email ────────────────────────────────────────────────────
+
+export async function sendAlbumPurchaseEmail(opts: {
+  to: string;
+  name: string;
+  albumTitle: string;
+  creatorName: string;
+  amount: number;
+  currency: string;
+  reference: string;
+  purchasedAt: string;
+}): Promise<void> {
+  const firstName = (opts.name || opts.to).split(" ")[0];
+  const currency = opts.currency || "NGN";
+  const date = new Date(opts.purchasedAt).toLocaleString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  const content = `
+    ${heading("Purchase confirmed")}
+    ${subheading(
+      `Hi ${firstName}, you've unlocked “${opts.albumTitle}” by ${opts.creatorName}. It's ready to view in your album library.`,
+    )}
+    ${amountHighlight(opts.amount, currency)}
+    ${detailRows([
+      ["Album", opts.albumTitle],
+      ["Creator", opts.creatorName],
+      ["Reference", opts.reference],
+      ["Date", date],
+    ])}
+    ${securityNote(
+      `If you didn't make this purchase, please contact support immediately.`,
+    )}
+  `;
+
+  const html = shell({
+    preheader: `Your purchase of “${opts.albumTitle}” is confirmed`,
+    tagline: "Purchase confirmed",
+    content,
+  });
+
+  const text = [
+    `${COMPANY} — Purchase confirmed`,
+    "",
+    `Hi ${firstName}, you've unlocked “${opts.albumTitle}” by ${opts.creatorName}.`,
+    "",
+    `Amount: ${formatMoney(opts.amount, currency)}`,
+    `Album: ${opts.albumTitle}`,
+    `Creator: ${opts.creatorName}`,
+    `Reference: ${opts.reference}`,
+    `Date: ${date}`,
+    "",
+    "Open MeetSweet to view your album.",
+    "If you didn't make this purchase, please contact support immediately.",
+  ].join("\n");
+
+  await deliver("album_purchase", {
+    to: opts.to,
+    subject: `You unlocked “${opts.albumTitle}”`,
+    html,
+    text,
+  });
+}
+
+// ─── Referral bonus email ────────────────────────────────────────────────────
+
+export async function sendReferralBonusEmail(opts: {
+  to: string;
+  name: string;
+  amount: number;
+  currency: string;
+  newBalance: number;
+  referredUserName: string;
+}): Promise<void> {
+  const firstName = (opts.name || opts.to).split(" ")[0];
+  const currency = opts.currency || "NGN";
+
+  const content = `
+    ${heading("You received a referral bonus")}
+    ${subheading(
+      `Hi ${firstName}, ${opts.referredUserName} activated a creator account using your referral link — and ${formatMoney(opts.amount, currency)} has been credited to your ${PRODUCT} wallet.`,
+    )}
+    ${amountHighlight(opts.amount, currency)}
+    ${detailRows([
+      ["Bonus", formatMoney(opts.amount, currency)],
+      ["New wallet balance", formatMoney(opts.newBalance, currency)],
+      ["Referred user", opts.referredUserName],
+    ])}
+    ${securityNote(
+      `Keep sharing your referral link — you earn ${formatMoney(opts.amount, currency)} every time someone you refer becomes a creator.`,
+    )}
+  `;
+
+  const html = shell({
+    preheader: `You received a ${formatMoney(opts.amount, currency)} referral bonus`,
+    tagline: "Referral bonus",
+    content,
+  });
+
+  const text = [
+    `${COMPANY} — Referral bonus received`,
+    "",
+    `Hi ${firstName}, ${opts.referredUserName} activated a creator account using your referral link.`,
+    `You received: ${formatMoney(opts.amount, currency)}`,
+    `New wallet balance: ${formatMoney(opts.newBalance, currency)}`,
+    "",
+    "Keep sharing your referral link — you earn this bonus every time someone you refer becomes a creator.",
+  ].join("\n");
+
+  await deliver("referral_bonus", {
+    to: opts.to,
+    subject: `You received a ${formatMoney(opts.amount, currency)} referral bonus`,
     html,
     text,
   });

@@ -82,10 +82,7 @@ async function runQuery(query: NamedQuery, userId: string) {
 
     case "get_settings": {
       const [settings] = await db
-        .select({
-          biometric_login: user_settings.biometric_login,
-          updated_at:      user_settings.updated_at,
-        })
+        .select({ updated_at: user_settings.updated_at })
         .from(user_settings)
         .where(eq(user_settings.user_id, userId))
         .limit(1);

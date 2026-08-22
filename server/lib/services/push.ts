@@ -72,6 +72,62 @@ async function isPushAllowed(
 }
 
 /**
+ * Whether an in-app notification category is enabled for a user. Unlike the
+ * push gate (which also honors the master push_notifications switch), this is
+ * category-only: a user who turned OFF "Comments" gets no comment event in
+ * their in-app notification feed either — the setting is authoritative, not a
+ * client-side filter. A missing settings row falls back to the schema default
+ * (category enabled).
+ */
+export async function categoryEnabled(
+  userId: string,
+  category: NotifPreferenceKey,
+): Promise<boolean> {
+  try {
+    const [settings] = await db
+      .select()
+      .from(user_settings)
+      .where(eq(user_settings.user_id, userId))
+      .limit(1);
+    if (!settings) return true;
+    return settings[category] !== false;
+  } catch {
+    // Preference lookup must never block an event on a transient error.
+    return true;
+  }
+}
+
+/**
+ * Create an in-app notification row for a user, gated by their notification
+ * preference for that category. When the category is OFF, nothing is written
+ * and the event never appears in their notification feed — enforced here so
+ * the backend cannot be bypassed by calling the event API directly.
+ * Fire-and-forget — never throws.
+ */
+export async function createNotification(
+  userId: string,
+  category: NotifPreferenceKey | null,
+  values: {
+    actor_id?: string | null;
+    type: string;
+    entity_type?: string | null;
+    entity_id?: string | null;
+    body?: string | null;
+  },
+): Promise<void> {
+  try {
+    if (category && !(await categoryEnabled(userId, category))) return;
+    await db.insert(notifications).values({
+      id: generateId(),
+      user_id: userId,
+      ...values,
+    });
+  } catch {
+    // Notification writes are best-effort — never break the API response.
+  }
+}
+
+/**
  * Send a push notification to one or more Expo push tokens.
  * Stale tokens that come back as DeviceNotRegistered are removed from the DB.
  */
@@ -238,15 +294,13 @@ export async function notifySubscribersOfNewPost(input: {
 
     await Promise.all(
       recipientIds.map((userId) =>
-        db.insert(notifications).values({
-          id: generateId(),
-          user_id: userId,
+        createNotification(userId, "notif_creator_updates", {
           actor_id: input.creatorId,
           type: "new_post",
           entity_type: input.contentType,
           entity_id: input.postId,
           body,
-        }).catch(() => {}),
+        }),
       ),
     );
 

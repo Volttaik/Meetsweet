@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { eq, and, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { users, profiles, follows, subscriptions, creator_settings } from "@/lib/db/schema";
+import { users, profiles, follows, subscriptions, creator_settings, user_settings } from "@/lib/db/schema";
 import { optionalAuth } from "@/middleware/auth";
 import { ok, err } from "@/lib/api/response";
 import { resolveBasePrice } from "@/lib/services/pricing";
@@ -59,6 +59,7 @@ export async function GET(
   // Check if requester is following (optional auth — public profile is readable by anyone)
   let isFollowing = false;
   const viewer = await optionalAuth(req);
+  const isOwner = viewer?.userId === row.id;
   if (viewer?.userId) {
     const [existing] = await db
       .select({ id: follows.id })
@@ -73,9 +74,59 @@ export async function GET(
     isFollowing = !!existing;
   }
 
+  // ── Profile Visibility — enforced server-side, not just hidden on the client.
+  // "nobody" hides the profile from everyone but the owner; "subscribers" shows
+  // the full profile only to active subscribers (and the owner) — everyone else
+  // gets a minimal shell. The owner always sees their own full profile.
+  const [settings] = await db
+    .select({ profile_visibility: user_settings.profile_visibility, private_account: user_settings.private_account })
+    .from(user_settings)
+    .where(eq(user_settings.user_id, row.id))
+    .limit(1);
+  const profileVisibility = settings?.profile_visibility ?? "everyone";
+  const isPrivateAccount = settings?.private_account === true;
+
+  if (!isOwner && profileVisibility === "nobody") {
+    return err("User not found", 404);
+  }
+
+  let canViewFull = true;
+  if (!isOwner && profileVisibility === "subscribers") {
+    const [sub] = await db
+      .select({ id: subscriptions.id })
+      .from(subscriptions)
+      .where(
+        and(
+          eq(subscriptions.subscriber_id, viewer?.userId ?? ""),
+          eq(subscriptions.creator_id, row.id),
+          eq(subscriptions.status, "active"),
+        ),
+      )
+      .limit(1);
+    canViewFull = Boolean(viewer?.userId && sub);
+  }
+
   // Same pricing resolution as /creators/:id — the authoritative price is
   // creator_settings, falling back to the legacy profiles value.
   const basePrice = resolveBasePrice(row.settings_price, row.subscription_price);
+
+  if (!canViewFull) {
+    // Limited profile shell for non-subscribers.
+    return ok({
+      user: {
+        id: row.id,
+        name: row.full_name,
+        username: row.username,
+        avatar_url: row.avatar_url,
+        is_verified: row.is_verified,
+        is_creator: row.is_creator,
+        is_private: true,
+        private_account: isPrivateAccount,
+        content_locked: true,
+      },
+      isFollowing,
+    });
+  }
 
   return ok({
     user: {
@@ -96,6 +147,7 @@ export async function GET(
       following_count: followingCount?.count ?? 0,
       subscriber_count: subscriberCount?.count ?? 0,
       created_at: row.created_at,
+      private_account: isPrivateAccount,
     },
     isFollowing,
   });

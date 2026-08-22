@@ -2,12 +2,12 @@ import { NextRequest } from "next/server";
 import { eq, and, desc, gte, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { users, profiles, subscriptions, creator_settings, wallets, transactions, notifications } from "@/lib/db/schema";
+import { users, profiles, subscriptions, creator_settings, wallets, transactions } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err, created } from "@/lib/api/response";
 import { generateId } from "@/lib/auth/codes";
-import { sendPushToUser, getActorUsername } from "@/lib/services/push";
+import { sendPushToUser, getActorUsername, createNotification } from "@/lib/services/push";
 import { resolveBasePrice } from "@/lib/services/pricing";
 import { recordCreatorEarning } from "@/lib/services/creator-finance";
 
@@ -221,16 +221,15 @@ export async function POST(req: NextRequest) {
 
   const sub = { id: subId, creator_id, status: "active" as const, amount: price, started_at: now, expires_at: expires };
 
-  // Notify the creator about their new subscriber
-  await db.insert(notifications).values({
-    id: generateId(),
-    user_id: creator_id,
+  // Notify the creator about their new subscriber — gated by their New
+  // Subscribers preference (authoritative server-side).
+  await createNotification(creator_id, "notif_new_subscribers", {
     actor_id: auth.user.userId,
     type: "subscribe",
     entity_type: "user",
     entity_id: auth.user.userId,
     body: "just subscribed to you",
-  }).catch(() => {});
+  });
 
   getActorUsername(auth.user.userId).then((actor) =>
     sendPushToUser(creator_id, {

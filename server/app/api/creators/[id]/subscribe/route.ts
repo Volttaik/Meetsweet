@@ -4,7 +4,6 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import {
   creator_settings,
-  notifications,
   profiles,
   subscriptions,
   transactions,
@@ -15,7 +14,7 @@ import { requireAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err, created } from "@/lib/api/response";
 import { generateId } from "@/lib/auth/codes";
-import { sendPushToUser, getActorUsername } from "@/lib/services/push";
+import { sendPushToUser, getActorUsername, createNotification } from "@/lib/services/push";
 import { tierIndex } from "@/lib/services/content";
 import { resolveBasePrice } from "@/lib/services/pricing";
 import { recordCreatorEarning } from "@/lib/services/creator-finance";
@@ -243,16 +242,15 @@ export async function POST(
   }
 
   // Best-effort notification + push — outside the transaction so a delivery
-  // failure can never roll back the committed subscription.
-  await db.insert(notifications).values({
-    id: generateId(),
-    user_id: creator_id,
+  // failure can never roll back the committed subscription. The in-app row is
+  // gated by the creator's New Subscribers preference.
+  await createNotification(creator_id, "notif_new_subscribers", {
     actor_id: auth.user.userId,
     type: "subscribe",
     entity_type: "user",
     entity_id: auth.user.userId,
     body: "just subscribed to you",
-  }).catch(() => {});
+  });
 
   getActorUsername(auth.user.userId).then((actor) =>
     sendPushToUser(creator_id, {

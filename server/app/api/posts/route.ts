@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { eq, and, desc, isNull, notInArray, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { users, profiles, posts, media, post_likes, saved_posts, post_categories, subscriptions, comment_rooms } from "@/lib/db/schema";
+import { users, profiles, posts, media, post_likes, saved_posts, post_categories, subscriptions, comment_rooms, user_settings } from "@/lib/db/schema";
 import { requireAuth, optionalAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err, created } from "@/lib/api/response";
@@ -18,6 +18,7 @@ import {
   buildQualities,
 } from "@/lib/services/content";
 import { notifySubscribersOfNewPost } from "@/lib/services/push";
+import { notifyMentionedUsers } from "@/lib/services/mentions";
 
 const createSchema = z.object({
   caption: z.string().max(2200).nullable().optional(),
@@ -402,6 +403,31 @@ export async function GET(req: NextRequest) {
     ...(hiddenPostIds.length > 0 ? [notInArray(posts.id, hiddenPostIds)] : []),
   );
 
+  // ── Private Account — "only approved subscribers see your posts". A private
+  // account's posts are served only to the owner and to active subscribers;
+  // everyone else (including anonymous viewers) never sees them. Enforced here
+  // so a private account's content can't leak through discovery feeds, profile
+  // grids (creator_id=), or any other generic feed query.
+  const privateAccountCond = userId
+    ? sql`(
+        NOT EXISTS (
+          SELECT 1 FROM user_settings us
+          WHERE us.user_id = ${posts.creator_id} AND us.private_account = 1
+        )
+        OR ${posts.creator_id} = ${userId}
+        OR EXISTS (
+          SELECT 1 FROM subscriptions s
+          WHERE s.subscriber_id = ${userId}
+            AND s.creator_id = ${posts.creator_id}
+            AND s.status = 'active'
+        )
+      )`
+    : sql`NOT EXISTS (
+        SELECT 1 FROM user_settings us
+        WHERE us.user_id = ${posts.creator_id} AND us.private_account = 1
+      )`;
+  conditions = and(conditions, privateAccountCond);
+
   // Apply content_type filter.
   // When omitted, ALL published content types are returned — shorts and albums
   // are first-class types that surface on their own screens (Shorts feed,
@@ -674,6 +700,18 @@ export async function POST(req: NextRequest) {
     postId,
     contentType: content_type ?? "post",
     title,
+  });
+
+  // @username tags → notify the tagged users (gated by their Allow Mentions
+  // privacy setting + Mentions notification preference; self-tags and invalid
+  // usernames are skipped server-side).
+  const mentionText = caption || title || "";
+  void notifyMentionedUsers({
+    actorId: auth.user.userId,
+    text: mentionText,
+    entityType: content_type ?? "post",
+    entityId: postId,
+    entityTitle: title ?? caption,
   });
 
   return created({ id: postId });

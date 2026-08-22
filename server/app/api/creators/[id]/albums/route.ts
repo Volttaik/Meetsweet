@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { eq, and, desc, isNull, gte, or, type SQL } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { albums, users, profiles, album_unlocks, devices, subscriptions } from "@/lib/db/schema";
+import { albums, users, profiles, album_unlocks, devices, subscriptions, user_settings } from "@/lib/db/schema";
 import { optionalAuth } from "@/middleware/auth";
 import { ok, err } from "@/lib/api/response";
 
@@ -20,13 +20,23 @@ export async function GET(
   if (!creator || !creator.is_creator) return err("Creator not found", 404);
 
   // Presence: "online" = a device seen within the last 10 minutes (real signal).
-  const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-  const [recentDevice] = await db
-    .select({ id: devices.id })
-    .from(devices)
-    .where(and(eq(devices.user_id, creator.id), gte(devices.last_seen_at, tenMinutesAgo)))
+  // The creator's privacy settings gate the indicator — turning off Online /
+  // Activity status hides it from everyone (server-enforced).
+  const [presenceSettings] = await db
+    .select({ online_status: user_settings.online_status, activity_status: user_settings.activity_status })
+    .from(user_settings)
+    .where(eq(user_settings.user_id, creator.id))
     .limit(1);
-  const isOnline = Boolean(recentDevice);
+  const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+  let isOnline = false;
+  if (presenceSettings?.online_status !== false && presenceSettings?.activity_status !== false) {
+    const [recentDevice] = await db
+      .select({ id: devices.id })
+      .from(devices)
+      .where(and(eq(devices.user_id, creator.id), gte(devices.last_seen_at, tenMinutesAgo)))
+      .limit(1);
+    isOnline = Boolean(recentDevice);
+  }
 
   // Visibility-aware: the owner sees all their albums (public / subscribers /
   // private); active subscribers additionally see subscriber-only albums;

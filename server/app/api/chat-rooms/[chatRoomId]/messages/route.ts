@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { eq, and, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { chat_room_members, chat_room_messages, chat_rooms, notifications, profiles, users } from "@/lib/db/schema";
+import { chat_room_members, chat_room_messages, chat_rooms, profiles, user_settings, users } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err, created } from "@/lib/api/response";
@@ -14,7 +14,7 @@ import {
   listRoomMessages,
   messagingAllowedError,
 } from "@/lib/services/chat-rooms";
-import { sendPushToUser, getActorUsername } from "@/lib/services/push";
+import { sendPushToUser, getActorUsername, createNotification } from "@/lib/services/push";
 
 export async function GET(
   req: NextRequest,
@@ -105,17 +105,17 @@ export async function POST(
     .set({ last_message_at: now, updated_at: now })
     .where(eq(chat_rooms.id, chatRoomId));
 
-  // Notify the other participant.
+  // Notify the other participant. The in-app notification row is gated by
+  // their Messages preference — when OFF, no event is written and no push is
+  // sent (the push below is already gated).
   if (other) {
-    await db.insert(notifications).values({
-      id: generateId(),
-      user_id: other.user_id,
+    await createNotification(other.user_id, "notif_messages", {
       actor_id: auth.user.userId,
       type: "message",
       entity_type: "chat_room",
       entity_id: chatRoomId,
       body: (d.body ?? "").slice(0, 100) || "Sent you a message",
-    }).catch(() => {});
+    });
 
     getActorUsername(auth.user.userId).then((actor) =>
       sendPushToUser(other.user_id, {
@@ -167,18 +167,53 @@ export async function POST(
 
   // Read marker for the just-inserted message: the OTHER participant's
   // last_read_at (so the sender sees an honest read state for their message).
+  // Only reported when that participant has Read Receipts enabled — their
+  // privacy setting is enforced here, so a disabled read receipt can never
+  // leak through the send confirmation.
   let readThrough: string | null = null;
+  let readReceiptsEnabled = true;
   if (other) {
     const [otherMember] = await db
-      .select({ last_read_at: chat_room_members.last_read_at })
+      .select({
+        last_read_at: chat_room_members.last_read_at,
+        read_receipts: user_settings.read_receipts,
+      })
       .from(chat_room_members)
+      .leftJoin(user_settings, eq(user_settings.user_id, chat_room_members.user_id))
       .where(
         and(eq(chat_room_members.chat_room_id, chatRoomId), eq(chat_room_members.user_id, other.user_id)),
       )
       .limit(1);
     readThrough = otherMember?.last_read_at ?? null;
+    readReceiptsEnabled = otherMember?.read_receipts !== false;
   }
 
-  const message = await buildMessage(row, auth.user.userId, undefined, readThrough);
+  // Resolve the quoted message for reply_to_id so the send response carries
+  // the same reply preview the GET/changes endpoints return. Without this the
+  // reply relationship would be missing from the send confirmation and the
+  // sending client's optimistic reply preview would be dropped until a full
+  // refetch.
+  let replyLookup: Map<string, any> | undefined;
+  if (d.reply_to_id) {
+    const [replyRow] = await db
+      .select({
+        id: chat_room_messages.id,
+        body: chat_room_messages.body,
+        media_type: chat_room_messages.media_type,
+        media_url: chat_room_messages.media_url,
+        sender_name: users.full_name,
+        sender_display_name: profiles.display_name,
+        sender_username: users.username,
+        sender_avatar: profiles.avatar_url,
+      })
+      .from(chat_room_messages)
+      .innerJoin(users, eq(users.id, chat_room_messages.sender_id))
+      .leftJoin(profiles, eq(profiles.user_id, chat_room_messages.sender_id))
+      .where(eq(chat_room_messages.id, d.reply_to_id))
+      .limit(1);
+    if (replyRow) replyLookup = new Map([[replyRow.id, replyRow]]);
+  }
+
+  const message = await buildMessage(row, auth.user.userId, replyLookup, readThrough, readReceiptsEnabled);
   return created({ message });
 }

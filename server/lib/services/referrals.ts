@@ -11,6 +11,7 @@ import {
 } from "@/lib/db/schema";
 import { generateId } from "@/lib/auth/codes";
 import { DEFAULT_SUBSCRIPTION_PRICE } from "@/lib/services/pricing";
+import { sendReferralBonusEmail } from "@/lib/services/email";
 
 export const REFERRAL_REWARD_NAIRA = 200;
 export const CREATOR_ACTIVATION_NAIRA = 1000;
@@ -89,11 +90,26 @@ export async function settleCreatorActivation(
   userId: string,
   transactionId: string,
   paystackReference: string,
-): Promise<{ activated: boolean; alreadyActivated: boolean; rewardAmount: number; referrerId?: string }> {
-  return db.transaction(async (tx) => {
+): Promise<{
+  activated: boolean;
+  alreadyActivated: boolean;
+  rewardAmount: number;
+  referrerId?: string;
+  // Populated when a reward is actually paid, then used to send the referral
+  // bonus email AFTER the transaction commits so a slow SMTP call never holds
+  // the DB transaction open.
+  emailData?: {
+    referrerEmail: string;
+    referrerName: string;
+    newBalance: number;
+    referredUserName: string;
+  };
+}> {
+  const result = await db.transaction(async (tx) => {
     const [user] = await tx
       .select({
         id: users.id,
+        username: users.username,
         is_creator: users.is_creator,
         creator_activation_paid: users.creator_activation_paid,
         referred_by: users.referred_by,
@@ -104,7 +120,7 @@ export async function settleCreatorActivation(
     if (!user) throw new Error("USER_NOT_FOUND");
 
     if (user.creator_activation_paid && user.is_creator) {
-      return { activated: true, alreadyActivated: true, rewardAmount: 0 };
+      return { activated: true, alreadyActivated: true, rewardAmount: 0, emailData: undefined };
     }
 
     const [activationTx] = await tx
@@ -157,15 +173,15 @@ export async function settleCreatorActivation(
     }
 
     if (!user.referred_by || user.referred_by === userId) {
-      return { activated: true, alreadyActivated: false, rewardAmount: 0 };
+      return { activated: true, alreadyActivated: false, rewardAmount: 0, emailData: undefined };
     }
 
     const [referrer] = await tx
-      .select({ id: users.id })
+      .select({ id: users.id, full_name: users.full_name, email: users.email })
       .from(users)
       .where(and(eq(users.id, user.referred_by), eq(users.is_active, true), isNull(users.deleted_at)))
       .limit(1);
-    if (!referrer) return { activated: true, alreadyActivated: false, rewardAmount: 0 };
+    if (!referrer) return { activated: true, alreadyActivated: false, rewardAmount: 0, emailData: undefined };
 
     // The unique referred-user constraint is the abuse-prevention boundary.
     const [existingReward] = await tx
@@ -173,7 +189,7 @@ export async function settleCreatorActivation(
       .from(referral_rewards)
       .where(eq(referral_rewards.referred_user_id, userId))
       .limit(1);
-    if (existingReward) return { activated: true, alreadyActivated: false, rewardAmount: 0 };
+    if (existingReward) return { activated: true, alreadyActivated: false, rewardAmount: 0, emailData: undefined };
 
     await tx.insert(referral_rewards).values({
       id: generateId(),
@@ -186,15 +202,17 @@ export async function settleCreatorActivation(
     });
 
     const [referrerWallet] = await tx
-      .select({ id: wallets.id })
+      .select({ id: wallets.id, balance: wallets.balance })
       .from(wallets)
       .where(eq(wallets.user_id, referrer.id))
       .limit(1);
+    let newBalance: number;
     if (referrerWallet) {
       await tx
         .update(wallets)
         .set({ balance: sql`${wallets.balance} + ${REFERRAL_REWARD_NAIRA}`, updated_at: now })
         .where(eq(wallets.id, referrerWallet.id));
+      newBalance = Number(referrerWallet.balance) + REFERRAL_REWARD_NAIRA;
     } else {
       await tx.insert(wallets).values({
         id: generateId(),
@@ -204,7 +222,14 @@ export async function settleCreatorActivation(
         created_at: now,
         updated_at: now,
       });
+      newBalance = REFERRAL_REWARD_NAIRA;
     }
+    const emailData = {
+      referrerEmail: referrer.email,
+      referrerName: referrer.full_name ?? referrer.email,
+      newBalance,
+      referredUserName: user.username,
+    };
 
     await tx.insert(transactions).values({
       id: generateId(),
@@ -231,6 +256,26 @@ export async function settleCreatorActivation(
       created_at: now,
     });
 
-    return { activated: true, alreadyActivated: false, rewardAmount: REFERRAL_REWARD_NAIRA, referrerId: referrer.id };
+    return {
+      activated: true,
+      alreadyActivated: false,
+      rewardAmount: REFERRAL_REWARD_NAIRA,
+      referrerId: referrer.id,
+      emailData,
+    };
   });
+
+  // Send the bonus email after the transaction commits — best-effort.
+  if (result.emailData) {
+    await sendReferralBonusEmail({
+      to: result.emailData.referrerEmail,
+      name: result.emailData.referrerName,
+      amount: REFERRAL_REWARD_NAIRA,
+      currency: "NGN",
+      newBalance: result.emailData.newBalance,
+      referredUserName: result.emailData.referredUserName,
+    }).catch(() => null);
+  }
+
+  return result;
 }

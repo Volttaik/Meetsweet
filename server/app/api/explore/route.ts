@@ -12,6 +12,7 @@ import {
   hidden_posts,
   subscriptions,
   devices,
+  user_settings,
 } from "@/lib/db/schema";
 import { optionalAuth } from "@/middleware/auth";
 import { ok } from "@/lib/api/response";
@@ -358,6 +359,22 @@ export async function GET(req: NextRequest) {
           .groupBy(devices.user_id)
       : [];
   const onlineSet = new Set(onlineRows.map((r) => r.user_id));
+
+  // Privacy: accounts that turned off Online Status / Activity Status are
+  // never reported as online, regardless of device activity (server-enforced).
+  const hiddenPresenceRows =
+    creatorIds.length > 0
+      ? await db
+          .select({ user_id: user_settings.user_id })
+          .from(user_settings)
+          .where(
+            and(
+              inArray(user_settings.user_id, creatorIds),
+              or(eq(user_settings.online_status, false), eq(user_settings.activity_status, false)),
+            ),
+          )
+      : [];
+  for (const r of hiddenPresenceRows) onlineSet.delete(r.user_id);
 
   return ok({
     // Main paginated items (exactly limit rows, global engagement ranking)
