@@ -18,6 +18,7 @@ import { sendPushToUser, getActorUsername, createNotification } from "@/lib/serv
 import { tierIndex } from "@/lib/services/content";
 import { resolveBasePrice } from "@/lib/services/pricing";
 import { recordCreatorEarning } from "@/lib/services/creator-finance";
+import { emitEvent } from "@/lib/realtime/emit";
 
 const TIER_MULTIPLIER: Record<string, number> = { subscriber: 1, subscriber_plus: 2 };
 
@@ -217,6 +218,25 @@ export async function POST(
     .from(subscriptions)
     .where(and(eq(subscriptions.creator_id, creator_id), eq(subscriptions.status, "active")));
   const subscriber_count = subCountRow?.n ?? 0;
+
+  // Realtime — emitted ONLY after the confirmed DB transaction (financial
+  // state is never optimistic): the creator's connected devices update their
+  // subscriber count / dashboard instantly, and the subscriber's wallet UI is
+  // signaled to refresh its (server-authoritative) balance.
+  void emitEvent({
+    type: "subscription.count_updated",
+    channel: `user:${creator_id}`,
+    resourceId: creator_id,
+    userId: auth.user.userId,
+    payload: { creatorId: creator_id, subscriberCount: subscriber_count, tier: outcome.tier },
+  });
+  void emitEvent({
+    type: "wallet.updated",
+    channel: `user:${auth.user.userId}`,
+    resourceId: auth.user.userId,
+    userId: auth.user.userId,
+    payload: { reason: "subscription", creatorId: creator_id },
+  });
 
   if (outcome.kind === "existing") {
     return ok({

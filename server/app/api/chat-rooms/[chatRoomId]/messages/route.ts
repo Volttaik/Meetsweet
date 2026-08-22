@@ -15,6 +15,7 @@ import {
   messagingAllowedError,
 } from "@/lib/services/chat-rooms";
 import { sendPushToUser, getActorUsername, createNotification } from "@/lib/services/push";
+import { emitEvent } from "@/lib/realtime/emit";
 
 export async function GET(
   req: NextRequest,
@@ -37,7 +38,11 @@ export async function GET(
 const sendSchema = z.object({
   body: z.string().max(5000).nullable().optional(),
   media_url: z.string().url().nullable().optional(),
-  media_type: z.enum(["image", "video", "audio", "document"]).nullable().optional(),
+  // media_type is the MESSAGE category (not the on-disk file format): image /
+  // video / audio / document, plus the media-first types gif (animated image
+  // rendered as a compact animated bubble) and sticker (floating image with no
+  // bubble background). The column is free text so no migration is required.
+  media_type: z.enum(["image", "video", "audio", "document", "gif", "sticker"]).nullable().optional(),
   caption: z.string().max(2000).nullable().optional(),
   file_name: z.string().max(255).nullable().optional(),
   file_size: z.number().int().nullable().optional(),
@@ -215,5 +220,19 @@ export async function POST(
   }
 
   const message = await buildMessage(row, auth.user.userId, replyLookup, readThrough, readReceiptsEnabled);
+
+  // Realtime: notify every connected participant of this room (both members
+  // subscribe to chat:{chatRoomId}). The payload is the same buildMessage
+  // shape the REST/changes endpoints return — the receiving client derives
+  // isOwn/read from its own perspective. Durable so reconnecting clients
+  // recover missed messages from the outbox.
+  void emitEvent({
+    type: "chat.message.created",
+    channel: `chat:${chatRoomId}`,
+    resourceId: messageId,
+    userId: auth.user.userId,
+    payload: { message },
+  });
+
   return created({ message });
 }

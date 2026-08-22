@@ -9,6 +9,10 @@ const nextConfig: NextConfig = {
       bodySizeLimit: "50mb",
     },
   },
+  // ioredis (the realtime cross-instance bus) depends on Node built-ins
+  // (net/tls) — keep it external to the server bundle per the Vercel chat
+  // guide, or the Next.js build fails to resolve it.
+  serverExternalPackages: ["ioredis"],
 };
 
 export default nextConfig;

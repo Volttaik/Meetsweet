@@ -15,6 +15,7 @@ repo `MeetSweet-mobile`; this repo is the API-only backend
 
 | Commit | Change |
 |---|---|
+| *(uncommitted)* | Unified realtime WebSocket layer: `lib/realtime/` (hub, outbox, emit, bus), `app/api/realtime/route.ts`, event emissions wired into chat/typing/read/reactions/comments/likes/notifications/subscriptions/wallet/albums; chat message edit+delete endpoints; Redis Streams cross-instance bus |
 | `c5cea91` | Document the direct-to-R2 media upload flow |
 | `3036775` | Replace large-body media uploads with direct-to-R2 sessions (`uploads/*` routes, `upload_sessions` table, presigned PUT + multipart) |
 | `92f1750` | Fix login 500 by applying missing `users.two_fa_enabled` schema |
@@ -77,6 +78,30 @@ Chromium. All of the following passed end-to-end:
 7. **Per-viewer fields must stay server-computed.** If a route starts echoing
    client-supplied `subscribed_to_creator` / `isUnlockedByMe`, the app shows
    stale subscribe/purchase state. Contract in `BACKEND-SPEC.md`.
+
+## Realtime (WebSocket) system
+
+- **Endpoint:** `app/api/realtime/route.ts` — JWT + live-account auth (4401 on
+  failure), authorized channel subscriptions (`user:{me}`, `chat:{room}`
+  membership-only, `post:{id}`), ping/pong, `sync` replay of missed durable
+  events from the Turso outbox (`lib/realtime/outbox.ts`, monotonic `seq`),
+  ephemeral-only `relay` for typing/recording/presence (acting userId always
+  server-set).
+- **Event emission:** `emitEvent()` in `lib/realtime/emit.ts` is the single
+  publish point — broadcast locally, write to the durable outbox, then
+  `publishEvent()` to the Redis bus. Full protocol + event list documented in
+  `.agent/REALTIME.md`.
+- **Cross-instance bus:** `lib/realtime/bus.ts` — Redis Streams
+  (`XADD`/`XREAD BLOCK`, `MAXLEN ~ 500`, per-instance `o` tag to skip
+  self-echo), exactly per the Vercel real-time chat guide. Requires
+  `REDIS_URL` (wire protocol) **or** the Upstash REST pair
+  (`UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN`) from which the
+  `rediss://` URL is derived automatically. Absent → single-instance
+  fallback (no new infra; durable outbox still recovers reconnects).
+  **Live config verified 2026-08-22:** PING/XADD/XREAD BLOCK all succeed
+  against the configured Upstash instance.
+- **Runtime:** WebSockets need Fluid compute (already in `vercel.json`);
+  `ioredis` is in `next.config.ts` `serverExternalPackages`.
 
 ## Deploy checklist
 

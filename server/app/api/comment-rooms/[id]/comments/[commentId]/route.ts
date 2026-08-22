@@ -6,6 +6,7 @@ import { comments, posts } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err } from "@/lib/api/response";
+import { emitEvent } from "@/lib/realtime/emit";
 
 export async function PATCH(
   req: NextRequest,
@@ -33,6 +34,15 @@ export async function PATCH(
     .set({ body: parsed.data.body, updated_at: new Date().toISOString() })
     .where(eq(comments.id, commentId));
 
+  // Realtime: everyone viewing the post sees the edited body immediately.
+  void emitEvent({
+    type: "post.comment.updated",
+    channel: `post:${id}`,
+    resourceId: commentId,
+    userId: auth.user.userId,
+    payload: { commentId, body: parsed.data.body },
+  });
+
   return ok({ updated: true });
 }
 
@@ -56,6 +66,20 @@ export async function DELETE(
 
   await db.update(comments).set({ deleted_at: new Date().toISOString() }).where(eq(comments.id, commentId));
   await db.update(posts).set({ comment_count: sql`MAX(0, ${posts.comment_count} - 1)` }).where(eq(posts.id, id));
+
+  // Realtime: removed instantly for everyone viewing the post.
+  const [countRow] = await db
+    .select({ n: posts.comment_count })
+    .from(posts)
+    .where(eq(posts.id, id))
+    .limit(1);
+  void emitEvent({
+    type: "post.comment.deleted",
+    channel: `post:${id}`,
+    resourceId: commentId,
+    userId: auth.user.userId,
+    payload: { commentId, commentCount: countRow?.n ?? 0 },
+  });
 
   return ok({ deleted: true });
 }

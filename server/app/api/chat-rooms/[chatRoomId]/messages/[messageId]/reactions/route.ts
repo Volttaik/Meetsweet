@@ -7,6 +7,8 @@ import { requireAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err } from "@/lib/api/response";
 import { getMember } from "@/lib/services/chat-rooms";
+import { emitEvent } from "@/lib/realtime/emit";
+import { EVENT } from "@/lib/realtime/types";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function parseReactions(value: string | null): any[] {
@@ -69,6 +71,16 @@ export async function POST(
     user_ids: (r.user_ids ?? []).map(String),
     userIds: (r.user_ids ?? []).map(String),
   }));
+
+  // Realtime: both participants' clients update the reaction bar instantly.
+  // Durable so a reconnecting client converges on the same reactions.
+  void emitEvent({
+    type: EVENT.chatReactionUpdated,
+    channel: `chat:${chatRoomId}`,
+    resourceId: messageId,
+    userId: auth.user.userId,
+    payload: { messageId, reactions: shaped },
+  });
 
   return ok({ reactions: shaped });
 }

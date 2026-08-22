@@ -17,7 +17,7 @@ export type AuthedRequest = NextRequest & { user: TokenPayload };
  * database role, not the token claim. This is what makes a deleted account's
  * data immediately inaccessible and a new creator role immediately effective.
  */
-async function fetchLiveAccount(userId: string): Promise<{
+export async function fetchLiveAccount(userId: string): Promise<{
   isActive: boolean;
   role: string | null;
 } | null> {

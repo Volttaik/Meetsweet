@@ -6,6 +6,7 @@ import { requireAuth } from "@/middleware/auth";
 import { ok, err } from "@/lib/api/response";
 import { generateId } from "@/lib/auth/codes";
 import { sendPushToUser, getActorUsername, createNotification } from "@/lib/services/push";
+import { emitEvent } from "@/lib/realtime/emit";
 
 export async function POST(
   req: NextRequest,
@@ -76,7 +77,18 @@ export async function POST(
   }
 
   const [updated] = await db.select({ like_count: posts.like_count }).from(posts).where(eq(posts.id, id)).limit(1);
-  return ok({ liked: true, like_count: updated?.like_count ?? 0 });
+
+  // Realtime: everyone viewing the post sees the like count change instantly.
+  const likeCount = updated?.like_count ?? 0;
+  void emitEvent({
+    type: "post.like.updated",
+    channel: `post:${id}`,
+    resourceId: id,
+    userId: auth.user.userId,
+    payload: { liked: true, likeCount, actorId: auth.user.userId },
+  });
+
+  return ok({ liked: true, like_count: likeCount });
 }
 
 export async function DELETE(
@@ -103,5 +115,16 @@ export async function DELETE(
   }
 
   const [updated] = await db.select({ like_count: posts.like_count }).from(posts).where(eq(posts.id, id)).limit(1);
-  return ok({ liked: false, like_count: updated?.like_count ?? 0 });
+
+  // Realtime: unlike propagates instantly to active viewers.
+  const likeCount = updated?.like_count ?? 0;
+  void emitEvent({
+    type: "post.like.updated",
+    channel: `post:${id}`,
+    resourceId: id,
+    userId: auth.user.userId,
+    payload: { liked: false, likeCount, actorId: auth.user.userId },
+  });
+
+  return ok({ liked: false, like_count: likeCount });
 }

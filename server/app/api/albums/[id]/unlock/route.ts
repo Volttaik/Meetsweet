@@ -9,6 +9,7 @@ import { loadAlbum } from "@/lib/services/albums";
 import { recordCreatorEarning } from "@/lib/services/creator-finance";
 import { sendPushToUser, getActorUsername, createNotification } from "@/lib/services/push";
 import { sendAlbumPurchaseEmail } from "@/lib/services/email";
+import { emitEvent } from "@/lib/realtime/emit";
 
 export async function POST(
   req: NextRequest,
@@ -96,6 +97,24 @@ export async function POST(
       data: { type: "payment", wallet: true, content_type: "album", album_id: id, content_id: id },
     }, "notif_creator_updates"),
   );
+
+  // Realtime — emitted ONLY after the confirmed transaction (financial state
+  // is never optimistic): the buyer's wallet balance and album purchase state
+  // update instantly on their connected devices.
+  void emitEvent({
+    type: "wallet.updated",
+    channel: `user:${auth.user.userId}`,
+    resourceId: auth.user.userId,
+    userId: auth.user.userId,
+    payload: { reason: "album_unlock", albumId: id },
+  });
+  void emitEvent({
+    type: "purchase.completed",
+    channel: `user:${auth.user.userId}`,
+    resourceId: id,
+    userId: auth.user.userId,
+    payload: { albumId: id, creatorId: album.creator_id, amount: price },
+  });
 
   // Buyer confirmation email with full purchase context. Best-effort — a
   // delivery failure must never fail the unlock itself.

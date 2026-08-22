@@ -791,6 +791,33 @@ export const referral_rewards = sqliteTable(
   ],
 );
 
+// ─── Realtime outbox ─────────────────────────────────────────────────────
+// Durable event log for the unified WebSocket realtime layer (lib/realtime).
+// Every durable event is appended here (one row per event) so a client that
+// reconnects — possibly to a different Function instance — can recover events
+// it missed via the outbox sequence. The table is self-initialized at runtime
+// (CREATE TABLE IF NOT EXISTS) so no manual production migration is required;
+// this declaration keeps it in the schema for type-safety and future
+// drizzle-kit migrations.
+
+export const realtime_events = sqliteTable(
+  "realtime_events",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    event_id: text("event_id").notNull(),
+    event_type: text("event_type").notNull(),
+    channel: text("channel").notNull(),
+    resource_id: text("resource_id"),
+    actor_id: text("actor_id"),
+    payload: text("payload"),
+    created_at: text("created_at").notNull(),
+  },
+  (table) => [
+    index("realtime_events_channel_idx").on(table.channel, table.id),
+    index("realtime_events_actor_idx").on(table.actor_id, table.id),
+  ],
+);
+
 export const creator_settings = sqliteTable("creator_settings", {
   id: id(),
   user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
