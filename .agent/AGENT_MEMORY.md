@@ -103,6 +103,34 @@ Chromium. All of the following passed end-to-end:
 - **Runtime:** WebSockets need Fluid compute (already in `vercel.json`);
   `ioredis` is in `next.config.ts` `serverExternalPackages`.
 
+## Day 2 audit fixes (2026-08-23)
+
+- **Relay allowlist bug:** `validRelayType` in `sweet-socket/validator.ts`
+  only accepted legacy dotted names (`typing.start`, `recording.start`, …)
+  while the mobile client relays canonical colon names (`typing:start`,
+  `voice:start`, `presence:updated`). Every typing/voice/presence relay was
+  rejected with FORBIDDEN_RELAY. The allowlist now accepts both, and
+  `normalizeRelayType` maps legacy → canonical (`chat.presence.updated` →
+  `presence:updated`, never a hardcoded `presence.online`). **Needs deploy.**
+- **Subscription cancel now realtime:** `subscriptions/[id]/cancel` emits
+  `subscription:cancelled` to the creator's `user:{id}` channel with the
+  live active-subscriber count.
+- **Dead code removed:** `lib/realtime/events/*` (duplicate event-name
+  constants, nothing imported them) was deleted; canonical names live only
+  in `sweet-socket/types.ts`.
+- **Deployed-server note:** `experimental_upgradeWebSocket` (from
+  `@vercel/functions`) is NOT available in local `next dev` — the socket
+  can only be exercised against the Vercel deployment. Upgrade requests are
+  also subject to Vercel's per-instance serialization: a second socket from
+  one source opened too soon after the first may hang.
+- **WebSocket handshake no longer requires X-Client-App-Id:** the middleware
+  exempts `/api/realtime` (it authenticates itself via `?token=` JWT +
+  live-account check + 4401 on failure; custom headers cannot be set on a
+  browser WebSocket upgrade and RN support is inconsistent). The header
+  guard still applies to every normal HTTP API route. **Needs deploy.**
+- **Client still sends the header on native** (`services/realtime.ts` third
+  constructor arg) — belt-and-suspenders; harmless with the exemption.
+
 ## Deploy checklist
 
 1. `cd server && pnpm migrate` on the live DB (Turso).

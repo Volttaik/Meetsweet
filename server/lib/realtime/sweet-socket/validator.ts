@@ -56,7 +56,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export function validRelayType(eventType: string): boolean {
+  // Accept the canonical colon names the mobile client sends (typing:start,
+  // voice:start, presence:updated) AND the legacy dotted aliases so older
+  // clients keep working during rollout. Everything else is rejected.
   return [
+    "typing:start",
+    "typing:stop",
+    "voice:start",
+    "voice:stop",
+    "presence:online",
+    "presence:offline",
+    "presence:updated",
     "typing.start",
     "typing.stop",
     "recording.start",

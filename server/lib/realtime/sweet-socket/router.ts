@@ -217,12 +217,23 @@ function normalizeChatPayload(payload: Record<string, unknown>): SweetSocketChat
 }
 
 function normalizeRelayType(type: string): string {
+  // Legacy dotted names from the pre-canonical protocol are mapped to the
+  // canonical domain:event names the mobile client listens for. Presence is
+  // delivered as presence:updated with the `online` flag in the payload (the
+  // emitting client announces connect/disconnect with the same event type), so
+  // the old alias that always produced presence.online is gone.
   const aliases: Record<string, string> = {
-    "chat.typing.started": "typing.start",
-    "chat.typing.stopped": "typing.stop",
-    "chat.recording.started": "recording.start",
-    "chat.recording.stopped": "recording.stop",
-    "chat.presence.updated": "presence.online",
+    "chat.typing.started": "typing:start",
+    "chat.typing.stopped": "typing:stop",
+    "chat.recording.started": "voice:start",
+    "chat.recording.stopped": "voice:stop",
+    "chat.presence.updated": "presence:updated",
+    "typing.start": "typing:start",
+    "typing.stop": "typing:stop",
+    "recording.start": "voice:start",
+    "recording.stop": "voice:stop",
+    "presence.online": "presence:online",
+    "presence.offline": "presence:offline",
   };
   return aliases[type] ?? type;
 }

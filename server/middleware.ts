@@ -7,6 +7,16 @@ const PUBLIC_BYPASS = new Set([
   "/api/diagnostic",
 ]);
 
+// The WebSocket upgrade endpoint carries its OWN authentication: the JWT is
+// verified from the `?token=` query param and the live account is re-checked
+// inside the route before the socket is accepted (4401 on failure). Requiring
+// the X-Client-App-Id header here would reject legitimate mobile clients —
+// custom headers cannot be set on a WebSocket upgrade from a browser, and
+// React Native support is inconsistent across platforms/versions. The header
+// guard stays for every normal HTTP API route; only the authenticated socket
+// handshake is exempt.
+const WEBSOCKET_BYPASS = new Set(["/api/realtime"]);
+
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const isPublicShareLookup =
@@ -35,6 +45,7 @@ export function middleware(req: NextRequest) {
   const hasBearerToken = req.headers.get("authorization")?.startsWith("Bearer ");
   if (
     !PUBLIC_BYPASS.has(pathname) &&
+    !WEBSOCKET_BYPASS.has(pathname) &&
     !isPublicShareLookup &&
     sentId !== clientAppId &&
     !hasBearerToken
