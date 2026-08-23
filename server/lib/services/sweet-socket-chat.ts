@@ -1,8 +1,10 @@
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { chat_room_members, chat_room_messages, chat_rooms, profiles, user_settings, users } from "@/lib/db/schema";
+import { chat_room_members, chat_room_messages, chat_rooms, profiles, users } from "@/lib/db/schema";
 import { generateId } from "@/lib/auth/codes";
-import { buildMessage, getMember, isBlockedBetween, messagingAllowedError } from "@/lib/services/chat-rooms";
+import { buildMessage, buildRoom, getMember, isBlockedBetween, messagingAllowedError } from "@/lib/services/chat-rooms";
+import { emitEvent } from "@/lib/realtime/emit";
+import { SWEETSOCKET_EVENT } from "@/lib/realtime/sweet-socket/event-map";
 
 export type SweetSocketChatPayload = {
   body?: string | null;
@@ -157,5 +159,38 @@ export async function persistSweetSocketChatMessage(input: {
   }
 
   const message = await buildMessage(row, userId, replyLookup);
+
+  // Chat-list fanout: every participant's private channel receives a
+  // `chats:upsert` carrying the authoritative room metadata (preview, unread
+  // count, other participant). This is what makes a NEW conversation appear in
+  // the recipient's chat list instantly WITHOUT a refetch — the recipient is
+  // not subscribed to the room's chat channel yet, so the room event must ride
+  // their private `user:` channel. Emitted only for genuinely new messages;
+  // the message events themselves are broadcast by the callers (socket router
+  // or HTTP route) on the chat channel.
+  if (!existing) {
+    void (async () => {
+      try {
+        const members = await db
+          .select({ user_id: chat_room_members.user_id })
+          .from(chat_room_members)
+          .where(eq(chat_room_members.chat_room_id, roomId));
+        await Promise.all(members.map(async (member) => {
+          const room = await buildRoom(roomId, member.user_id);
+          if (!room) return;
+          await emitEvent({
+            type: SWEETSOCKET_EVENT.chatsUpsert,
+            channel: `user:${member.user_id}`,
+            resourceId: roomId,
+            userId: member.user_id,
+            payload: { room, roomId },
+          });
+        }));
+      } catch {
+        // Chat-list fanout is best-effort — never break message persistence.
+      }
+    })();
+  }
+
   return { message, created: !existing };
 }

@@ -7,6 +7,7 @@ import { registerBusConnection, unregisterBusConnection } from "@/lib/realtime/b
 import * as manager from "@/lib/realtime/sweet-socket/connection-manager";
 import { connected, disconnected } from "@/lib/realtime/sweet-socket/presence-manager";
 import { createEvent } from "@/lib/realtime/sweet-socket/event-emitter";
+import { SWEETSOCKET_EVENT } from "@/lib/realtime/sweet-socket/event-map";
 import { handleClientMessage, authorizeChannel } from "@/lib/realtime/sweet-socket/router";
 import { parseFrame } from "@/lib/realtime/sweet-socket/validator";
 import type { SweetSocketClientMessage } from "@/lib/realtime/sweet-socket/types";
@@ -43,11 +44,15 @@ export function GET(req: NextRequest) {
         connection = manager.register(ws, tokenUser.userId);
         registerBusConnection();
         manager.send(connection, { type: "auth", state: "connected" });
+        // Explicit connection-state lifecycle (Baileys-style connection.update):
+        // the client can track connecting → connected → authenticated → ready
+        // (and disconnected/error on close) without guessing from auth frames.
+        manager.send(connection, { type: "connection", state: "connected" });
         ws.on("close", () => {
           unregisterBusConnection();
           if (connection && disconnected(connection)) {
             const event = createEvent({
-              type: "presence.offline",
+              type: SWEETSOCKET_EVENT.presenceOffline,
               userId: connection.userId,
               payload: { userId: connection.userId },
             });
@@ -63,7 +68,7 @@ export function GET(req: NextRequest) {
         manager.send(connection, { type: "connection", state: "ready" });
         if (connected(connection)) {
           const event = createEvent({
-            type: "presence.online",
+            type: SWEETSOCKET_EVENT.presenceOnline,
             userId: connection.userId,
             payload: { userId: connection.userId },
           });

@@ -27,6 +27,7 @@ import { parseBody } from "@/lib/api/validate";
 import { ok, err } from "@/lib/api/response";
 import { getMember } from "@/lib/services/chat-rooms";
 import { emitEvent } from "@/lib/realtime/emit";
+import { SWEETSOCKET_EVENT } from "@/lib/realtime/sweet-socket/event-map";
 
 function parseDeletedFor(value: string | null): string[] {
   if (!value) return [];
@@ -65,9 +66,13 @@ export async function PATCH(
     .set({ body: parsed.data.body, is_edited: true, updated_at: new Date().toISOString() })
     .where(eq(chat_room_messages.id, messageId));
 
-  // Realtime: the other participant's bubble updates instantly.
+  // Realtime: the other participant's bubble updates instantly. The canonical
+  // event is messages:update; the chat list preview also needs the new body
+  // (chats:update on the actor's private channel is enough — both participants'
+  // previews are refreshed by their own client on the next list render, and the
+  // room channel carries the bubble edit to everyone).
   void emitEvent({
-    type: "chat.message.updated",
+    type: SWEETSOCKET_EVENT.messagesUpdate,
     channel: `chat:${chatRoomId}`,
     resourceId: messageId,
     userId: auth.user.userId,
@@ -126,7 +131,7 @@ export async function DELETE(
   // Realtime: clients drop the message (and its cached media) only when the
   // event affects them — everyone for recall, the actor for delete-for-me.
   void emitEvent({
-    type: "chat.message.deleted",
+    type: SWEETSOCKET_EVENT.messagesDelete,
     channel: `chat:${chatRoomId}`,
     resourceId: messageId,
     userId: auth.user.userId,

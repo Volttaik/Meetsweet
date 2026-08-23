@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import type { WebSocket } from "ws";
-import type { SweetSocketConnection, SweetSocketEvent } from "./types";
+import type { SweetSocketConnection } from "./types";
 
 const OPEN = 1;
 const connections = new Map<string, SweetSocketConnection>();
@@ -40,6 +40,16 @@ export function connectionsForUser(userId: string): SweetSocketConnection[] {
   return [...(userConnections.get(userId) ?? [])]
     .map((id) => connections.get(id))
     .filter((connection): connection is SweetSocketConnection => Boolean(connection));
+}
+
+/**
+ * Whether the user currently has at least one live connection subscribed to
+ * `channel` — i.e. the user is actively receiving events on that room. Used to
+ * auto-emit delivery receipts (Baileys-style) so the sender learns the
+ * recipient actually received the message, without an HTTP round-trip.
+ */
+export function isUserSubscribedTo(userId: string, channel: string): boolean {
+  return connectionsForUser(userId).some((connection) => connection.channels.has(channel));
 }
 
 export function disconnectUser(userId: string, code = 4401, reason = "Session expired"): void {

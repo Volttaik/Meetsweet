@@ -259,6 +259,12 @@ async function roomParticipants(chatRoomId: string) {
     .where(eq(chat_room_members.chat_room_id, chatRoomId));
 }
 
+/** Authoritative member ids of a room (both participants in a 1:1 chat). */
+export async function getRoomParticipantIds(chatRoomId: string): Promise<string[]> {
+  const rows = await roomParticipants(chatRoomId);
+  return rows.map((r) => r.id);
+}
+
 export async function isBlockedBetween(a: string, b: string): Promise<boolean> {
   const [row] = await db
     .select({ id: blocked_users.id })

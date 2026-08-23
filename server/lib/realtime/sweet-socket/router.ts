@@ -1,17 +1,15 @@
-import { getMember } from "@/lib/services/chat-rooms";
+import { getMember, getRoomParticipantIds, listRoomMessages } from "@/lib/services/chat-rooms";
 import { canViewContent } from "@/lib/services/content";
-import { posts, subscriptions } from "@/lib/db/schema";
+import { chat_room_members, chat_room_messages, posts, subscriptions } from "@/lib/db/schema";
 import { db } from "@/lib/db";
 import { and, eq } from "drizzle-orm";
 import { persistSweetSocketChatMessage, type SweetSocketChatPayload } from "@/lib/services/sweet-socket-chat";
 import { publish } from "./persistence-bridge";
 import { validRelayType } from "./validator";
+import { SWEETSOCKET_ERROR } from "./event-map";
+import { consumeCommandRateLimit, consumeRelayRateLimit } from "./rate-limit";
 import * as manager from "./connection-manager";
-import type { SweetSocketClientMessage, SweetSocketConnection, SweetSocketEvent } from "./types";
-
-const commandTimestamps = new Map<string, number[]>();
-const COMMAND_WINDOW_MS = 10_000;
-const MAX_COMMANDS_PER_WINDOW = 40;
+import type { SweetSocketClientMessage, SweetSocketConnection } from "./types";
 
 export async function authorizeChannel(channel: string, userId: string): Promise<boolean> {
   const separator = channel.indexOf(":");
@@ -56,7 +54,19 @@ export async function handleClientMessage(
 ): Promise<void> {
   if (message.type === "relay") {
     if (!validRelayType(message.eventType) || !(await authorizeChannel(message.channel, connection.userId))) {
-      manager.send(connection, { type: "error", code: "FORBIDDEN_RELAY", message: "Relay is not allowed for this channel or event" });
+      manager.send(connection, {
+        type: "error",
+        code: SWEETSOCKET_ERROR.permission,
+        message: "Relay is not allowed for this channel or event",
+      });
+      return;
+    }
+    if (!consumeRelayRateLimit(connection.userId, message.channel, message.eventType)) {
+      manager.send(connection, {
+        type: "error",
+        code: SWEETSOCKET_ERROR.rateLimit,
+        message: "Relay rate limit exceeded",
+      });
       return;
     }
     const eventType = normalizeRelayType(message.eventType);
@@ -73,8 +83,15 @@ export async function handleClientMessage(
   }
 
   if (message.type !== "command") return;
-  if (!consumeRateLimit(connection.userId)) {
-    manager.send(connection, { type: "ack", requestId: message.requestId, command: message.command, status: "failed", clientMessageId: message.clientMessageId, error: "Rate limit exceeded" });
+  if (!consumeCommandRateLimit(connection.userId)) {
+    manager.send(connection, {
+      type: "ack",
+      requestId: message.requestId,
+      command: message.command,
+      status: "failed",
+      clientMessageId: message.clientMessageId,
+      error: "Rate limit exceeded",
+    });
     return;
   }
 
@@ -82,8 +99,383 @@ export async function handleClientMessage(
     await handleMessageSend(connection, message);
     return;
   }
+  if (message.command === "chat.history") {
+    await handleChatHistory(connection, message);
+    return;
+  }
+  if (message.command === "chat.read") {
+    await handleChatRead(connection, message);
+    return;
+  }
+  if (message.command === "chat.clear") {
+    await handleChatClear(connection, message);
+    return;
+  }
+  if (message.command === "message.delete") {
+    await handleMessageDelete(connection, message);
+    return;
+  }
+  if (message.command === "message.edit") {
+    await handleMessageEdit(connection, message);
+    return;
+  }
+  if (message.command === "message.reaction") {
+    await handleMessageReaction(connection, message);
+    return;
+  }
 
-  manager.send(connection, { type: "ack", requestId: message.requestId, command: message.command, status: "failed", error: "Unsupported command" });
+  manager.send(connection, {
+    type: "ack",
+    requestId: message.requestId,
+    command: message.command,
+    status: "failed",
+    error: "Unsupported command",
+  });
+}
+
+/**
+ * chat:read — the reader marks the room read over the socket. Persists the
+ * member's last_read_at durably (same write as the legacy /read route) and
+ * emits a `message:read` event to the room so the other participant's bubbles
+ * flip to read instantly — no HTTP round-trip for the initiating client.
+ */
+async function handleChatRead(
+  connection: SweetSocketConnection,
+  message: Extract<SweetSocketClientMessage, { type: "command" }>,
+): Promise<void> {
+  const roomId = message.channel?.replace(/^chat:/, "") ?? "";
+  if (!roomId) {
+    manager.send(connection, {
+      type: "ack",
+      requestId: message.requestId,
+      command: message.command,
+      status: "failed",
+      error: "room is required",
+    });
+    return;
+  }
+  const member = await getMember(roomId, connection.userId).catch(() => null);
+  if (!member) {
+    manager.send(connection, {
+      type: "ack",
+      requestId: message.requestId,
+      command: message.command,
+      status: "failed",
+      error: "Not a member of this room",
+    });
+    return;
+  }
+  const lastReadAt = new Date().toISOString();
+  await db
+    .update(chat_room_members)
+    .set({ last_read_at: lastReadAt })
+    .where(eq(chat_room_members.id, member.id));
+  const event = publish({
+    type: "message:read",
+    userId: connection.userId,
+    channel: `chat:${roomId}`,
+    roomId,
+    resourceId: roomId,
+    payload: { userId: connection.userId, lastReadAt, roomId },
+    durable: false,
+  });
+  // Fan out to the room — the other participant sees "read" and the reader's
+  // own devices zero the unread badge, all through the same store.
+  manager.broadcast(`chat:${roomId}`, event);
+  manager.send(connection, {
+    type: "ack",
+    requestId: message.requestId,
+    command: message.command,
+    status: "persisted",
+    event,
+  });
+}
+
+/**
+ * chat:clear — the actor clears the room over the socket. Persists cleared_at
+ * and emits a durable chat:clear to the actor's private channel so all their
+ * devices drop the local replica immediately.
+ */
+async function handleChatClear(
+  connection: SweetSocketConnection,
+  message: Extract<SweetSocketClientMessage, { type: "command" }>,
+): Promise<void> {
+  const roomId = message.channel?.replace(/^chat:/, "") ?? "";
+  if (!roomId) {
+    manager.send(connection, {
+      type: "ack",
+      requestId: message.requestId,
+      command: message.command,
+      status: "failed",
+      error: "room is required",
+    });
+    return;
+  }
+  const member = await getMember(roomId, connection.userId).catch(() => null);
+  if (!member) {
+    manager.send(connection, {
+      type: "ack",
+      requestId: message.requestId,
+      command: message.command,
+      status: "failed",
+      error: "Not a member of this room",
+    });
+    return;
+  }
+  const clearedAt = new Date().toISOString();
+  await db.update(chat_room_members).set({ cleared_at: clearedAt }).where(eq(chat_room_members.id, member.id));
+  const event = publish({
+    type: "chat:clear",
+    userId: connection.userId,
+    channel: `user:${connection.userId}`,
+    roomId,
+    resourceId: roomId,
+    payload: { roomId, userId: connection.userId, clearedAt },
+    durable: true,
+  });
+  manager.broadcastUsers([connection.userId], event);
+  manager.send(connection, {
+    type: "ack",
+    requestId: message.requestId,
+    command: message.command,
+    status: "persisted",
+    event,
+  });
+}
+
+function parseJsonArray(value: string | null): string[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * message:delete — validates authorization (recall requires the author/admin),
+ * persists delete-for-me / recall, then broadcasts messages:delete to the room.
+ */
+async function handleMessageDelete(
+  connection: SweetSocketConnection,
+  message: Extract<SweetSocketClientMessage, { type: "command" }>,
+): Promise<void> {
+  const roomId = message.channel?.replace(/^chat:/, "") ?? "";
+  const messageId = typeof message.payload?.messageId === "string" ? message.payload.messageId : "";
+  const scope = message.payload?.scope === "everyone" ? "everyone" : "me";
+  if (!roomId || !messageId) return ackFail(connection, message, "room and messageId are required");
+  const member = await getMember(roomId, connection.userId).catch(() => null);
+  if (!member) return ackFail(connection, message, "Chat room not found");
+  const [row] = await db
+    .select({
+      id: chat_room_messages.id,
+      sender_id: chat_room_messages.sender_id,
+      deleted_for: chat_room_messages.deleted_for,
+    })
+    .from(chat_room_messages)
+    .where(and(eq(chat_room_messages.id, messageId), eq(chat_room_messages.chat_room_id, roomId)))
+    .limit(1);
+  if (!row) return ackFail(connection, message, "Message not found");
+  if (scope === "everyone" && row.sender_id !== connection.userId) {
+    return ackFail(connection, message, "Forbidden");
+  }
+  if (scope === "everyone") {
+    await db.update(chat_room_messages).set({ is_recalled: true, updated_at: new Date().toISOString() }).where(eq(chat_room_messages.id, messageId));
+  } else {
+    const deletedFor = parseJsonArray(row.deleted_for);
+    if (!deletedFor.includes(connection.userId)) {
+      deletedFor.push(connection.userId);
+      await db.update(chat_room_messages).set({ deleted_for: JSON.stringify(deletedFor), updated_at: new Date().toISOString() }).where(eq(chat_room_messages.id, messageId));
+    }
+  }
+  const event = publish({
+    type: "messages:delete",
+    userId: connection.userId,
+    channel: `chat:${roomId}`,
+    roomId,
+    resourceId: messageId,
+    payload: { messageId, scope, userId: connection.userId },
+    durable: true,
+  });
+  manager.broadcast(`chat:${roomId}`, event);
+  manager.send(connection, { type: "ack", requestId: message.requestId, command: message.command, status: "persisted", event });
+}
+
+/**
+ * message:edit — author-only body edit. Persists is_edited and broadcasts
+ * messages:update to the room.
+ */
+async function handleMessageEdit(
+  connection: SweetSocketConnection,
+  message: Extract<SweetSocketClientMessage, { type: "command" }>,
+): Promise<void> {
+  const roomId = message.channel?.replace(/^chat:/, "") ?? "";
+  const messageId = typeof message.payload?.messageId === "string" ? message.payload.messageId : "";
+  const body = typeof message.payload?.body === "string" ? message.payload.body : null;
+  if (!roomId || !messageId || body === null) return ackFail(connection, message, "room, messageId and body are required");
+  const member = await getMember(roomId, connection.userId).catch(() => null);
+  if (!member) return ackFail(connection, message, "Chat room not found");
+  const [row] = await db
+    .select({ id: chat_room_messages.id, sender_id: chat_room_messages.sender_id })
+    .from(chat_room_messages)
+    .where(and(eq(chat_room_messages.id, messageId), eq(chat_room_messages.chat_room_id, roomId)))
+    .limit(1);
+  if (!row) return ackFail(connection, message, "Message not found");
+  if (row.sender_id !== connection.userId) return ackFail(connection, message, "Forbidden");
+  await db
+    .update(chat_room_messages)
+    .set({ body, is_edited: true, updated_at: new Date().toISOString() })
+    .where(eq(chat_room_messages.id, messageId));
+  const event = publish({
+    type: "messages:update",
+    userId: connection.userId,
+    channel: `chat:${roomId}`,
+    roomId,
+    resourceId: messageId,
+    payload: { messageId, roomId, body, isEdited: true },
+    durable: true,
+  });
+  manager.broadcast(`chat:${roomId}`, event);
+  manager.send(connection, { type: "ack", requestId: message.requestId, command: message.command, status: "persisted", event });
+}
+
+/**
+ * message:reaction — toggles the caller's emoji on a message, persists, and
+ * broadcasts messages:reaction to the room. Idempotent: same emoji again
+ * removes the reaction.
+ */
+async function handleMessageReaction(
+  connection: SweetSocketConnection,
+  message: Extract<SweetSocketClientMessage, { type: "command" }>,
+): Promise<void> {
+  const roomId = message.channel?.replace(/^chat:/, "") ?? "";
+  const messageId = typeof message.payload?.messageId === "string" ? message.payload.messageId : "";
+  const emoji = typeof message.payload?.emoji === "string" ? message.payload.emoji : "";
+  if (!roomId || !messageId || !emoji) return ackFail(connection, message, "room, messageId and emoji are required");
+  const member = await getMember(roomId, connection.userId).catch(() => null);
+  if (!member) return ackFail(connection, message, "Chat room not found");
+  const [row] = await db
+    .select({ id: chat_room_messages.id, reactions: chat_room_messages.reactions })
+    .from(chat_room_messages)
+    .where(and(eq(chat_room_messages.id, messageId), eq(chat_room_messages.chat_room_id, roomId)))
+    .limit(1);
+  if (!row) return ackFail(connection, message, "Message not found");
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const reactions: any[] = parseJsonArray(row.reactions).map((s) => {
+    try { return JSON.parse(s); } catch { return null; }
+  }).filter(Boolean);
+  const idx = reactions.findIndex((r) => r.emoji === emoji);
+  if (idx === -1) {
+    reactions.push({ emoji, user_ids: [connection.userId] });
+  } else {
+    const ids = (reactions[idx].user_ids ?? []).map(String);
+    const pos = ids.indexOf(connection.userId);
+    if (pos === -1) ids.push(connection.userId);
+    else ids.splice(pos, 1);
+    reactions[idx].user_ids = ids;
+    if (ids.length === 0) reactions.splice(idx, 1);
+  }
+  await db
+    .update(chat_room_messages)
+    .set({ reactions: JSON.stringify(reactions), updated_at: new Date().toISOString() })
+    .where(eq(chat_room_messages.id, messageId));
+  const shaped = reactions.map((r) => ({
+    emoji: r.emoji,
+    user_ids: (r.user_ids ?? []).map(String),
+    userIds: (r.user_ids ?? []).map(String),
+  }));
+  const event = publish({
+    type: "messages:reaction",
+    userId: connection.userId,
+    channel: `chat:${roomId}`,
+    roomId,
+    resourceId: messageId,
+    payload: { messageId, roomId, reactions: shaped },
+    durable: true,
+  });
+  manager.broadcast(`chat:${roomId}`, event);
+  manager.send(connection, { type: "ack", requestId: message.requestId, command: message.command, status: "persisted", event });
+}
+
+function ackFail(
+  connection: SweetSocketConnection,
+  message: Extract<SweetSocketClientMessage, { type: "command" }>,
+  error: string,
+): void {
+  manager.send(connection, { type: "ack", requestId: message.requestId, command: message.command, status: "failed", error });
+}
+
+/**
+ * chat:history — explicitly request durable history from Turso over the
+ * socket. This is the realtime equivalent of GET /messages (which remains the
+ * offline/recovery fallback). The response is a `history:set` event delivered
+ * only to the requesting connection, plus the command ack carrying the same
+ * messages, so the client can resolve the command AND merge deterministically
+ * by message id.
+ */
+async function handleChatHistory(
+  connection: SweetSocketConnection,
+  message: Extract<SweetSocketClientMessage, { type: "command" }>,
+): Promise<void> {
+  const roomId = message.channel?.replace(/^chat:/, "") ?? "";
+  if (!roomId) {
+    manager.send(connection, {
+      type: "ack",
+      requestId: message.requestId,
+      command: message.command,
+      status: "failed",
+      error: "room is required",
+    });
+    return;
+  }
+  if (!(await authorizeChannel(`chat:${roomId}`, connection.userId))) {
+    manager.send(connection, {
+      type: "ack",
+      requestId: message.requestId,
+      command: message.command,
+      status: "failed",
+      error: "Chat room not found",
+    });
+    return;
+  }
+  const payload = message.payload ?? {};
+  const before = typeof payload.before === "string" ? payload.before : undefined;
+  const after = typeof payload.after === "string" ? payload.after : undefined;
+  const limitRaw = typeof payload.limit === "number" ? payload.limit : undefined;
+  try {
+    const messages = await listRoomMessages(roomId, connection.userId, {
+      before,
+      after,
+      limit: limitRaw,
+    });
+    const event = publish({
+      type: "history:set",
+      userId: connection.userId,
+      roomId,
+      resourceId: roomId,
+      payload: { roomId, messages, before, hasMore: messages.length >= (limitRaw ?? 30) },
+      durable: false,
+    });
+    // history:set targets only the requesting connection — never broadcast.
+    manager.send(connection, { type: "event", event });
+    manager.send(connection, {
+      type: "ack",
+      requestId: message.requestId,
+      command: message.command,
+      status: "persisted",
+      event,
+    });
+  } catch (error) {
+    manager.send(connection, {
+      type: "ack",
+      requestId: message.requestId,
+      command: message.command,
+      status: "failed",
+      error: error instanceof Error ? error.message : "History could not be loaded",
+    });
+  }
 }
 
 async function handleMessageSend(
@@ -93,7 +485,13 @@ async function handleMessageSend(
   const roomId = message.channel?.replace(/^chat:/, "") ?? "";
   const clientMessageId = message.clientMessageId ?? "";
   if (!roomId || !clientMessageId) {
-    manager.send(connection, { type: "ack", requestId: message.requestId, command: message.command, status: "failed", error: "room and clientMessageId are required" });
+    manager.send(connection, {
+      type: "ack",
+      requestId: message.requestId,
+      command: message.command,
+      status: "failed",
+      error: "room and clientMessageId are required",
+    });
     return;
   }
   const payload = message.payload ?? {};
@@ -116,7 +514,7 @@ async function handleMessageSend(
     // Push the accepted event before awaiting Turso. The client already has
     // the same optimistic object and reconciles this event by client ID.
     const provisional = publish({
-      type: "message.new",
+      type: "messages:upsert",
       userId: connection.userId,
       channel: `chat:${roomId}`,
       roomId,
@@ -160,7 +558,7 @@ async function handleMessageSend(
       payload: normalizeChatPayload(payload),
     });
     const persisted = publish({
-      type: "message.ack",
+      type: "messages:upsert",
       userId: connection.userId,
       channel: `chat:${roomId}`,
       roomId,
@@ -177,9 +575,36 @@ async function handleMessageSend(
       clientMessageId,
       event: persisted,
     });
+
+    // Auto delivery receipt (Baileys message-receipt.update equivalent): when
+    // the recipient currently has a live connection subscribed to this room,
+    // tell the sender their message was delivered — no HTTP round-trip, no
+    // polling. Idempotent per persisted message id; read state remains the
+    // durable signal via chat_room_members.read_at.
+    const recipients = (await getRoomParticipantIds(roomId).catch(() => []))
+      .filter((id) => id !== connection.userId);
+    for (const recipientId of recipients) {
+      if (manager.isUserSubscribedTo(recipientId, `chat:${roomId}`)) {
+        const delivered = publish({
+          type: "message:receipt",
+          userId: connection.userId,
+          channel: `user:${connection.userId}`,
+          roomId,
+          resourceId: result.message.id,
+          payload: {
+            messageId: result.message.id,
+            roomId,
+            userId: recipientId,
+            status: "delivered",
+          },
+          durable: false,
+        });
+        manager.broadcastUsers([connection.userId], delivered);
+      }
+    }
   } catch (error) {
     const failed = publish({
-      type: "message.failed",
+      type: "message:failed",
       userId: connection.userId,
       channel: `chat:${roomId}`,
       roomId,
@@ -238,14 +663,4 @@ function normalizeRelayType(type: string): string {
   return aliases[type] ?? type;
 }
 
-function consumeRateLimit(userId: string): boolean {
-  const now = Date.now();
-  const current = (commandTimestamps.get(userId) ?? []).filter((timestamp) => timestamp > now - COMMAND_WINDOW_MS);
-  if (current.length >= MAX_COMMANDS_PER_WINDOW) {
-    commandTimestamps.set(userId, current);
-    return false;
-  }
-  current.push(now);
-  commandTimestamps.set(userId, current);
-  return true;
-}
+

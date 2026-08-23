@@ -47,7 +47,7 @@ export type SweetSocketClientMessage =
 export type SweetSocketServerMessage =
   | { type: "hello"; sequence: number | null }
   | { type: "auth"; state: "connected" | "authenticated" | "session_expired" | "logout" | "disconnected"; reason?: string }
-  | { type: "connection"; state: "ready" | "authenticated" | "reconnecting" | "reconnected" }
+  | { type: "connection"; state: "connecting" | "authenticated" | "ready" | "reconnecting" | "reconnected" | "disconnected" | "error"; reason?: string }
   | { type: "subscribed"; channels: string[]; denied: string[] }
   | { type: "unsubscribed"; channels: string[] }
   | { type: "synced"; since: number | null }
@@ -56,39 +56,15 @@ export type SweetSocketServerMessage =
   | { type: "event"; event: SweetSocketEvent }
   | { type: "error"; code: string; message: string };
 
-export const SWEETSOCKET_EVENT = {
-  connectionOpen: "auth:connected",
-  connectionReady: "auth:authenticated",
-  connectionAuthenticated: "auth:authenticated",
-  connectionClosed: "auth:disconnected",
-  connectionError: "system:error",
-  connectionReconnecting: "system:reconnecting",
-  connectionReconnected: "system:reconnected",
-  messageNew: "message:created",
-  messageUpdated: "message:updated",
-  messageDeleted: "message:deleted",
-  messageAck: "message:acknowledged",
-  messageFailed: "message:failed",
-  messageRead: "message:read",
-  reactionUpdated: "chat.reaction.updated",
-  typingStart: "typing:start",
-  typingStop: "typing:stop",
-  recordingStart: "voice:start",
-  recordingStop: "voice:stop",
-  presenceOnline: "presence:online",
-  presenceOffline: "presence:offline",
-  postLike: "like:created",
-  postUnlike: "like:removed",
-  commentCreated: "comment:created",
-  commentUpdated: "comment:updated",
-  commentDeleted: "comment:deleted",
-  notificationNew: "notification:new",
-  notificationRead: "notification:read",
-  walletUpdated: "wallet:updated",
-  paymentCompleted: "transaction:completed",
-  subscriptionCreated: "subscription:created",
-  subscriptionCancelled: "subscription:cancelled",
-} as const;
+// The canonical event map is the single source of truth for event names.
+// `SWEETSOCKET_EVENT` is re-exported here for backward compatibility with
+// call sites that import it from ./types.
+export { SWEETSOCKET_EVENT, SWEETSOCKET_ERROR, SWEETSOCKET_EVENT_META } from "./event-map";
+export type {
+  SweetSocketEventMap,
+  SweetSocketEventName,
+  SweetSocketErrorCode,
+} from "./event-map";
 
 export function channel(kind: "user" | "conversation" | "chat" | "post" | "comments", id: string): string {
   if (kind === "conversation" || kind === "chat") return `chat:${id}`;

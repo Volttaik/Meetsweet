@@ -10,6 +10,7 @@ import {
   ensureSweetSocketChatSchema,
   type SweetSocketChatPayload,
 } from "@/lib/services/sweet-socket-chat";
+import { SWEETSOCKET_EVENT } from "@/lib/realtime/sweet-socket/event-map";
 
 export async function GET(
   req: NextRequest,
@@ -80,9 +81,11 @@ export async function POST(
 
     // HTTP is only the offline fallback. It still emits through SweetSocket's
     // shared event log so connected recipients receive the same event shape.
+    // The canonical message event is messages:upsert (chats:upsert fanout for
+    // the chat list is emitted by the persistence service itself).
     if (result.created) {
       void emitEvent({
-        type: "message.new",
+        type: SWEETSOCKET_EVENT.messagesUpsert,
         channel: `chat:${chatRoomId}`,
         resourceId: result.message.id,
         userId: auth.user.userId,

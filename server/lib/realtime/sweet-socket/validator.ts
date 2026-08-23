@@ -57,8 +57,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 export function validRelayType(eventType: string): boolean {
   // Accept the canonical colon names the mobile client sends (typing:start,
-  // voice:start, presence:updated) AND the legacy dotted aliases so older
-  // clients keep working during rollout. Everything else is rejected.
+  // voice:start, presence:updated, chat:open, chat:close) AND the legacy
+  // dotted aliases so older clients keep working during rollout. Everything
+  // else is rejected — relays are for EPHEMERAL client-announced state only;
+  // durable mutations go through commands or HTTP.
   return [
     "typing:start",
     "typing:stop",
@@ -67,6 +69,8 @@ export function validRelayType(eventType: string): boolean {
     "presence:online",
     "presence:offline",
     "presence:updated",
+    "chat:open",
+    "chat:close",
     "typing.start",
     "typing.stop",
     "recording.start",
