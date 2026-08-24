@@ -12,10 +12,74 @@ import { SWEETSOCKET_EVENT } from "@/lib/realtime/sweet-socket/event-map";
 import { handleClientMessage, authorizeChannel } from "@/lib/realtime/sweet-socket/router";
 import { parseFrame } from "@/lib/realtime/sweet-socket/validator";
 import type { SweetSocketClientMessage, SweetSocketConnection } from "@/lib/realtime/sweet-socket/types";
+import { logConnection, logCommand, logSync, logCommandTimeout, logRealtimeError } from "@/lib/realtime/log";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
+
+/**
+ * Server-side bound for processing a single client frame. SweetSocket
+ * serializes every frame on a connection (command order is preserved), so one
+ * hung handler — a slow Turso query, a wedged outbox write — would stall every
+ * subsequent message with no ack. When a frame exceeds this bound it is
+ * abandoned, the client receives a terminal `failed` ack (so it never waits
+ * indefinitely), and the queue moves on. Kept well below the mobile client's
+ * 45s command timeout.
+ */
+const COMMAND_PROCESS_TIMEOUT_MS = 20_000;
+
+class CommandTimeoutError extends Error {
+  constructor() {
+    super("Command processing exceeded the server-side bound");
+    this.name = "CommandTimeoutError";
+  }
+}
+
+/**
+ * Bound a single frame's processing. On timeout the client is told immediately
+ * (terminal `failed` ack for commands) and the error re-throws so the frame
+ * chain logs it; the abandoned handler keeps running in the background — its
+ * late ack is ignored by the client (the requestId is no longer pending) and
+ * any late durable event is deduped by clientMessageId on retry.
+ */
+async function withProcessTimeout(
+  connection: SweetSocketConnection,
+  message: SweetSocketClientMessage,
+  run: () => Promise<void>,
+): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      run(),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new CommandTimeoutError()), COMMAND_PROCESS_TIMEOUT_MS);
+      }),
+    ]);
+  } catch (error) {
+    if (error instanceof CommandTimeoutError) {
+      logCommandTimeout({
+        userId: connection.userId,
+        command: message.type === "command" ? message.command : message.type,
+        requestId: message.type === "command" ? message.requestId : undefined,
+        clientMessageId: message.type === "command" ? message.clientMessageId : undefined,
+      });
+      if (message.type === "command") {
+        manager.send(connection, {
+          type: "ack",
+          requestId: message.requestId,
+          command: message.command,
+          status: "failed",
+          clientMessageId: message.clientMessageId,
+          error: "The server took too long to process this request; please try again",
+        });
+      }
+    }
+    throw error;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 export function GET(req: NextRequest) {
   const token = req.nextUrl.searchParams.get("token") ?? "";
@@ -55,6 +119,7 @@ export function GET(req: NextRequest) {
           // clients that are not currently viewing a room.
           broadcastPresence(`user:${connection.userId}`, connection, SWEETSOCKET_EVENT.presenceOffline, false);
         }
+        logConnection("disconnect", { userId: connection.userId, connectionId: connection.id, channels: channels.length });
       }
       if (busRegistered) {
         busRegistered = false;
@@ -72,6 +137,7 @@ export function GET(req: NextRequest) {
         if (!live?.isActive || !live.role) throw new Error("Account inactive");
 
         connection = manager.register(ws, tokenUser.userId);
+        logConnection("connect", { userId: tokenUser.userId, connectionId: connection.id });
         // Every authenticated socket owns its private user channel. Chat screens
         // may add room channels, but offline delivery and app-wide events must
         // never depend on a room being open.
@@ -103,13 +169,27 @@ export function GET(req: NextRequest) {
             manager.send(connection!, { type: "error", code: "INVALID_FRAME", message: "Invalid or oversized frame" });
             return;
           }
-          await processMessage(connection!, message);
+          if (message.type === "command" || message.type === "relay") {
+            logCommand({
+              userId: connection!.userId,
+              connectionId: connection!.id,
+              command: message.type === "command" ? message.command : `relay:${message.eventType}`,
+              requestId: message.type === "command" ? message.requestId : undefined,
+              clientMessageId: message.type === "command" ? message.clientMessageId : undefined,
+              roomId: message.channel ? message.channel.replace(/^chat:/, "") : undefined,
+            });
+          }
+          await withProcessTimeout(connection!, message, () => processMessage(connection!, message));
         };
         // Preserve client command order. In particular, a reconnecting client
         // sends subscribe followed by sync; replay must see restored room
-        // membership before events are delivered.
+        // membership before events are delivered. Each frame is bounded by
+        // withProcessTimeout so a single hung handler can never wedge the
+        // queue; failures are logged, never silently swallowed.
         frameHandler = (raw) => {
-          processing = processing.then(() => process(raw)).catch(() => {});
+          processing = processing.then(() => process(raw)).catch((error) => {
+            logRealtimeError("frame", error);
+          });
         };
         authenticated = true;
         for (const raw of pending) frameHandler(raw);
@@ -216,6 +296,7 @@ async function processMessage(
       connection.syncCursor = through;
       connection.acknowledgedSequence = Math.max(connection.acknowledgedSequence ?? 0, stored);
       manager.send(connection, { type: "synced", since, through, hasMore });
+      logSync({ userId: connection.userId, clientId: requestedClientId, since, through, hasMore });
       return;
     }
     case "ack": {

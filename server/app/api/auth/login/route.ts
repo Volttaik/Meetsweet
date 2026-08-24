@@ -6,7 +6,7 @@ import { verifyPassword } from "@/lib/auth/password";
 import { signTwoFactorChallenge } from "@/lib/auth/jwt";
 import { generateId, generateVerificationCode, expiresAt, issueEmailCode } from "@/lib/auth/codes";
 import { parseBody } from "@/lib/api/validate";
-import { ok, err, unauthorized } from "@/lib/api/response";
+import { ok, err } from "@/lib/api/response";
 import { loginSchema } from "@/schemas/auth";
 import { loginLimit, getClientIp, tooManyRequests } from "@/lib/security/rate-limiter";
 import { sendVerificationEmail, sendTwoFactorEmail } from "@/lib/services/email";
@@ -45,8 +45,12 @@ export async function POST(req: NextRequest) {
 
   const ua = req.headers.get("user-agent") ?? null;
 
+  // Invalid credentials return the SAME message and code whether the account
+  // exists or not — never reveal whether a specific email is registered.
+  const invalidCredentials = () => err("Invalid email or password", 401, "INVALID_CREDENTIALS");
+
   if (!user) {
-    return unauthorized("Invalid email or password");
+    return invalidCredentials();
   }
 
   const passwordOk = await verifyPassword(user.password_hash, password);
@@ -61,7 +65,7 @@ export async function POST(req: NextRequest) {
   });
 
   if (!passwordOk) {
-    return unauthorized("Invalid email or password");
+    return invalidCredentials();
   }
 
   if (!user.is_active || user.deleted_at) {

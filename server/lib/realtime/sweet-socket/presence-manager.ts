@@ -1,5 +1,4 @@
 import type { SweetSocketConnection } from "./types";
-import { connectionCount } from "./connection-manager";
 
 const users = new Map<string, number>();
 
@@ -18,8 +17,4 @@ export function disconnected(connection: SweetSocketConnection): boolean {
 
 export function isConnected(userId: string): boolean {
   return (users.get(userId) ?? 0) > 0;
-}
-
-export function activeConnectionCount(): number {
-  return connectionCount();
 }

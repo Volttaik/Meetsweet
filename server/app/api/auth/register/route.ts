@@ -41,8 +41,8 @@ export async function POST(req: NextRequest) {
     .limit(1);
 
   if (existing) {
-    if (existing.email === email) return err("An account with this email already exists", 409);
-    return err("This username is already taken", 409);
+    if (existing.email === email) return err("Email is already in use", 409, "EMAIL_ALREADY_IN_USE");
+    return err("This username is already taken", 409, "USERNAME_ALREADY_IN_USE");
   }
 
   // ── Create account ───────────────────────────────────────────────────────

@@ -1,10 +1,18 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { realtime_cursors } from "@/lib/db/schema";
 import { generateId } from "@/lib/auth/codes";
-import { sql } from "drizzle-orm";
+import { withTimeout } from "./timeout";
 
 let ready: Promise<void> | null = null;
+
+/**
+ * Hard ceiling for cursor reads/writes. Cursor persistence is best-effort
+ * (used for reconnect replay resumes); a hung Turso query must not stall the
+ * socket's sync/ack handling, which is serialized with message commands on the
+ * same connection. On timeout we return the caller's fallback and move on.
+ */
+const CURSOR_TIMEOUT_MS = 2_500;
 
 /** Runtime-safe migration for deployments without checked-in SQL migrations. */
 export function ensureRealtimeCursorSchema(): Promise<void> {
@@ -25,11 +33,16 @@ export function ensureRealtimeCursorSchema(): Promise<void> {
 
 export async function readCursor(userId: string, clientId: string): Promise<number> {
   await ensureRealtimeCursorSchema();
-  const [row] = await db
-    .select({ sequence: realtime_cursors.last_ack_sequence })
-    .from(realtime_cursors)
-    .where(and(eq(realtime_cursors.user_id, userId), eq(realtime_cursors.client_id, clientId)))
-    .limit(1);
+  const rows = await withTimeout(
+    db
+      .select({ sequence: realtime_cursors.last_ack_sequence })
+      .from(realtime_cursors)
+      .where(and(eq(realtime_cursors.user_id, userId), eq(realtime_cursors.client_id, clientId)))
+      .limit(1),
+    CURSOR_TIMEOUT_MS,
+    null,
+  );
+  const row = rows?.[0];
   return Number(row?.sequence ?? 0);
 }
 
@@ -39,24 +52,37 @@ export async function acknowledgeCursor(userId: string, clientId: string, sequen
   const next = Math.max(current, Math.max(0, Math.floor(sequence)));
   if (next === current) return current;
 
-  const existing = await db
-    .select({ id: realtime_cursors.id })
-    .from(realtime_cursors)
-    .where(and(eq(realtime_cursors.user_id, userId), eq(realtime_cursors.client_id, clientId)))
-    .limit(1);
-  if (existing[0]) {
-    await db
-      .update(realtime_cursors)
-      .set({ last_ack_sequence: next, updated_at: new Date().toISOString() })
-      .where(eq(realtime_cursors.id, existing[0].id));
+  const existingRows = await withTimeout(
+    db
+      .select({ id: realtime_cursors.id })
+      .from(realtime_cursors)
+      .where(and(eq(realtime_cursors.user_id, userId), eq(realtime_cursors.client_id, clientId)))
+      .limit(1),
+    CURSOR_TIMEOUT_MS,
+    null,
+  );
+  const existing = existingRows?.[0];
+  if (existing) {
+    await withTimeout(
+      db
+        .update(realtime_cursors)
+        .set({ last_ack_sequence: next, updated_at: new Date().toISOString() })
+        .where(eq(realtime_cursors.id, existing.id)),
+      CURSOR_TIMEOUT_MS,
+      undefined,
+    );
   } else {
-    await db.insert(realtime_cursors).values({
-      id: generateId(),
-      user_id: userId,
-      client_id: clientId,
-      last_ack_sequence: next,
-      updated_at: new Date().toISOString(),
-    }).onConflictDoNothing();
+    await withTimeout(
+      db.insert(realtime_cursors).values({
+        id: generateId(),
+        user_id: userId,
+        client_id: clientId,
+        last_ack_sequence: next,
+        updated_at: new Date().toISOString(),
+      }).onConflictDoNothing(),
+      CURSOR_TIMEOUT_MS,
+      undefined,
+    );
   }
   return next;
 }

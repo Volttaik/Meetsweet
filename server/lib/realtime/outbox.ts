@@ -24,10 +24,23 @@
 import { and, asc, gt, inArray, max, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { realtime_events } from "@/lib/db/schema";
+import { withTimeout } from "./timeout";
 import type { RealtimeEvent } from "./types";
 
 let initialized = false;
 let initPromise: Promise<void> | null = null;
+
+/**
+ * Hard ceiling for outbox queries in the realtime path. The outbox is a
+ * best-effort durability layer — a message must NEVER block on it. SweetSocket
+ * serializes every command on a connection, so one hung outbox write would
+ * stall every subsequent message and delay the reconnect `hello` (which the
+ * mobile client requires before flushing its offline command queue). When a
+ * query exceeds the bound we fall back to the failure value and move on; the
+ * underlying query keeps running and its eventual write is harmless (replay
+ * dedupes by event id on the client).
+ */
+const OUTBOX_TIMEOUT_MS = 2_500;
 
 const DDL = sql`
   CREATE TABLE IF NOT EXISTS realtime_events (
@@ -59,18 +72,23 @@ async function ensureTable(): Promise<void> {
 export async function appendOutboxEvent(event: RealtimeEvent): Promise<number | null> {
   try {
     await ensureTable();
-    const [row] = await db
-      .insert(realtime_events)
-      .values({
-        event_id: event.id,
-        event_type: event.type,
-        channel: event.channel,
-        resource_id: event.resourceId ?? null,
-        actor_id: event.userId ?? null,
-        payload: JSON.stringify(event.payload ?? {}),
-        created_at: event.ts,
-      })
-      .returning({ id: realtime_events.id });
+    const rows = await withTimeout(
+      db
+        .insert(realtime_events)
+        .values({
+          event_id: event.id,
+          event_type: event.type,
+          channel: event.channel,
+          resource_id: event.resourceId ?? null,
+          actor_id: event.userId ?? null,
+          payload: JSON.stringify(event.payload ?? {}),
+          created_at: event.ts,
+        })
+        .returning({ id: realtime_events.id }),
+      OUTBOX_TIMEOUT_MS,
+      null,
+    );
+    const row = rows?.[0];
     return row ? Number(row.id) : null;
   } catch {
     return null;
@@ -117,7 +135,7 @@ export async function readOutboxSince(
   if (channels.length === 0) return [];
   try {
     await ensureTable();
-    const rows = await db
+    const query = db
       .select({
         id: realtime_events.id,
         event_id: realtime_events.event_id,
@@ -132,6 +150,7 @@ export async function readOutboxSince(
       .where(and(gt(realtime_events.id, seq), inArray(realtime_events.channel, channels)))
       .orderBy(asc(realtime_events.id))
       .limit(limit);
+    const rows = await withTimeout(query, OUTBOX_TIMEOUT_MS, []);
     return rows.map(rowToEvent);
   } catch {
     return [];
@@ -142,9 +161,14 @@ export async function readOutboxSince(
 export async function currentOutboxSeq(): Promise<number | null> {
   try {
     await ensureTable();
-    const [row] = await db
-      .select({ m: max(realtime_events.id) })
-      .from(realtime_events);
+    const rows = await withTimeout(
+      db
+        .select({ m: max(realtime_events.id) })
+        .from(realtime_events),
+      OUTBOX_TIMEOUT_MS,
+      null,
+    );
+    const row = rows?.[0];
     return row?.m ? Number(row.m) : null;
   } catch {
     return null;

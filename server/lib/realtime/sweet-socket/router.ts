@@ -11,7 +11,8 @@ import { validRelayType } from "./validator";
 import { SWEETSOCKET_ERROR } from "./event-map";
 import { consumeCommandRateLimit, consumeRelayRateLimit } from "./rate-limit";
 import * as manager from "./connection-manager";
-import type { SweetSocketClientMessage, SweetSocketConnection } from "./types";
+import { logMessageAccepted, logMessagePersisted, logMessageFailed, logRealtimeError } from "../log";
+import type { SweetSocketClientMessage, SweetSocketConnection, SweetSocketEvent } from "./types";
 
 /**
  * Delete-for-everyone is only permitted for a limited time after the message
@@ -707,6 +708,7 @@ async function handleMessageSend(
       clientMessageId,
       event: provisional,
     });
+    logMessageAccepted({ userId: connection.userId, clientMessageId, roomId });
 
     const result = await persistSweetSocketChatMessage({
       roomId,
@@ -737,6 +739,20 @@ async function handleMessageSend(
         clientMessageId,
         event: persisted,
       });
+      logMessagePersisted({ userId: connection.userId, clientMessageId, roomId, messageId: result.message?.id ?? persisted.resourceId });
+    } else {
+      // The durable fanout produced no event for the sender (e.g. the outbox
+      // was unavailable and no recipient events were created) — the message
+      // IS persisted in Turso, so the sender must still get a terminal ack
+      // rather than waiting forever.
+      logMessagePersisted({ userId: connection.userId, clientMessageId, roomId, messageId: result.message?.id });
+      manager.send(connection, {
+        type: "ack",
+        requestId: message.requestId,
+        command: message.command,
+        status: "persisted",
+        clientMessageId,
+      });
     }
 
     // Rich link preview: resolve the pasted URL's metadata in parallel with
@@ -764,14 +780,11 @@ async function handleMessageSend(
     }
 
     // Auto delivery receipt (Baileys message-receipt.update equivalent): when
-    // the recipient currently has a live connection subscribed to this room,
-    // tell the sender their message was delivered — no HTTP round-trip, no
-    // polling. Idempotent per persisted message id; read state remains the
-    // durable signal via chat_room_members.read_at.
-    // Auto delivery receipt (Baileys message-receipt.update equivalent): when
     // the recipient has ANY live connection (not just the room open), tell the
     // sender their message was delivered — WhatsApp shows "delivered" once the
     // recipient's device received it, whether or not they are viewing the chat.
+    // Idempotent per persisted message id; read state remains the durable
+    // signal via chat_room_members.read_at.
     const liveRecipients = (await roomMemberIds(roomId)).filter((id) => id !== connection.userId);
     for (const recipientId of liveRecipients) {
       if (manager.connectionsForUser(recipientId).length > 0) {
@@ -793,24 +806,34 @@ async function handleMessageSend(
       }
     }
   } catch (error) {
-    const failed = await publishDurable({
-      type: "message:failed",
-      userId: connection.userId,
-      channel: `user:${connection.userId}`,
-      roomId,
-      resourceId: clientMessageId,
-      clientMessageId,
-      payload: { clientMessageId, roomId, error: error instanceof Error ? error.message : "Message persistence failed" },
-    });
-    manager.broadcastUsers([connection.userId], failed);
+    const failureMessage = error instanceof Error ? error.message : "Message persistence failed";
+    // The terminal `failed` ack must ALWAYS reach the sender — a failure in
+    // the failure path itself (e.g. the durable message:failed event cannot be
+    // appended) must never leave the client waiting indefinitely.
+    let failedEvent: SweetSocketEvent | null = null;
+    try {
+      failedEvent = await publishDurable({
+        type: "message:failed",
+        userId: connection.userId,
+        channel: `user:${connection.userId}`,
+        roomId,
+        resourceId: clientMessageId,
+        clientMessageId,
+        payload: { clientMessageId, roomId, error: failureMessage },
+      });
+      manager.broadcastUsers([connection.userId], failedEvent);
+    } catch (failurePublishError) {
+      logRealtimeError("message:failed publish", failurePublishError);
+    }
+    logMessageFailed({ userId: connection.userId, clientMessageId, roomId, error: failureMessage });
     manager.send(connection, {
       type: "ack",
       requestId: message.requestId,
       command: message.command,
       status: "failed",
       clientMessageId,
-      event: failed,
-      error: error instanceof Error ? error.message : "Message persistence failed",
+      event: failedEvent ?? undefined,
+      error: failureMessage,
     });
   }
 }

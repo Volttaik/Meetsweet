@@ -40,8 +40,11 @@ export async function emitEvent(opts: EmitOptions): Promise<void> {
     }
     broadcast(opts.channel, event);
     // Redis is shared coordination for instances pinned to different
-    // WebSocket Function instances; it is intentionally best-effort.
-    await publishEvent(event);
+    // WebSocket Function instances; it is intentionally best-effort. It is
+    // deliberately NOT awaited: a slow/unreachable Redis must never delay an
+    // API response or a socket command (publishEvent itself is also bounded
+    // with a timeout in bus.ts).
+    void publishEvent(event);
   } catch {
     // Realtime emission is best-effort — never break the API response.
   }

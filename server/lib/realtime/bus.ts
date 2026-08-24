@@ -27,6 +27,7 @@
 import Redis from "ioredis";
 import { randomUUID } from "crypto";
 import { broadcast } from "./hub";
+import { withTimeout } from "./timeout";
 import type { RealtimeEvent } from "./types";
 
 /**
@@ -69,6 +70,19 @@ const STREAM_MAXLEN = 500; // cap the event stream (~trimmed)
 const BLOCK_MS = 5_000; // XREAD BLOCK timeout — wakes the loop to observe shutdown
 const RETRY_MS = 1_000; // brief backoff between read-loop retries
 
+/**
+ * Hard ceiling for any awaited Redis command in the realtime path. The bus is
+ * best-effort by design, and ioredis is configured with `maxRetriesPerRequest:
+ * null` so a command issued while the connection is down stays queued and is
+ * retried indefinitely. Without this bound, a flaky/unreachable Redis would
+ * hang the awaiting caller forever — and because SweetSocket serializes every
+ * command on a connection, one hung bus write would wedge ALL subsequent
+ * messages (the intermittent "third message stalls" failure). The command
+ * itself is left running (it still publishes when Redis returns); we just stop
+ * waiting on it.
+ */
+const BUS_TIMEOUT_MS = 1_500;
+
 /** Singleton client for the whole Function instance (null ⇒ no Redis). */
 export const redis = createRedis();
 
@@ -98,13 +112,13 @@ export function unregisterBusConnection(): void {
 export async function publishEvent(event: RealtimeEvent): Promise<void> {
   if (!redis) return;
   try {
-    await redis.xadd(
+    await withTimeout(redis.xadd(
       STREAM,
       "MAXLEN", "~", STREAM_MAXLEN,
       "*",
       "d", JSON.stringify(event),
       "o", instanceId,
-    );
+    ), BUS_TIMEOUT_MS, undefined);
   } catch {
     // Bus is best-effort — delivery degrades to the single-instance path.
   }
@@ -168,10 +182,13 @@ async function startStream(): Promise<void> {
   // concurrent register() bails at the `streaming` guard above.
   streamClient = redis.duplicate();
   streaming = true;
-  // Seed from the stream tail so this instance only relays NEW entries.
+  // Seed from the stream tail so this instance only relays NEW entries. The
+  // seed is best-effort and bounded — if Redis is unreachable right now the
+  // reader starts from "0-0" and the blocking read loop's own retry backoff
+  // converges once the connection is back.
   try {
-    const tail = await redis.xrevrange(STREAM, "+", "-", "COUNT", 1);
-    lastEventId = tail[0]?.[0] ?? "0-0";
+    const tail = await withTimeout(redis.xrevrange(STREAM, "+", "-", "COUNT", 1), BUS_TIMEOUT_MS, undefined);
+    lastEventId = (tail as Array<[string, unknown]> | undefined)?.[0]?.[0] ?? "0-0";
   } catch {
     lastEventId = "0-0";
   }
