@@ -7,7 +7,6 @@
 
 import { eq, and } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { emitEvent } from "@/lib/realtime/emit";
 import { devices, users, subscriptions, notifications, user_settings } from "@/lib/db/schema";
 import { generateId } from "@/lib/auth/codes";
 
@@ -127,29 +126,6 @@ export async function createNotification(
       ...values,
     });
 
-    // Realtime: this is the single choke point through which every in-app
-    // notification is written, so a live event is emitted here — the target
-    // user's badge/feed updates instantly on their connected devices. Durable
-    // so a reconnecting client converges. Push (OS-level) is a separate,
-    // complementary system (sendPushToUser).
-    void emitEvent({
-      type: "notification.created",
-      channel: `user:${userId}`,
-      resourceId: notificationId,
-      userId: values.actor_id ?? undefined,
-      payload: {
-        notification: {
-          id: notificationId,
-          user_id: userId,
-          actor_id: values.actor_id ?? null,
-          type: values.type,
-          entity_type: values.entity_type ?? null,
-          entity_id: values.entity_id ?? null,
-          body: values.body ?? null,
-          created_at: createdAt,
-        },
-      },
-    });
   } catch {
     // Notification writes are best-effort — never break the API response.
   }
@@ -321,22 +297,15 @@ export async function notifySubscribersOfNewPost(input: {
     };
 
     await Promise.all(
-      recipientIds.map(async (userId) => {
-        void emitEvent({
-          type: "post:created",
-          channel: `user:${userId}`,
-          resourceId: input.postId,
-          userId: input.creatorId,
-          payload: { postId: input.postId, contentType: input.contentType, title: input.title ?? null },
-        });
-        return createNotification(userId, "notif_creator_updates", {
+      recipientIds.map(async (userId) =>
+        createNotification(userId, "notif_creator_updates", {
           actor_id: input.creatorId,
           type: "new_post",
           entity_type: input.contentType,
           entity_id: input.postId,
           body,
-        });
-      }),
+        }),
+      ),
     );
 
     await sendPushToUsers(

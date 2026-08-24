@@ -19,7 +19,6 @@ import {
 } from "@/lib/services/content";
 import { notifySubscribersOfNewPost } from "@/lib/services/push";
 import { notifyMentionedUsers } from "@/lib/services/mentions";
-import { emitEvent } from "@/lib/realtime/emit";
 
 const createSchema = z.object({
   caption: z.string().max(2200).nullable().optional(),
@@ -704,13 +703,6 @@ export async function POST(req: NextRequest) {
   // The post is published inline by this endpoint. Notify subscribers after
   // all content associations are complete so the tap target is immediately
   // available to the mobile app.
-  void emitEvent({
-    type: "post:created",
-    channel: `user:${auth.user.userId}`,
-    resourceId: postId,
-    userId: auth.user.userId,
-    payload: { postId, contentType: content_type ?? "post" },
-  });
   void notifySubscribersOfNewPost({
     creatorId: auth.user.userId,
     postId,

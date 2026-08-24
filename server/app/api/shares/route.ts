@@ -9,7 +9,6 @@ import { parseBody } from "@/lib/api/validate";
 import { ok, err, created } from "@/lib/api/response";
 import { generateId } from "@/lib/auth/codes";
 import { config } from "@/lib/config";
-import { emitEvent } from "@/lib/realtime/emit";
 
 const createSchema = z.object({
   content_type: z.enum(["post", "video", "short", "album", "creator"]).optional(),
@@ -60,18 +59,6 @@ export async function POST(req: NextRequest) {
       await db.update(posts)
         .set({ share_count: sql`${posts.share_count} + 1` })
         .where(eq(posts.id, content_id));
-      void emitEvent({
-        type: "share:created",
-        channel: `post:${content_id}`,
-        resourceId: content_id,
-        userId,
-        payload: {
-          postId: content_id,
-          creatorId: post.creator_id,
-          shareCount: Number(post.share_count ?? 0) + 1,
-          shareId: null,
-        },
-      });
       break;
     }
     case "album": {

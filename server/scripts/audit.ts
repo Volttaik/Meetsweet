@@ -57,10 +57,6 @@ const CHECKS: Check[] = [
   { label: "profiles with missing user", sql: `SELECT p.id FROM profiles p LEFT JOIN users u ON u.id=p.user_id WHERE u.id IS NULL` },
   { label: "comment_rooms with missing post", sql: `SELECT cr.id FROM comment_rooms cr LEFT JOIN posts p ON p.id=cr.post_id WHERE p.id IS NULL` },
   { label: "post_categories with missing post/category", sql: `SELECT pc.id FROM post_categories pc LEFT JOIN posts p ON p.id=pc.post_id LEFT JOIN categories c ON c.id=pc.category_id WHERE p.id IS NULL OR c.id IS NULL` },
-  { label: "chat_room_messages with missing room", sql: `SELECT m.id FROM chat_room_messages m LEFT JOIN chat_rooms r ON r.id=m.chat_room_id WHERE r.id IS NULL` },
-  { label: "chat_room_messages with missing sender", sql: `SELECT m.id FROM chat_room_messages m LEFT JOIN users u ON u.id=m.sender_id WHERE u.id IS NULL` },
-  { label: "chat_room_members with missing room", sql: `SELECT m.id FROM chat_room_members m LEFT JOIN chat_rooms r ON r.id=m.chat_room_id WHERE r.id IS NULL` },
-  { label: "chat_room_members with missing user", sql: `SELECT m.id FROM chat_room_members m LEFT JOIN users u ON u.id=m.user_id WHERE u.id IS NULL` },
   { label: "notifications with missing user", sql: `SELECT n.id FROM notifications n LEFT JOIN users u ON u.id=n.user_id WHERE u.id IS NULL` },
 
   // ── Duplicates (unique violations) ─────────────────────────────────────

@@ -19,8 +19,6 @@ import {
   credential_grants,
   verification_codes,
   login_history,
-  chat_room_members,
-  chat_room_messages,
   blocked_users,
   muted_users,
   post_likes,
@@ -282,10 +280,6 @@ export async function DELETE(req: NextRequest) {
     await tx.update(comment_replies)
       .set({ deleted_at: now, updated_at: now })
       .where(and(eq(comment_replies.author_id, uid), isNull(comment_replies.deleted_at)));
-    // Messaging: this account's messages are removed; the room container and
-    // the other participant's membership survive.
-    await tx.delete(chat_room_messages).where(eq(chat_room_messages.sender_id, uid));
-    await tx.delete(chat_room_members).where(eq(chat_room_members.user_id, uid));
 
     // ── Social graph & preferences ───────────────────────────────────────
     await tx.delete(follows).where(or(eq(follows.follower_id, uid), eq(follows.following_id, uid)));

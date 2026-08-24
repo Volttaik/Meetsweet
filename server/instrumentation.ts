@@ -1,17 +1,14 @@
 /**
  * Server startup hook (Next.js instrumentation).
  *
- * `ws` (loaded by @vercel/functions' WebSocket upgrade AND by @libsql's
- * isomorphic-ws transport) tries to load the optional native addons
- * `bufferutil` and `utf-8-validate` at module load. Next.js's server bundler
- * cannot bundle native `.node` binaries, so those requires resolve to EMPTY
- * stubs instead of throwing. `ws` then swaps its pure-JS `unmask`/`mask` for
- * wrappers that call the missing native functions, and every masked client
- * frame >= 32 bytes crashes the realtime route with:
+ * `ws` (loaded by @libsql's isomorphic-ws transport) tries to load the
+ * optional native addons `bufferutil` and `utf-8-validate` at module load.
+ * Next.js's server bundler cannot bundle native `.node` binaries, so those
+ * requires resolve to EMPTY stubs instead of throwing. `ws` then swaps its
+ * pure-JS `unmask`/`mask` for wrappers that call the missing native
+ * functions, and every masked frame >= 32 bytes would crash with:
  *
  *     TypeError: b.unmask is not a function
- *         at a.exports.unmask
- *         at p.getData ...
  *
  * These env vars force the pure-JavaScript implementations (the officially
  * documented `ws` behavior — see the ws README "Usage with bundlers"). They

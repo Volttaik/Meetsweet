@@ -7,7 +7,6 @@ import { requireAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok } from "@/lib/api/response";
 import { refreshTokenSchema } from "@/schemas/auth";
-import * as manager from "@/lib/realtime/sweet-socket/connection-manager";
 
 export async function POST(req: NextRequest) {
   const auth = await requireAuth(req);
@@ -24,12 +23,6 @@ export async function POST(req: NextRequest) {
     }
   } catch {
     // No body or invalid JSON — that's fine, proceed without revoking a specific token
-  }
-
-  for (const connection of manager.connectionsForUser(auth.user.userId)) {
-    manager.send(connection, { type: "auth", state: "logout" });
-    for (const channel of manager.channelsOf(connection)) manager.unsubscribe(connection, channel);
-    try { connection.ws.close(1000, "Logout"); } catch { /* close handler cleans up */ }
   }
 
   if (refreshToken) {

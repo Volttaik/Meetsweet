@@ -16,7 +16,6 @@ import { generateId } from "@/lib/auth/codes";
 import { listRoomComments, commentShape, ensureCommentRoom } from "@/lib/services/comment-rooms";
 import { sendPushToUser, getActorUsername, createNotification } from "@/lib/services/push";
 import { notifyMentionedUsers } from "@/lib/services/mentions";
-import { emitEvent } from "@/lib/realtime/emit";
 
 export async function GET(
   req: NextRequest,
@@ -117,20 +116,6 @@ export async function POST(
       entityTitle: post.title ?? post.caption,
     });
 
-    // Realtime: bump the parent's reply count for everyone viewing the post.
-    const [replyCountRow] = await db
-      .select({ n: comments.reply_count })
-      .from(comments)
-      .where(eq(comments.id, parentId))
-      .limit(1);
-    void emitEvent({
-      type: "post.comment.updated",
-      channel: `post:${id}`,
-      resourceId: parentId,
-      userId: auth.user.userId,
-      payload: { commentId: parentId, replyCount: replyCountRow?.n ?? 0 },
-    });
-
     return created({ comment: commentShape(row, id, false, parentId) });
   }
 
@@ -204,22 +189,6 @@ export async function POST(
     .leftJoin(profiles, eq(profiles.user_id, comments.author_id))
     .where(eq(comments.id, commentId))
     .limit(1);
-
-  // Realtime: everyone currently viewing this post sees the new comment
-  // immediately (no polling). The event carries the full comment shape + the
-  // post's authoritative comment count.
-  const [countRow] = await db
-    .select({ n: posts.comment_count })
-    .from(posts)
-    .where(eq(posts.id, id))
-    .limit(1);
-  void emitEvent({
-    type: "post.comment.created",
-    channel: `post:${id}`,
-    resourceId: commentId,
-    userId: auth.user.userId,
-    payload: { comment: commentShape(row, id, false), commentCount: countRow?.n ?? 0 },
-  });
 
   return created({ comment: commentShape(row, id, false) });
 }

@@ -7,7 +7,6 @@ import { ok, err } from "@/lib/api/response";
 import { config } from "@/lib/config";
 import { generateId } from "@/lib/auth/codes";
 import { sendWalletDepositEmail } from "@/lib/services/email";
-import { emitEvent } from "@/lib/realtime/emit";
 
 /**
  * POST /api/payments/verify-paystack
@@ -172,28 +171,6 @@ export async function POST(req: NextRequest) {
       currency: tx.currency,
     });
   }
-
-  void emitEvent({
-    type: "wallet:updated",
-    channel: `user:${auth.user.userId}`,
-    resourceId: auth.user.userId,
-    userId: auth.user.userId,
-    payload: { balance: newBalance, amountAdded: amount, transactionId: tx.id, reason: "deposit" },
-  });
-  void emitEvent({
-    type: "balance:updated",
-    channel: `user:${auth.user.userId}`,
-    resourceId: auth.user.userId,
-    userId: auth.user.userId,
-    payload: { balance: newBalance, amountAdded: amount, transactionId: tx.id },
-  });
-  void emitEvent({
-    type: "transaction:completed",
-    channel: `user:${auth.user.userId}`,
-    resourceId: tx.id,
-    userId: auth.user.userId,
-    payload: { transactionId: tx.id, status: "success", amount: amount, type: tx.type, description: tx.description, createdAt: tx.created_at },
-  });
 
   // Confirmation email — best-effort, must never block or roll back the credit.
   // Failures are logged inside deliver() and swallowed here. Reached only on
