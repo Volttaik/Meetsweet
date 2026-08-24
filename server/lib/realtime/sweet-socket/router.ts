@@ -1,4 +1,4 @@
-import { getMember, getRoomParticipantIds, listRoomMessages } from "@/lib/services/chat-rooms";
+import { findOrCreateChatRoom, getMember, getRoomParticipantIds, listRoomMessages, messagingAllowedError } from "@/lib/services/chat-rooms";
 import { canViewContent } from "@/lib/services/content";
 import { chat_room_members, chat_room_messages, posts, profiles, subscriptions, users } from "@/lib/db/schema";
 import { db } from "@/lib/db";
@@ -28,6 +28,24 @@ function fanoutUserEvents(events: Awaited<ReturnType<typeof publishForUsers>>): 
   for (const event of events) {
     manager.broadcastUsers([event.userId], event);
   }
+}
+
+/**
+ * A legacy pre-deterministic room was adopted to its canonical derived id.
+ * Tell both participants so their local replicas re-key from the old id (their
+ * caches may still hold the legacy room) to the canonical one. Durable, so an
+ * offline device re-keys on reconnect replay.
+ */
+async function broadcastRoomMigration(roomId: string, legacyRoomId: string): Promise<void> {
+  const recipientIds = await roomMemberIds(roomId);
+  const events = await publishForUsers({
+    type: "room:migrated",
+    userIds: recipientIds,
+    roomId,
+    resourceId: legacyRoomId,
+    payload: { roomId, legacyRoomId },
+  });
+  fanoutUserEvents(events);
 }
 
 export async function authorizeChannel(channel: string, userId: string): Promise<boolean> {
@@ -504,8 +522,8 @@ async function handleChatHistory(
   connection: SweetSocketConnection,
   message: Extract<SweetSocketClientMessage, { type: "command" }>,
 ): Promise<void> {
-  const roomId = message.channel?.replace(/^chat:/, "") ?? "";
-  if (!roomId) {
+  const channelRoomId = message.channel?.replace(/^chat:/, "") ?? "";
+  if (!channelRoomId) {
     manager.send(connection, {
       type: "ack",
       requestId: message.requestId,
@@ -515,21 +533,43 @@ async function handleChatHistory(
     });
     return;
   }
-  if (!(await authorizeChannel(`chat:${roomId}`, connection.userId))) {
-    manager.send(connection, {
-      type: "ack",
-      requestId: message.requestId,
-      command: message.command,
-      status: "failed",
-      error: "Chat room not found",
-    });
-    return;
-  }
   const payload = message.payload ?? {};
   const before = typeof payload.before === "string" ? payload.before : undefined;
   const after = typeof payload.after === "string" ? payload.after : undefined;
   const limitRaw = typeof payload.limit === "number" ? payload.limit : undefined;
+  const participantId = typeof payload.participantId === "string" ? payload.participantId : "";
+  let roomId = channelRoomId;
   try {
+    if (participantId) {
+      // Fresh/virtual room: resolve (and lazily materialize) the canonical
+      // derived room for the pair — no HTTP get-or-create needed. The client
+      // derives the same id locally, so this always matches.
+      const policyError = await messagingAllowedError(connection.userId, participantId);
+      if (policyError) {
+        manager.send(connection, {
+          type: "ack",
+          requestId: message.requestId,
+          command: message.command,
+          status: "failed",
+          error: policyError,
+        });
+        return;
+      }
+      const resolved = await findOrCreateChatRoom(connection.userId, participantId);
+      roomId = resolved.chatRoomId;
+      if (resolved.migratedFrom) {
+        await broadcastRoomMigration(roomId, resolved.migratedFrom);
+      }
+    } else if (!(await authorizeChannel(`chat:${roomId}`, connection.userId))) {
+      manager.send(connection, {
+        type: "ack",
+        requestId: message.requestId,
+        command: message.command,
+        status: "failed",
+        error: "Chat room not found",
+      });
+      return;
+    }
     const messages = await listRoomMessages(roomId, connection.userId, {
       before,
       after,
@@ -567,9 +607,9 @@ async function handleMessageSend(
   connection: SweetSocketConnection,
   message: Extract<SweetSocketClientMessage, { type: "command" }>,
 ): Promise<void> {
-  const roomId = message.channel?.replace(/^chat:/, "") ?? "";
+  const channelRoomId = message.channel?.replace(/^chat:/, "") ?? "";
   const clientMessageId = message.clientMessageId ?? "";
-  if (!roomId || !clientMessageId) {
+  if (!channelRoomId || !clientMessageId) {
     manager.send(connection, {
       type: "ack",
       requestId: message.requestId,
@@ -580,11 +620,35 @@ async function handleMessageSend(
     return;
   }
   const payload = message.payload ?? {};
+  const participantId = typeof payload.participantId === "string" ? payload.participantId : "";
+  let roomId = channelRoomId;
   try {
-    // Verify membership before any live event is emitted. This prevents an
-    // unauthorized sender from briefly projecting a message that persistence
-    // will later reject.
-    if (!(await authorizeChannel(`chat:${roomId}`, connection.userId))) {
+    // Fresh/virtual room: the client derives the canonical room id locally
+    // (deterministicDmRoomId mirror) and sends the recipient's id so the
+    // server can materialize the room lazily — no HTTP get-or-create, and the
+    // recipient's messaging policy is enforced right here on first contact.
+    if (participantId) {
+      const policyError = await messagingAllowedError(connection.userId, participantId);
+      if (policyError) {
+        manager.send(connection, {
+          type: "ack",
+          requestId: message.requestId,
+          command: message.command,
+          status: "failed",
+          clientMessageId,
+          error: policyError,
+        });
+        return;
+      }
+      const resolved = await findOrCreateChatRoom(connection.userId, participantId);
+      roomId = resolved.chatRoomId;
+      if (resolved.migratedFrom) {
+        await broadcastRoomMigration(roomId, resolved.migratedFrom);
+      }
+    } else if (!(await authorizeChannel(`chat:${roomId}`, connection.userId))) {
+      // Existing room: verify membership before any live event is emitted.
+      // This prevents an unauthorized sender from briefly projecting a message
+      // that persistence will later reject.
       manager.send(connection, {
         type: "ack",
         requestId: message.requestId,

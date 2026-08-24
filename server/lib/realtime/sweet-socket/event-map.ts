@@ -59,6 +59,9 @@ export const SWEETSOCKET_EVENT = {
   chatClear: "chat:clear",
   chatHistory: "chat:history",
   historySet: "history:set",
+  // A legacy pre-deterministic room was adopted to its canonical derived id;
+  // clients re-key local state from legacyRoomId → roomId.
+  roomMigrated: "room:migrated",
 
   // ── Ephemeral state ───────────────────────────────────────────────────────
   typingStart: "typing:start",
@@ -154,8 +157,9 @@ export interface SweetSocketEventMap {
   "chat:open": { roomId: string; userId: string };
   "chat:close": { roomId: string; userId: string };
   "chat:clear": { roomId: string; userId: string; clearedAt: string };
-  "chat:history": { before?: string; after?: string; limit?: number };
+  "chat:history": { before?: string; after?: string; limit?: number; participantId?: string };
   "history:set": { roomId: string; messages: unknown[]; before?: string; hasMore: boolean };
+  "room:migrated": { roomId: string; legacyRoomId: string };
 
   "typing:start": { roomId?: string; userId: string };
   "typing:stop": { roomId?: string; userId: string };
@@ -243,6 +247,7 @@ export const SWEETSOCKET_EVENT_META: Record<SweetSocketEventName, SweetSocketEve
   "chat:clear": { channel: userChannel, durable: true, auth: "self" },
   "chat:history": { channel: () => null, durable: false, auth: "self" },
   "history:set": { channel: () => null, durable: false, auth: "self" },
+  "room:migrated": { channel: userChannel, durable: true, auth: "self" },
 
   // Ephemeral — never persisted.
   "typing:start": { channel: chatChannel, durable: false, auth: "member" },

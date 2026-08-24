@@ -16,11 +16,15 @@ import {
 import { generateId } from "@/lib/auth/codes";
 
 /**
- * Stable room id for a new private DM. Existing legacy rooms are still reused
- * by the membership lookup below; new rooms cannot split when both users open
- * the conversation at the same time from opposite devices.
+ * Stable room id for a private DM — a pure function of the two user ids, so the
+ * mobile client derives it locally and opening a chat needs zero network. New
+ * rooms cannot split when both users open the conversation at the same time
+ * from opposite devices.
+ *
+ * MUST stay byte-identical with the mobile mirror (deriveRoomId in
+ * services/room-service.ts): sha256 of the lexicographically sorted pair.
  */
-function deterministicDmRoomId(a: string, b: string): string {
+export function deterministicDmRoomId(a: string, b: string): string {
   const pair = [a, b].sort().join(":");
   return `dm_${createHash("sha256").update(pair).digest("hex").slice(0, 32)}`;
 }
@@ -189,49 +193,65 @@ export async function messagingAllowedError(callerId: string, participantId: str
   return userMessagingPolicyError(callerId, participantId);
 }
 
-export async function findOrCreateChatRoom(callerId: string, participantId: string) {
+export interface ResolvedDmRoom {
+  chatRoomId: string;
+  created: boolean;
+  /** Set when a pre-deterministic legacy room was adopted to the derived id. */
+  migratedFrom?: string;
+}
+
+/**
+ * Resolve (and lazily materialize) the single canonical DM room for a pair.
+ *
+ * The room id is a pure function of the two user ids (deterministicDmRoomId),
+ * so the mobile client derives it locally and never needs a network call to
+ * open a chat. This resolver makes the derived id authoritative in every case:
+ *   - fast path: the derived room already exists (re-activates a left room),
+ *   - legacy path: a pre-deterministic room exists for the pair — it is
+ *     adopted (rows copied to the derived id, legacy rows cascade-deleted) so
+ *     every client converges on the same canonical id,
+ *   - fresh path: the derived room is created on first use.
+ */
+export async function findOrCreateChatRoom(callerId: string, participantId: string): Promise<ResolvedDmRoom> {
   if (callerId === participantId) {
     throw new Error("Cannot open a chat room with yourself");
   }
+  const roomId = deterministicDmRoomId(callerId, participantId);
 
-  // One permanent room per pair (A+B == B+A). Includes rooms the caller
-  // previously removed from their list (left_at set) so re-opening reuses the
-  // same room rather than creating a duplicate.
-  const memberships = await db
-    .select({ chat_room_id: chat_room_members.chat_room_id, left_at: chat_room_members.left_at, member_id: chat_room_members.id })
+  // Fast path — the canonical room already exists and the caller is a member.
+  const [existing] = await db
+    .select({ id: chat_room_members.id, left_at: chat_room_members.left_at })
     .from(chat_room_members)
-    .where(eq(chat_room_members.user_id, callerId));
-
-  for (const membership of memberships) {
-    const [match] = await db
-      .select({ id: chat_room_members.id })
-      .from(chat_room_members)
-      .where(and(eq(chat_room_members.chat_room_id, membership.chat_room_id), eq(chat_room_members.user_id, participantId)))
-      .limit(1);
-    if (match) {
-      // Re-activate the caller's membership if they had left the room.
-      if (membership.left_at) {
-        await db
-          .update(chat_room_members)
-          .set({ left_at: null })
-          .where(eq(chat_room_members.id, membership.member_id));
-      }
-      return { chatRoomId: membership.chat_room_id, created: false };
+    .where(and(eq(chat_room_members.chat_room_id, roomId), eq(chat_room_members.user_id, callerId)))
+    .limit(1);
+  if (existing) {
+    if (existing.left_at) {
+      await db.update(chat_room_members).set({ left_at: null }).where(eq(chat_room_members.id, existing.id));
     }
+    return { chatRoomId: roomId, created: false };
   }
 
-  const roomId = deterministicDmRoomId(callerId, participantId);
+  // Legacy path — a pre-deterministic room exists for this pair (created
+  // before room ids were derived from the participant ids). Adopt it so the
+  // derived id the client computed becomes the canonical one.
+  const legacyId = await legacyDmRoomId(callerId, participantId);
+  if (legacyId) {
+    const migratedFrom = await adoptLegacyDmRoom(legacyId, roomId, callerId);
+    // Whether we adopted or a concurrent device won, the caller is now a
+    // member of the canonical room.
+    return { chatRoomId: roomId, created: false, migratedFrom: migratedFrom ?? undefined };
+  }
+
+  // Fresh path — create the deterministic room (+ both memberships). The
+  // unique (room,user) index makes this idempotent if both participants open
+  // the same new DM at once; the deterministic id prevents a second
+  // pair-specific room from being created by the losing request.
   let created = true;
   try {
     await db.insert(chat_rooms).values({ id: roomId, created_by: callerId });
   } catch {
-    // Another device may have created the deterministic room concurrently.
     created = false;
   }
-
-  // The unique (room,user) index makes this idempotent if both participants
-  // open the same new DM at once. The deterministic room id prevents a second
-  // pair-specific room from being created by the losing request.
   await db
     .insert(chat_room_members)
     .values([
@@ -241,6 +261,92 @@ export async function findOrCreateChatRoom(callerId: string, participantId: stri
     .onConflictDoNothing();
 
   return { chatRoomId: roomId, created };
+}
+
+/** Scan the caller's memberships for a pre-deterministic room shared with the participant. */
+async function legacyDmRoomId(callerId: string, participantId: string): Promise<string | null> {
+  const memberships = await db
+    .select({ chat_room_id: chat_room_members.chat_room_id })
+    .from(chat_room_members)
+    .where(eq(chat_room_members.user_id, callerId));
+  for (const membership of memberships) {
+    if (membership.chat_room_id.startsWith("dm_")) continue;
+    const [match] = await db
+      .select({ id: chat_room_members.id })
+      .from(chat_room_members)
+      .where(
+        and(
+          eq(chat_room_members.chat_room_id, membership.chat_room_id),
+          eq(chat_room_members.user_id, participantId),
+        ),
+      )
+      .limit(1);
+    if (match) return membership.chat_room_id;
+  }
+  return null;
+}
+
+/**
+ * Copy a legacy room (room + members + messages) to the canonical derived id,
+ * then delete the legacy rows (FK cascade cleans children). Row ids are
+ * preserved, so message/member identity stays stable across the migration.
+ * Returns the legacy id when THIS call performed the adoption, or null when a
+ * concurrent device already did (idempotent via onConflictDoNothing).
+ */
+async function adoptLegacyDmRoom(legacyId: string, derivedId: string, callerId: string): Promise<string | null> {
+  let adopted: string | null = null;
+  await db.transaction(async (tx) => {
+    const [room] = await tx.select().from(chat_rooms).where(eq(chat_rooms.id, legacyId)).limit(1);
+    if (!room) return;
+    const members = await tx.select().from(chat_room_members).where(eq(chat_room_members.chat_room_id, legacyId));
+    const messages = await tx.select().from(chat_room_messages).where(eq(chat_room_messages.chat_room_id, legacyId));
+
+    await tx
+      .insert(chat_rooms)
+      .values({
+        id: derivedId,
+        created_by: room.created_by,
+        last_message_at: room.last_message_at,
+        created_at: room.created_at,
+        updated_at: room.updated_at,
+      })
+      .onConflictDoNothing();
+    if (members.length) {
+      await tx
+        .insert(chat_room_members)
+        .values(members.map((m) => ({ ...m, chat_room_id: derivedId })))
+        .onConflictDoNothing();
+    }
+    if (messages.length) {
+      await tx
+        .insert(chat_room_messages)
+        .values(messages.map((m) => ({ ...m, chat_room_id: derivedId })))
+        .onConflictDoNothing();
+    }
+
+    // Only delete the legacy rows once the derived room genuinely holds this
+    // pair's memberships (never delete into an unrelated pre-existing room).
+    const [aMember] = await tx
+      .select({ id: chat_room_members.id })
+      .from(chat_room_members)
+      .where(and(eq(chat_room_members.chat_room_id, derivedId), eq(chat_room_members.user_id, callerId)))
+      .limit(1);
+    const otherId = members.find((m) => m.user_id !== callerId)?.user_id;
+    const [bMember] = otherId
+      ? await tx
+          .select({ id: chat_room_members.id })
+          .from(chat_room_members)
+          .where(and(eq(chat_room_members.chat_room_id, derivedId), eq(chat_room_members.user_id, otherId)))
+          .limit(1)
+      : [null];
+    if (!aMember || !bMember) return;
+
+    await tx.delete(chat_room_messages).where(eq(chat_room_messages.chat_room_id, legacyId));
+    await tx.delete(chat_room_members).where(eq(chat_room_members.chat_room_id, legacyId));
+    await tx.delete(chat_rooms).where(eq(chat_rooms.id, legacyId));
+    adopted = legacyId;
+  });
+  return adopted;
 }
 
 /** All room ids where the viewer still has a visible membership (not left). */
