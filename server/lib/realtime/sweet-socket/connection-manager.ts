@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto";
 import type { WebSocket } from "ws";
+import { clearUserRoomFocus } from "@/lib/services/room-focus";
 import type { SweetSocketConnection } from "./types";
 
 const OPEN = 1;
@@ -29,7 +30,12 @@ export function unregister(connection: SweetSocketConnection): void {
   if (!connections.delete(connection.id)) return;
   const ids = userConnections.get(connection.userId);
   ids?.delete(connection.id);
-  if (ids?.size === 0) userConnections.delete(connection.userId);
+  if (ids?.size === 0) {
+    userConnections.delete(connection.userId);
+    // The user's last connection is gone — drop their room-focus entries so a
+    // stale "viewing" flag can never permanently suppress their pushes.
+    clearUserRoomFocus(connection.userId);
+  }
 }
 
 export function touch(connection: SweetSocketConnection): void {

@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { chat_room_members, chat_room_messages, chat_rooms, profiles, users } from "@/lib/db/schema";
 import { generateId } from "@/lib/auth/codes";
 import { buildMessage, buildRoom, getMember, isBlockedBetween, messagingAllowedError } from "@/lib/services/chat-rooms";
+import { isUserFocusedOnRoom } from "@/lib/services/room-focus";
 import { emitEvent } from "@/lib/realtime/emit";
 import { SWEETSOCKET_EVENT } from "@/lib/realtime/sweet-socket/event-map";
 
@@ -133,11 +134,13 @@ export async function persistSweetSocketChatMessage(input: {
     });
     await db.update(chat_rooms).set({ last_message_at: now, updated_at: now }).where(eq(chat_rooms.id, roomId));
 
-    if (other && !other.is_muted) {
+    if (other && !other.is_muted && !isUserFocusedOnRoom(roomId, other.user_id)) {
       // DMs may produce an OS push, but never a permanent in-app feed row.
       // The notification feed is reserved for meaningful social activity.
-      // A room the recipient muted never wakes their device — the message
-      // still lands in the room and the socket delivers it when they open it.
+      // A room the recipient muted never wakes their device, and a room the
+      // recipient is ACTIVELY VIEWING never double-notifies (the realtime
+      // event is already on their screen) — the message still lands in the
+      // room and the socket delivers it either way.
       void import("@/lib/services/push").then(({ getActorUsername, sendPushToUser }) => {
         void getActorUsername(userId).then((actor) => sendPushToUser(other.user_id, {
           title: "New Message",

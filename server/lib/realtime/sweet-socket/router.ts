@@ -4,6 +4,7 @@ import { chat_room_members, chat_room_messages, posts, profiles, subscriptions, 
 import { db } from "@/lib/db";
 import { and, eq } from "drizzle-orm";
 import { buildProvisionalChatMessage, persistSweetSocketChatMessage, type SweetSocketChatPayload } from "@/lib/services/sweet-socket-chat";
+import { setRoomFocused } from "@/lib/services/room-focus";
 import { findFirstUrl, resolveAndPersistLinkPreview } from "@/lib/services/link-preview";
 import { publish, publishDurable, publishForUsers } from "./persistence-bridge";
 import { validRelayType } from "./validator";
@@ -107,6 +108,13 @@ export async function handleClientMessage(
       return;
     }
     const eventType = normalizeRelayType(message.eventType);
+    // Room focus registry: a DM screen announces chat:open/chat:close on
+    // mount/unmount. The registry lets the message path suppress an OS push
+    // for a conversation the recipient is actively viewing (realtime already
+    // delivers it — a duplicate native banner is noise).
+    if (eventType === "chat:open" || eventType === "chat:close") {
+      setRoomFocused(message.channel.split(":")[1] ?? "", connection.userId, eventType === "chat:open");
+    }
     const event = publish({
       type: eventType,
       userId: connection.userId,
