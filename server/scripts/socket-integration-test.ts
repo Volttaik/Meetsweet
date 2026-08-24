@@ -1,11 +1,14 @@
 /**
  * SweetSocket integration test — drives the REAL backend over the wire.
  *
- * Requires a local dev server running with a LOCAL test database, e.g.:
+ * The WebSocket route uses @vercel/functions' experimental_upgradeWebSocket,
+ * which only works under a Vercel runtime (Vercel CLI `vercel dev` or the
+ * deployed platform) — plain `next dev` cannot upgrade sockets. Run against a
+ * LOCAL test database, e.g.:
  *
  *   TURSO_DATABASE_URL="file:/tmp/ms-integration/meetsweet.db" \
  *   TURSO_AUTH_TOKEN="" JWT_SECRET="$(head -c 48 /dev/urandom | base64)" \
- *   RESEND_API_KEY="" npx next dev -p 3999
+ *   RESEND_API_KEY="" vercel dev -p 3999
  *
  * then:  npx tsx scripts/socket-integration-test.ts http://localhost:3999
  *
@@ -112,7 +115,10 @@ class TestSocket {
       if (event.id && this.seenIds.has(event.id)) return; // dedupe like the mobile client
       if (event.id) {
         this.seenIds.add(event.id);
-        if (this.seenIds.size > 2000) this.seenIds.delete(this.seenIds.values().next().value);
+        if (this.seenIds.size > 2000) {
+          const oldest = this.seenIds.values().next().value;
+          if (oldest) this.seenIds.delete(oldest);
+        }
       }
       this.events.push({ event });
     }
