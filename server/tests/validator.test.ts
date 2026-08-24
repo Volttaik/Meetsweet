@@ -19,6 +19,18 @@ test("ping and sync frames parse", () => {
   assert.deepEqual(parseFrame(JSON.stringify({ type: "sync" })), { type: "sync", since: null });
 });
 
+test("sync and cursor acknowledgement frames carry the durable client cursor", () => {
+  assert.deepEqual(
+    parseFrame(JSON.stringify({ type: "sync", since: 12, clientId: "mobile_1" })),
+    { type: "sync", since: 12, clientId: "mobile_1" },
+  );
+  assert.deepEqual(
+    parseFrame(JSON.stringify({ type: "ack", clientId: "mobile_1", sequence: 42 })),
+    { type: "ack", clientId: "mobile_1", sequence: 42 },
+  );
+  assert.equal(parseFrame(JSON.stringify({ type: "ack", clientId: "mobile_1", sequence: -1 })), null);
+});
+
 test("command frame parses with requestId and payload", () => {
   const msg = parseFrame(JSON.stringify({
     type: "command",

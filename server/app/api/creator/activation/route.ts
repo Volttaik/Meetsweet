@@ -23,6 +23,7 @@ import { DEFAULT_SUBSCRIPTION_PRICE } from "@/lib/services/pricing";
 import { config } from "@/lib/config";
 
 const ACTIVATION_AMOUNT_NAIRA = 1000; // ₦1,000 one-time fee
+const activationSchema = z.object({ email: z.string().email().optional() });
 
 /**
  * Step 1: Initiate the ₦1,000 creator activation payment.
@@ -31,9 +32,11 @@ const ACTIVATION_AMOUNT_NAIRA = 1000; // ₦1,000 one-time fee
 export async function POST(req: NextRequest) {
   const auth = await requireAuth(req);
   if ("response" in auth) return auth.response;
+  const parsed = await parseBody(req, activationSchema);
+  if (!parsed.success) return parsed.response;
 
   const [user] = await db
-    .select({ id: users.id, is_creator: users.is_creator, creator_activation_paid: users.creator_activation_paid })
+    .select({ id: users.id, email: users.email, is_verified: users.is_verified, is_creator: users.is_creator, creator_activation_paid: users.creator_activation_paid })
     .from(users)
     .where(eq(users.id, auth.user.userId))
     .limit(1);
@@ -42,6 +45,16 @@ export async function POST(req: NextRequest) {
   if (user.creator_activation_paid || user.is_creator) {
     return err("Creator already activated", 409);
   }
+
+  // Account email is authoritative. The optional client value only repairs
+  // legacy accounts whose email column is empty; it is never required when the
+  // authenticated account already has one.
+  const email = user.email?.trim().toLowerCase() || parsed.data.email?.trim().toLowerCase();
+  if (!email) return err("Add an email address to your account before starting creator activation", 422, "EMAIL_REQUIRED");
+  if (!user.email?.trim() && parsed.data.email) {
+    await db.update(users).set({ email, updated_at: new Date().toISOString() }).where(eq(users.id, user.id));
+  }
+  if (!user.is_verified) return err("Verify your account email before starting creator activation", 422, "EMAIL_NOT_VERIFIED");
 
   const reference = `creator_activation_${auth.user.userId}_${Date.now()}`;
   const transactionId = generateId();
@@ -62,7 +75,6 @@ export async function POST(req: NextRequest) {
   if (!key) return err("Payment provider not configured", 503);
 
   // Use Paystack's initialize endpoint directly
-  const email = auth.user.email ?? "";
   const paystackRes = await fetch("https://api.paystack.co/transaction/initialize", {
     method: "POST",
     headers: {

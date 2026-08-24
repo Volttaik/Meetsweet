@@ -607,9 +607,17 @@ export async function POST(req: NextRequest) {
   // role (requireAuth re-reads it from the DB on every request), matching
   // the existing album creation gate. Plain text/image posts stay open to
   // all authenticated users.
-  if (content_type === "short" || content_type === "video") {
+  if (content_type === "short" || content_type === "video" || content_type === "album") {
     if (auth.user.role !== "creator" && auth.user.role !== "admin") {
       return err("Creator account required", 403, "CREATOR_REQUIRED");
+    }
+  }
+  // Normal users have exactly one normal post composer: public/free posts.
+  // Creator-only visibility and tiers are rejected server-side as well as
+  // hidden in the mobile UI, so stale clients cannot mint monetized content.
+  if (auth.user.role !== "creator" && auth.user.role !== "admin") {
+    if (visibility !== "public" || (tier && tier !== "free")) {
+      return err("Creator account required for monetized content", 403, "CREATOR_REQUIRED");
     }
   }
 

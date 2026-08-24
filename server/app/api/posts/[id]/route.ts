@@ -160,7 +160,7 @@ export async function PATCH(
   const { id } = await params;
 
   const [post] = await db
-    .select({ id: posts.id, creator_id: posts.creator_id })
+    .select({ id: posts.id, creator_id: posts.creator_id, content_type: posts.content_type })
     .from(posts)
     .where(and(eq(posts.id, id), isNull(posts.deleted_at)))
     .limit(1);
@@ -170,6 +170,15 @@ export async function PATCH(
 
   const parsed = await parseBody(req, patchSchema);
   if (!parsed.success) return parsed.response;
+
+  if (auth.user.role !== "creator" && auth.user.role !== "admin") {
+    if (parsed.data.visibility !== undefined && parsed.data.visibility !== "public") {
+      return err("Creator account required for monetized content", 403, "CREATOR_REQUIRED");
+    }
+    if (parsed.data.tier !== undefined && parsed.data.tier !== "free" && parsed.data.tier !== null) {
+      return err("Creator account required for monetized content", 403, "CREATOR_REQUIRED");
+    }
+  }
 
   const { tags, ...rest } = parsed.data;
   const updates: Record<string, unknown> = { ...rest, updated_at: new Date().toISOString() };

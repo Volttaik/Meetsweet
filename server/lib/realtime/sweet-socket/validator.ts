@@ -19,7 +19,16 @@ export function parseFrame(raw: unknown): SweetSocketClientMessage | null {
     }
     if (value.type === "ping") return { type: "ping" };
     if (value.type === "sync") {
-      return { type: "sync", since: typeof value.since === "number" && Number.isFinite(value.since) ? value.since : null };
+      if (value.clientId !== undefined && (typeof value.clientId !== "string" || value.clientId.length < 1 || value.clientId.length > 160)) return null;
+      const since = typeof value.since === "number" && Number.isFinite(value.since) ? value.since : null;
+      return typeof value.clientId === "string"
+        ? { type: "sync", since, clientId: value.clientId }
+        : { type: "sync", since };
+    }
+    if (value.type === "ack") {
+      if (typeof value.clientId !== "string" || value.clientId.length < 1 || value.clientId.length > 160) return null;
+      if (typeof value.sequence !== "number" || !Number.isFinite(value.sequence) || value.sequence < 0) return null;
+      return { type: "ack", clientId: value.clientId, sequence: value.sequence };
     }
     if (value.type === "relay") {
       if (typeof value.channel !== "string" || typeof value.eventType !== "string") return null;

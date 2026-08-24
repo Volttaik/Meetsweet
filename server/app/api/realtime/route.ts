@@ -2,7 +2,8 @@ import { experimental_upgradeWebSocket, type WebSocketData } from "@vercel/funct
 import type { NextRequest } from "next/server";
 import { verifyToken } from "@/lib/auth/jwt";
 import { fetchLiveAccount } from "@/middleware/auth";
-import { currentOutboxSeq, readOutboxSince, pruneOutbox } from "@/lib/realtime/outbox";
+import { currentOutboxSeq, readOutboxSince } from "@/lib/realtime/outbox";
+import { acknowledgeCursor, readCursor } from "@/lib/realtime/cursors";
 import { registerBusConnection, unregisterBusConnection } from "@/lib/realtime/bus";
 import * as manager from "@/lib/realtime/sweet-socket/connection-manager";
 import { connected, disconnected } from "@/lib/realtime/sweet-socket/presence-manager";
@@ -10,7 +11,7 @@ import { createEvent } from "@/lib/realtime/sweet-socket/event-emitter";
 import { SWEETSOCKET_EVENT } from "@/lib/realtime/sweet-socket/event-map";
 import { handleClientMessage, authorizeChannel } from "@/lib/realtime/sweet-socket/router";
 import { parseFrame } from "@/lib/realtime/sweet-socket/validator";
-import type { SweetSocketClientMessage } from "@/lib/realtime/sweet-socket/types";
+import type { SweetSocketClientMessage, SweetSocketConnection } from "@/lib/realtime/sweet-socket/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,14 +27,43 @@ export function GET(req: NextRequest) {
     // until the async JWT/account check finishes.
     const pending: WebSocketData[] = [];
     let authenticated = false;
-    let connection: ReturnType<typeof manager.register> | null = null;
+    let connection: SweetSocketConnection | null = null;
     let frameHandler: ((raw: WebSocketData) => void) | null = null;
     let processing = Promise.resolve();
+    let cleanedUp = false;
+    let presenceRegistered = false;
+    let busRegistered = false;
 
     ws.on("message", (raw: WebSocketData) => {
       if (!authenticated || !frameHandler) pending.push(raw);
       else frameHandler(raw);
     });
+
+    const cleanup = () => {
+      if (cleanedUp) return;
+      cleanedUp = true;
+      if (connection) {
+        const channels = [...connection.channels];
+        manager.unregister(connection);
+        for (const channel of channels) {
+          if (channel.startsWith("chat:") && !manager.isUserSubscribedTo(connection.userId, channel)) {
+            broadcastPresence(channel, connection, SWEETSOCKET_EVENT.presenceUpdated, false);
+          }
+        }
+        if (presenceRegistered && disconnected(connection)) {
+          // Global presence is also exposed on the user's private channel for
+          // clients that are not currently viewing a room.
+          broadcastPresence(`user:${connection.userId}`, connection, SWEETSOCKET_EVENT.presenceOffline, false);
+        }
+      }
+      if (busRegistered) {
+        busRegistered = false;
+        unregisterBusConnection();
+      }
+    };
+
+    ws.on("close", cleanup);
+    ws.on("error", cleanup);
 
     void (async () => {
       try {
@@ -42,39 +72,29 @@ export function GET(req: NextRequest) {
         if (!live?.isActive || !live.role) throw new Error("Account inactive");
 
         connection = manager.register(ws, tokenUser.userId);
+        // Every authenticated socket owns its private user channel. Chat screens
+        // may add room channels, but offline delivery and app-wide events must
+        // never depend on a room being open.
+        manager.subscribe(connection, `user:${tokenUser.userId}`);
+        if (cleanedUp) {
+          manager.unregister(connection);
+          return;
+        }
         registerBusConnection();
+        busRegistered = true;
         manager.send(connection, { type: "auth", state: "connected" });
-        // Explicit connection-state lifecycle (Baileys-style connection.update):
-        // the client can track connecting → connected → authenticated → ready
-        // (and disconnected/error on close) without guessing from auth frames.
         manager.send(connection, { type: "connection", state: "connected" });
-        ws.on("close", () => {
-          unregisterBusConnection();
-          if (connection && disconnected(connection)) {
-            const event = createEvent({
-              type: SWEETSOCKET_EVENT.presenceOffline,
-              userId: connection.userId,
-              payload: { userId: connection.userId },
-            });
-            // Presence is ephemeral and only useful to current subscribers.
-            for (const channel of connection.channels) manager.broadcast(channel, event);
-          }
-        });
 
         const sequence = await currentOutboxSeq().catch(() => null);
+        if (cleanedUp) return;
+        // The server head is informational only. Replay starts from the
+        // authenticated client's durable cursor, never from the current head.
+        // This is what makes a first connection after an offline send converge.
+        presenceRegistered = connected(connection);
         manager.send(connection, { type: "auth", state: "authenticated" });
         manager.send(connection, { type: "connection", state: "authenticated" });
         manager.send(connection, { type: "hello", sequence });
         manager.send(connection, { type: "connection", state: "ready" });
-        if (connected(connection)) {
-          const event = createEvent({
-            type: SWEETSOCKET_EVENT.presenceOnline,
-            userId: connection.userId,
-            payload: { userId: connection.userId },
-          });
-          for (const channel of connection.channels) manager.broadcast(channel, event);
-        }
-        void pruneOutbox().catch(() => {});
 
         const process = async (raw: WebSocketData) => {
           manager.touch(connection!);
@@ -86,7 +106,7 @@ export function GET(req: NextRequest) {
           await processMessage(connection!, message);
         };
         // Preserve client command order. In particular, a reconnecting client
-        // sends subscribe followed by sync; replay must see the restored room
+        // sends subscribe followed by sync; replay must see restored room
         // membership before events are delivered.
         frameHandler = (raw) => {
           processing = processing.then(() => process(raw)).catch(() => {});
@@ -102,6 +122,22 @@ export function GET(req: NextRequest) {
       }
     })();
   });
+}
+
+function broadcastPresence(
+  channel: string,
+  connection: SweetSocketConnection,
+  type: string,
+  online: boolean,
+): void {
+  const event = createEvent({
+    type,
+    userId: connection.userId,
+    channel,
+    roomId: channel.startsWith("chat:") ? channel.slice("chat:".length) : undefined,
+    payload: { userId: connection.userId, online },
+  });
+  manager.broadcast(channel, event);
 }
 
 async function processMessage(
@@ -130,8 +166,12 @@ async function processMessage(
       const granted: string[] = [];
       for (const channel of message.channels) {
         if (await authorizeChannel(channel, connection.userId)) {
+          const wasSubscribed = manager.isUserSubscribedTo(connection.userId, channel);
           manager.subscribe(connection, channel);
           granted.push(channel);
+          if (channel.startsWith("chat:") && !wasSubscribed) {
+            broadcastPresence(channel, connection, SWEETSOCKET_EVENT.presenceUpdated, true);
+          }
         }
       }
       manager.send(connection, {
@@ -142,16 +182,50 @@ async function processMessage(
       return;
     }
     case "unsubscribe":
-      for (const channel of message.channels) manager.unsubscribe(connection, channel);
+      for (const channel of message.channels) {
+        const wasSubscribed = manager.isUserSubscribedTo(connection.userId, channel);
+        manager.unsubscribe(connection, channel);
+        if (channel.startsWith("chat:") && wasSubscribed && !manager.isUserSubscribedTo(connection.userId, channel)) {
+          broadcastPresence(channel, connection, SWEETSOCKET_EVENT.presenceUpdated, false);
+        }
+      }
       manager.send(connection, { type: "unsubscribed", channels: message.channels });
       return;
     case "sync": {
-      const since = message.since;
-      if (since !== null) {
-        const events = await readOutboxSince(since, manager.channelsOf(connection)).catch(() => []);
-        for (const event of events) manager.send(connection, { type: "event", event: toSweetEvent(event) });
+      const requestedClientId = typeof message.clientId === "string" ? message.clientId.trim().slice(0, 160) : "";
+      if (!requestedClientId) {
+        manager.send(connection, { type: "error", code: "INVALID_SYNC", message: "clientId is required" });
+        return;
       }
-      manager.send(connection, { type: "synced", since });
+      connection.syncClientId = requestedClientId;
+      const stored = await readCursor(connection.userId, requestedClientId).catch(() => 0);
+      // The durable ACK is the lower bound on a fresh connection. During a
+      // multi-page replay, the in-memory cursor advances page by page without
+      // being ACKed until the final page is applied; this prevents page one
+      // from being replayed forever while still replaying it after a crash.
+      const since = Math.max(stored, connection.syncCursor ?? stored);
+      const channels = manager.channelsOf(connection);
+      let through = since;
+      let hasMore = false;
+      const events = await readOutboxSince(since, channels, 200).catch(() => []);
+      for (const event of events) {
+        through = Math.max(through, event.seq ?? through);
+        manager.send(connection, { type: "event", event: toSweetEvent(event) });
+      }
+      if (events.length === 200) hasMore = true;
+      connection.syncCursor = through;
+      connection.acknowledgedSequence = Math.max(connection.acknowledgedSequence ?? 0, stored);
+      manager.send(connection, { type: "synced", since, through, hasMore });
+      return;
+    }
+    case "ack": {
+      if (!connection.syncClientId || connection.syncClientId !== message.clientId || !Number.isFinite(message.sequence)) {
+        manager.send(connection, { type: "error", code: "INVALID_ACK", message: "Invalid sync acknowledgement" });
+        return;
+      }
+      const sequence = await acknowledgeCursor(connection.userId, connection.syncClientId, message.sequence).catch(() => connection.acknowledgedSequence ?? 0);
+      connection.acknowledgedSequence = Math.max(connection.acknowledgedSequence ?? 0, sequence);
+      manager.send(connection, { type: "sync_ack", clientId: connection.syncClientId, sequence: connection.acknowledgedSequence });
       return;
     }
     case "command":
@@ -170,6 +244,7 @@ function toSweetEvent(event: {
   resourceId?: string;
   userId?: string;
   payload: Record<string, unknown>;
+  roomId?: string;
 }) {
   return {
     id: event.id,
@@ -178,7 +253,7 @@ function toSweetEvent(event: {
     timestamp: new Date(event.ts).getTime(),
     userId: event.userId ?? "",
     channel: event.channel,
-    roomId: event.channel.replace(/^(chat|conversation|post):/, "") || undefined,
+    roomId: event.roomId ?? (event.channel.replace(/^(chat|conversation|post):/, "") || undefined),
     resourceId: event.resourceId,
     clientMessageId: typeof event.payload.clientMessageId === "string" ? event.payload.clientMessageId : undefined,
     sequence: event.seq,

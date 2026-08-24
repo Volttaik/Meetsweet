@@ -22,13 +22,17 @@ export type SweetSocketConnection = {
   lastSeen: number;
   authenticatedAt: number;
   lastAuthCheck: number;
+  syncClientId?: string;
+  acknowledgedSequence?: number;
+  syncCursor?: number;
 };
 
 export type SweetSocketClientMessage =
   | { type: "subscribe"; channels: string[] }
   | { type: "unsubscribe"; channels: string[] }
   | { type: "ping" }
-  | { type: "sync"; since: number | null }
+  | { type: "sync"; since: number | null; clientId?: string }
+  | { type: "ack"; clientId: string; sequence: number }
   | {
       type: "command";
       requestId: string;
@@ -50,7 +54,8 @@ export type SweetSocketServerMessage =
   | { type: "connection"; state: "connecting" | "authenticated" | "ready" | "reconnecting" | "reconnected" | "disconnected" | "error"; reason?: string }
   | { type: "subscribed"; channels: string[]; denied: string[] }
   | { type: "unsubscribed"; channels: string[] }
-  | { type: "synced"; since: number | null }
+  | { type: "synced"; since: number | null; through: number | null; hasMore: boolean }
+  | { type: "sync_ack"; clientId: string; sequence: number }
   | { type: "ack"; requestId: string; command: string; status: "accepted" | "persisted" | "failed"; clientMessageId?: string; event?: SweetSocketEvent; error?: string }
   | { type: "pong" }
   | { type: "event"; event: SweetSocketEvent }

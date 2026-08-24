@@ -49,7 +49,13 @@ export async function GET(req: NextRequest) {
     .from(notifications)
     .leftJoin(users, eq(users.id, notifications.actor_id))
     .leftJoin(profiles, eq(profiles.user_id, notifications.actor_id))
-    .where(eq(notifications.user_id, auth.user.userId))
+    // Direct messages can still trigger OS push, but they do not belong in
+    // the permanent social notification feed. Exclude legacy DM rows too so
+    // users are not flooded by messages created before the socket fix.
+    .where(and(
+      eq(notifications.user_id, auth.user.userId),
+      sql`${notifications.type} NOT IN ('message', 'dm')`,
+    ))
     .orderBy(desc(notifications.created_at))
     .limit(limit)
     .offset(offset);
@@ -58,12 +64,11 @@ export async function GET(req: NextRequest) {
   const [unreadRow] = await db
     .select({ count: sql<number>`count(*)` })
     .from(notifications)
-    .where(
-      and(
-        eq(notifications.user_id, auth.user.userId),
-        eq(notifications.is_read, false),
-      ),
-    );
+    .where(and(
+      eq(notifications.user_id, auth.user.userId),
+      eq(notifications.is_read, false),
+      sql`${notifications.type} NOT IN ('message', 'dm')`,
+    ));
 
   const unread_count = unreadRow?.count ?? 0;
 

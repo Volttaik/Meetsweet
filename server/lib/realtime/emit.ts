@@ -32,17 +32,16 @@ export async function emitEvent(opts: EmitOptions): Promise<void> {
       payload: opts.payload ?? {},
     };
 
-    // Local fanout is the realtime path and must not wait for Turso. Durable
-    // recovery and cross-instance relay continue asynchronously afterward.
+    // Durable events are appended before fanout. A client may disconnect
+    // immediately after receiving a live frame; replay must already contain
+    // that exact event, otherwise the disconnect window can lose it.
+    if (opts.durable !== false) {
+      event.seq = await appendOutboxEvent(event);
+    }
     broadcast(opts.channel, event);
-    void (async () => {
-      if (opts.durable !== false) {
-        event.seq = await appendOutboxEvent(event);
-      }
-      // Redis is shared coordination for instances pinned to different
-      // WebSocket Function instances; it is intentionally best-effort.
-      await publishEvent(event);
-    })();
+    // Redis is shared coordination for instances pinned to different
+    // WebSocket Function instances; it is intentionally best-effort.
+    await publishEvent(event);
   } catch {
     // Realtime emission is best-effort — never break the API response.
   }

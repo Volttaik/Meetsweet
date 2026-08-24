@@ -20,7 +20,7 @@ export async function GET(
   const condition = id.includes("-") && id.length > 20 ? eq(users.id, id) : eq(users.username, id);
   const [creator] = await db.select({ id: users.id, is_creator: users.is_creator })
     .from(users).where(and(condition, eq(users.is_active, true), isNull(users.deleted_at))).limit(1);
-  if (!creator || !creator.is_creator) return err("Creator not found", 404);
+  if (!creator) return err("Profile not found", 404);
 
   // Look up the viewer's subscription tier to this creator for access gating.
   const [subRow] = userId
@@ -35,7 +35,7 @@ export async function GET(
   // Creator-profile access model: content is subscriber-gated on the profile.
   // An unsubscribed viewer gets no rows at all (free content stays discoverable
   // in Explore, not on the profile); the owner always sees their own content.
-  if (!isOwner && !isSubscribed) {
+  if (creator.is_creator && !isOwner && !isSubscribed) {
     return ok({ locked: true, posts: [] });
   }
 

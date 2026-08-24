@@ -661,6 +661,10 @@ export const chat_room_messages = sqliteTable(
     is_voice_note: integer("is_voice_note", { mode: "boolean" }).notNull().default(false),
     // Stable client identity used for idempotent SweetSocket/HTTP retries.
     client_message_id: text("client_message_id"),
+    // Rich link preview metadata (JSON) for URLs pasted into message bodies.
+    // Resolved server-side once and cached, so chat history renders previews
+    // immediately without re-fetching metadata on every open.
+    link_preview: text("link_preview"),
     // JSON: [{ emoji, user_ids: [userId, ...] }]
     reactions: text("reactions"),
     // JSON array of user ids that have delete-for-me'd this message.
@@ -822,6 +826,23 @@ export const realtime_events = sqliteTable(
   (table) => [
     index("realtime_events_channel_idx").on(table.channel, table.id),
     index("realtime_events_actor_idx").on(table.actor_id, table.id),
+  ],
+);
+
+// Per-device cursor state. A cursor is scoped to the authenticated user and
+// client installation, so a fresh socket never mistakes the current server
+// head for an acknowledgement and silently skips offline events.
+export const realtime_cursors = sqliteTable(
+  "realtime_cursors",
+  {
+    id: id(),
+    user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    client_id: text("client_id").notNull(),
+    last_ack_sequence: integer("last_ack_sequence").notNull().default(0),
+    updated_at: updatedAt(),
+  },
+  (table) => [
+    uniqueIndex("realtime_cursors_user_client_idx").on(table.user_id, table.client_id),
   ],
 );
 

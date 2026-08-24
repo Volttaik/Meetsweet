@@ -1,15 +1,34 @@
 import { getMember, getRoomParticipantIds, listRoomMessages } from "@/lib/services/chat-rooms";
 import { canViewContent } from "@/lib/services/content";
-import { chat_room_members, chat_room_messages, posts, subscriptions } from "@/lib/db/schema";
+import { chat_room_members, chat_room_messages, posts, profiles, subscriptions, users } from "@/lib/db/schema";
 import { db } from "@/lib/db";
 import { and, eq } from "drizzle-orm";
-import { persistSweetSocketChatMessage, type SweetSocketChatPayload } from "@/lib/services/sweet-socket-chat";
-import { publish } from "./persistence-bridge";
+import { buildProvisionalChatMessage, persistSweetSocketChatMessage, type SweetSocketChatPayload } from "@/lib/services/sweet-socket-chat";
+import { findFirstUrl, resolveAndPersistLinkPreview } from "@/lib/services/link-preview";
+import { publish, publishDurable, publishForUsers } from "./persistence-bridge";
 import { validRelayType } from "./validator";
 import { SWEETSOCKET_ERROR } from "./event-map";
 import { consumeCommandRateLimit, consumeRelayRateLimit } from "./rate-limit";
 import * as manager from "./connection-manager";
 import type { SweetSocketClientMessage, SweetSocketConnection } from "./types";
+
+/**
+ * Delete-for-everyone is only permitted for a limited time after the message
+ * was sent (WhatsApp-style recall window). After this window the author can
+ * still delete the message for themselves; only the shared recall is blocked.
+ * Set to 0 to disable the window entirely.
+ */
+const DELETE_FOR_EVERYONE_WINDOW_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+async function roomMemberIds(roomId: string): Promise<string[]> {
+  return getRoomParticipantIds(roomId).catch(() => []);
+}
+
+function fanoutUserEvents(events: Awaited<ReturnType<typeof publishForUsers>>): void {
+  for (const event of events) {
+    manager.broadcastUsers([event.userId], event);
+  }
+}
 
 export async function authorizeChannel(channel: string, userId: string): Promise<boolean> {
   const separator = channel.indexOf(":");
@@ -224,14 +243,13 @@ async function handleChatClear(
   }
   const clearedAt = new Date().toISOString();
   await db.update(chat_room_members).set({ cleared_at: clearedAt }).where(eq(chat_room_members.id, member.id));
-  const event = publish({
+  const event = await publishDurable({
     type: "chat:clear",
     userId: connection.userId,
     channel: `user:${connection.userId}`,
     roomId,
     resourceId: roomId,
     payload: { roomId, userId: connection.userId, clearedAt },
-    durable: true,
   });
   manager.broadcastUsers([connection.userId], event);
   manager.send(connection, {
@@ -248,6 +266,23 @@ function parseJsonArray(value: string | null): string[] {
   try {
     const parsed = JSON.parse(value);
     return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseReactionArray(value: string | null): Array<{ emoji: string; user_ids: string[] }> {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((item): item is { emoji?: unknown; user_ids?: unknown } => !!item && typeof item === "object")
+      .map((item) => ({
+        emoji: String(item.emoji ?? ""),
+        user_ids: Array.isArray(item.user_ids) ? item.user_ids.map(String) : [],
+      }))
+      .filter((item) => item.emoji.length > 0);
   } catch {
     return [];
   }
@@ -272,6 +307,7 @@ async function handleMessageDelete(
       id: chat_room_messages.id,
       sender_id: chat_room_messages.sender_id,
       deleted_for: chat_room_messages.deleted_for,
+      created_at: chat_room_messages.created_at,
     })
     .from(chat_room_messages)
     .where(and(eq(chat_room_messages.id, messageId), eq(chat_room_messages.chat_room_id, roomId)))
@@ -279,6 +315,12 @@ async function handleMessageDelete(
   if (!row) return ackFail(connection, message, "Message not found");
   if (scope === "everyone" && row.sender_id !== connection.userId) {
     return ackFail(connection, message, "Forbidden");
+  }
+  if (scope === "everyone" && DELETE_FOR_EVERYONE_WINDOW_MS > 0 && row.created_at) {
+    const ageMs = Date.now() - new Date(row.created_at).getTime();
+    if (!Number.isFinite(ageMs) || ageMs > DELETE_FOR_EVERYONE_WINDOW_MS) {
+      return ackFail(connection, message, "Delete for everyone is only available for a limited time after sending");
+    }
   }
   if (scope === "everyone") {
     await db.update(chat_room_messages).set({ is_recalled: true, updated_at: new Date().toISOString() }).where(eq(chat_room_messages.id, messageId));
@@ -289,17 +331,17 @@ async function handleMessageDelete(
       await db.update(chat_room_messages).set({ deleted_for: JSON.stringify(deletedFor), updated_at: new Date().toISOString() }).where(eq(chat_room_messages.id, messageId));
     }
   }
-  const event = publish({
+  const recipients = await roomMemberIds(roomId);
+  const userEvents = await publishForUsers({
     type: "messages:delete",
-    userId: connection.userId,
-    channel: `chat:${roomId}`,
+    userIds: recipients,
     roomId,
     resourceId: messageId,
-    payload: { messageId, scope, userId: connection.userId },
-    durable: true,
+    payload: { messageId, roomId, scope, userId: connection.userId },
   });
-  manager.broadcast(`chat:${roomId}`, event);
-  manager.send(connection, { type: "ack", requestId: message.requestId, command: message.command, status: "persisted", event });
+  fanoutUserEvents(userEvents);
+  const event = userEvents.find((candidate) => candidate.userId === connection.userId) ?? userEvents[0];
+  if (event) manager.send(connection, { type: "ack", requestId: message.requestId, command: message.command, status: "persisted", event });
 }
 
 /**
@@ -313,7 +355,10 @@ async function handleMessageEdit(
   const roomId = message.channel?.replace(/^chat:/, "") ?? "";
   const messageId = typeof message.payload?.messageId === "string" ? message.payload.messageId : "";
   const body = typeof message.payload?.body === "string" ? message.payload.body : null;
-  if (!roomId || !messageId || body === null) return ackFail(connection, message, "room, messageId and body are required");
+  const caption = typeof message.payload?.caption === "string" ? message.payload.caption : null;
+  if (!roomId || !messageId || (body === null && caption === null)) {
+    return ackFail(connection, message, "room, messageId and a body or caption are required");
+  }
   const member = await getMember(roomId, connection.userId).catch(() => null);
   if (!member) return ackFail(connection, message, "Chat room not found");
   const [row] = await db
@@ -323,21 +368,64 @@ async function handleMessageEdit(
     .limit(1);
   if (!row) return ackFail(connection, message, "Message not found");
   if (row.sender_id !== connection.userId) return ackFail(connection, message, "Forbidden");
+  // Body and/or caption may be updated independently — a caption-only edit must
+  // not clobber the body (and vice versa).
+  const patch: Record<string, unknown> = { is_edited: true, updated_at: new Date().toISOString() };
+  if (body !== null) patch.body = body;
+  if (caption !== null) patch.caption = caption;
   await db
     .update(chat_room_messages)
-    .set({ body, is_edited: true, updated_at: new Date().toISOString() })
+    .set(patch)
     .where(eq(chat_room_messages.id, messageId));
-  const event = publish({
+  const recipients = await roomMemberIds(roomId);
+  const userEvents = await publishForUsers({
     type: "messages:update",
-    userId: connection.userId,
-    channel: `chat:${roomId}`,
+    userIds: recipients,
     roomId,
     resourceId: messageId,
-    payload: { messageId, roomId, body, isEdited: true },
-    durable: true,
+    payload: { messageId, roomId, body, caption, isEdited: true },
   });
-  manager.broadcast(`chat:${roomId}`, event);
-  manager.send(connection, { type: "ack", requestId: message.requestId, command: message.command, status: "persisted", event });
+  fanoutUserEvents(userEvents);
+  const event = userEvents.find((candidate) => candidate.userId === connection.userId) ?? userEvents[0];
+  if (event) manager.send(connection, { type: "ack", requestId: message.requestId, command: message.command, status: "persisted", event });
+
+  // Re-resolve the link preview after a BODY edit — the new body may contain a
+  // different URL (or none). A caption-only edit leaves the body preview alone.
+  // Fire-and-forget: the edit already broadcast.
+  void (async () => {
+    if (body === null) return;
+    const url = findFirstUrl(body);
+    if (url) {
+      const preview = await resolveAndPersistLinkPreview(messageId, body);
+      if (preview) {
+        const previewUpdates = await publishForUsers({
+          type: "messages:update",
+          userIds: await roomMemberIds(roomId),
+          roomId,
+          resourceId: messageId,
+          payload: { messageId, roomId, linkPreview: preview },
+        });
+        fanoutUserEvents(previewUpdates);
+      }
+    } else {
+      // URL removed — clear any stored preview so the bubble doesn't keep a
+      // stale card after the text is edited away.
+      try {
+        await db
+          .update(chat_room_messages)
+          .set({ link_preview: null, updated_at: new Date().toISOString() })
+          .where(eq(chat_room_messages.id, messageId));
+      } catch {}
+      const clearedUpdates = await publishForUsers({
+        type: "messages:update",
+        userIds: await roomMemberIds(roomId),
+        roomId,
+        resourceId: messageId,
+        payload: { messageId, roomId, linkPreview: null },
+      });
+      fanoutUserEvents(clearedUpdates);
+    }
+  })();
 }
 
 /**
@@ -362,10 +450,7 @@ async function handleMessageReaction(
     .limit(1);
   if (!row) return ackFail(connection, message, "Message not found");
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const reactions: any[] = parseJsonArray(row.reactions).map((s) => {
-    try { return JSON.parse(s); } catch { return null; }
-  }).filter(Boolean);
+  const reactions = parseReactionArray(row.reactions);
   const idx = reactions.findIndex((r) => r.emoji === emoji);
   if (idx === -1) {
     reactions.push({ emoji, user_ids: [connection.userId] });
@@ -386,17 +471,17 @@ async function handleMessageReaction(
     user_ids: (r.user_ids ?? []).map(String),
     userIds: (r.user_ids ?? []).map(String),
   }));
-  const event = publish({
+  const recipients = await roomMemberIds(roomId);
+  const userEvents = await publishForUsers({
     type: "messages:reaction",
-    userId: connection.userId,
-    channel: `chat:${roomId}`,
+    userIds: recipients,
     roomId,
     resourceId: messageId,
     payload: { messageId, roomId, reactions: shaped },
-    durable: true,
   });
-  manager.broadcast(`chat:${roomId}`, event);
-  manager.send(connection, { type: "ack", requestId: message.requestId, command: message.command, status: "persisted", event });
+  fanoutUserEvents(userEvents);
+  const event = userEvents.find((candidate) => candidate.userId === connection.userId) ?? userEvents[0];
+  if (event) manager.send(connection, { type: "ack", requestId: message.requestId, command: message.command, status: "persisted", event });
 }
 
 function ackFail(
@@ -513,6 +598,14 @@ async function handleMessageSend(
 
     // Push the accepted event before awaiting Turso. The client already has
     // the same optimistic object and reconciles this event by client ID.
+    //
+    // The provisional message MUST carry the full media metadata (the same
+    // fields the persisted event carries) — the recipient renders the
+    // provisional bubble immediately, so a voice note must already know it is
+    // a voice note and an image must keep its mime/file metadata. Dropping
+    // these fields here is what made voice notes flash as file bubbles and
+    // audio durations vanish until the persisted event arrived.
+    const chatPayload = normalizeChatPayload(payload);
     const provisional = publish({
       type: "messages:upsert",
       userId: connection.userId,
@@ -522,21 +615,13 @@ async function handleMessageSend(
       clientMessageId,
       durable: false,
       payload: {
-        message: {
-          id: clientMessageId,
-          chatRoomId: roomId,
-          body: typeof payload.body === "string" ? payload.body : null,
-          mediaUrl: typeof payload.mediaUrl === "string" ? payload.mediaUrl : null,
-          mediaType: typeof payload.mediaType === "string" ? payload.mediaType : null,
-          caption: typeof payload.caption === "string" ? payload.caption : null,
-          createdAt: new Date().toISOString(),
-          sender: { id: connection.userId },
-          // The recipient derives ownership from the authenticated session;
-          // do not mark a broadcast payload as own for every client.
-          isDeleted: false,
+        message: buildProvisionalChatMessage({
           clientMessageId,
-          pending: true,
-        },
+          roomId,
+          userId: connection.userId,
+          payload: chatPayload,
+          sender: await senderPayload(connection.userId),
+        }),
         clientMessageId,
         status: "accepted",
       },
@@ -557,34 +642,67 @@ async function handleMessageSend(
       clientMessageId,
       payload: normalizeChatPayload(payload),
     });
-    const persisted = publish({
+    // The durable authoritative event is private-user fanout. Every member
+    // receives it through their always-on authenticated channel, regardless of
+    // whether a room screen is open or the other device is offline.
+    const recipients = await roomMemberIds(roomId);
+    const persistedEvents = await publishForUsers({
       type: "messages:upsert",
-      userId: connection.userId,
-      channel: `chat:${roomId}`,
+      userIds: recipients,
       roomId,
       resourceId: result.message.id,
       clientMessageId,
       payload: { message: result.message, clientMessageId, status: "persisted" },
     });
-    manager.broadcast(`chat:${roomId}`, persisted);
-    manager.send(connection, {
-      type: "ack",
-      requestId: message.requestId,
-      command: message.command,
-      status: "persisted",
-      clientMessageId,
-      event: persisted,
-    });
+    fanoutUserEvents(persistedEvents);
+    const persisted = persistedEvents.find((event) => event.userId === connection.userId) ?? persistedEvents[0];
+    if (persisted) {
+      manager.send(connection, {
+        type: "ack",
+        requestId: message.requestId,
+        command: message.command,
+        status: "persisted",
+        clientMessageId,
+        event: persisted,
+      });
+    }
+
+    // Rich link preview: resolve the pasted URL's metadata in parallel with
+    // the send (never blocking it). When it lands, persist it on the row and
+    // broadcast a messages:update so BOTH participants' bubbles gain the card
+    // the moment metadata is available — no re-fetch on chat open, no polling.
+    const url = findFirstUrl(chatPayload.body);
+    if (url) {
+      void (async () => {
+        const preview = await resolveAndPersistLinkPreview(result.message.id, chatPayload.body);
+        if (!preview) return;
+        const updates = await publishForUsers({
+          type: "messages:update",
+          userIds: await roomMemberIds(roomId),
+          roomId,
+          resourceId: result.message.id,
+          payload: {
+            messageId: result.message.id,
+            roomId,
+            linkPreview: preview,
+          },
+        });
+        fanoutUserEvents(updates);
+      })();
+    }
 
     // Auto delivery receipt (Baileys message-receipt.update equivalent): when
     // the recipient currently has a live connection subscribed to this room,
     // tell the sender their message was delivered — no HTTP round-trip, no
     // polling. Idempotent per persisted message id; read state remains the
     // durable signal via chat_room_members.read_at.
-    const recipients = (await getRoomParticipantIds(roomId).catch(() => []))
-      .filter((id) => id !== connection.userId);
-    for (const recipientId of recipients) {
-      if (manager.isUserSubscribedTo(recipientId, `chat:${roomId}`)) {
+    // Auto delivery receipt (Baileys message-receipt.update equivalent): when
+    // the recipient has ANY live connection (not just the room open), tell the
+    // sender their message was delivered — WhatsApp shows "delivered" once the
+    // recipient's device received it, whether or not they are viewing the chat.
+    const liveRecipients = (await roomMemberIds(roomId)).filter((id) => id !== connection.userId);
+    for (const recipientId of liveRecipients) {
+      if (manager.connectionsForUser(recipientId).length > 0) {
         const delivered = publish({
           type: "message:receipt",
           userId: connection.userId,
@@ -603,16 +721,16 @@ async function handleMessageSend(
       }
     }
   } catch (error) {
-    const failed = publish({
+    const failed = await publishDurable({
       type: "message:failed",
       userId: connection.userId,
-      channel: `chat:${roomId}`,
+      channel: `user:${connection.userId}`,
       roomId,
       resourceId: clientMessageId,
       clientMessageId,
-      payload: { clientMessageId, error: error instanceof Error ? error.message : "Message persistence failed" },
+      payload: { clientMessageId, roomId, error: error instanceof Error ? error.message : "Message persistence failed" },
     });
-    manager.broadcast(`chat:${roomId}`, failed);
+    manager.broadcastUsers([connection.userId], failed);
     manager.send(connection, {
       type: "ack",
       requestId: message.requestId,
@@ -623,6 +741,33 @@ async function handleMessageSend(
       error: error instanceof Error ? error.message : "Message persistence failed",
     });
   }
+}
+
+async function senderPayload(userId: string): Promise<Record<string, unknown>> {
+  const [row] = await db
+    .select({
+      id: users.id,
+      full_name: users.full_name,
+      username: users.username,
+      is_verified: users.is_verified,
+      is_creator: users.is_creator,
+      display_name: profiles.display_name,
+      avatar_url: profiles.avatar_url,
+    })
+    .from(users)
+    .leftJoin(profiles, eq(profiles.user_id, users.id))
+    .where(eq(users.id, userId))
+    .limit(1);
+
+  return {
+    id: userId,
+    name: row?.display_name ?? row?.full_name ?? "User",
+    username: row?.username ?? "",
+    avatarUrl: row?.avatar_url ?? null,
+    avatar_url: row?.avatar_url ?? null,
+    is_verified: Boolean(row?.is_verified),
+    is_creator: Boolean(row?.is_creator),
+  };
 }
 
 function normalizeChatPayload(payload: Record<string, unknown>): SweetSocketChatPayload {

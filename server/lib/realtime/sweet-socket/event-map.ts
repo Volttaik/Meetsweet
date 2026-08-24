@@ -129,8 +129,10 @@ export interface SweetSocketEventMap {
     messageId: string;
     roomId?: string;
     body?: string;
+    caption?: string | null;
     isEdited?: boolean;
     message?: Record<string, unknown>;
+    linkPreview?: Record<string, unknown> | null;
   };
   "messages:delete": { messageId: string; roomId?: string; scope?: "me" | "everyone"; userId?: string };
   "messages:reaction": { messageId: string; roomId?: string; reactions: Array<{ emoji: string; userIds: string[] }> };

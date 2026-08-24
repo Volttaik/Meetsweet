@@ -1,4 +1,5 @@
-import { and, desc, eq, gt, lt, sql } from "drizzle-orm";
+import { createHash } from "crypto";
+import { and, desc, eq, gt, lt, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   blocked_users,
@@ -13,6 +14,16 @@ import {
   user_settings,
 } from "@/lib/db/schema";
 import { generateId } from "@/lib/auth/codes";
+
+/**
+ * Stable room id for a new private DM. Existing legacy rooms are still reused
+ * by the membership lookup below; new rooms cannot split when both users open
+ * the conversation at the same time from opposite devices.
+ */
+function deterministicDmRoomId(a: string, b: string): string {
+  const pair = [a, b].sort().join(":");
+  return `dm_${createHash("sha256").update(pair).digest("hex").slice(0, 32)}`;
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -209,14 +220,27 @@ export async function findOrCreateChatRoom(callerId: string, participantId: stri
     }
   }
 
-  const roomId = generateId();
-  await db.insert(chat_rooms).values({ id: roomId, created_by: callerId });
-  await db.insert(chat_room_members).values([
-    { id: generateId(), chat_room_id: roomId, user_id: callerId, context_id: generateId() },
-    { id: generateId(), chat_room_id: roomId, user_id: participantId, context_id: generateId() },
-  ]);
+  const roomId = deterministicDmRoomId(callerId, participantId);
+  let created = true;
+  try {
+    await db.insert(chat_rooms).values({ id: roomId, created_by: callerId });
+  } catch {
+    // Another device may have created the deterministic room concurrently.
+    created = false;
+  }
 
-  return { chatRoomId: roomId, created: true };
+  // The unique (room,user) index makes this idempotent if both participants
+  // open the same new DM at once. The deterministic room id prevents a second
+  // pair-specific room from being created by the losing request.
+  await db
+    .insert(chat_room_members)
+    .values([
+      { id: generateId(), chat_room_id: roomId, user_id: callerId, context_id: generateId() },
+      { id: generateId(), chat_room_id: roomId, user_id: participantId, context_id: generateId() },
+    ])
+    .onConflictDoNothing();
+
+  return { chatRoomId: roomId, created };
 }
 
 /** All room ids where the viewer still has a visible membership (not left). */
@@ -288,9 +312,10 @@ export async function buildRoom(chatRoomId: string, viewerId: string): Promise<a
   const others = participants.filter((p) => p.id !== viewerId);
   const other = others[0] ?? null;
 
-  // Latest messages (newest first) — filter out anything the viewer cleared,
-  // deleted-for-me, or that was recalled so the preview never shows stale
-  // content after Clear Chat / Delete / recall.
+  // Latest messages (newest first). A deleted/recalled message remains a
+  // durable timeline item; its body is rendered by clients as the deleted
+  // placeholder instead of silently disappearing. Only messages before this
+  // user's clear marker are omitted from the local presentation.
   const recent = await db
     .select({
       id: chat_room_messages.id,
@@ -313,8 +338,6 @@ export async function buildRoom(chatRoomId: string, viewerId: string): Promise<a
     deleted_for: string | null;
     created_at: string;
   }): boolean => {
-    if (r.is_recalled) return false;
-    if (viewerDeletedFor(r.deleted_for).includes(viewerId)) return false;
     if (clearedAt && r.created_at <= clearedAt) return false;
     return true;
   };
@@ -390,6 +413,18 @@ export async function buildMessage(
 ): Promise<any> {
   const reactions = parseReactions(raw.reactions);
   const deletedFor = parseJsonArray(raw.deleted_for);
+  // Rich link preview (JSON) — parsed once so both camel and snake keys carry
+  // the same object; the client renders the card straight from this.
+  let linkPreview: unknown = null;
+  if (typeof raw.link_preview === "string" && raw.link_preview) {
+    try {
+      linkPreview = JSON.parse(raw.link_preview);
+    } catch {
+      linkPreview = null;
+    }
+  } else if (raw.linkPreview && typeof raw.linkPreview === "object") {
+    linkPreview = raw.linkPreview;
+  }
   const isOwn = raw.sender_id === viewerId;
   // Honest status: "delivered" = persisted server-side (true for every stored
   // message); "read" = the OTHER participant's last_read_at has passed this
@@ -404,13 +439,17 @@ export async function buildMessage(
   if (raw.reply_to_id) {
     const quoted = replyLookup?.get(raw.reply_to_id);
     if (quoted) {
+      // A reply to a recalled/deleted message must not leak the original
+      // content — the quote renders "Original message deleted" instead.
+      const quotedDeleted = Boolean(quoted.is_recalled);
       replyTo = {
         id: quoted.id,
-        body: quoted.body ?? null,
-        media_type: quoted.media_type ?? null,
-        mediaUrl: quoted.media_url ?? null,
-        media_url: quoted.media_url ?? null,
+        body: quotedDeleted ? null : (quoted.body ?? null),
+        media_type: quotedDeleted ? null : (quoted.media_type ?? null),
+        mediaUrl: quotedDeleted ? null : (quoted.media_url ?? null),
+        media_url: quotedDeleted ? null : (quoted.media_url ?? null),
         sender_name: quoted.sender_name ?? null,
+        deleted: quotedDeleted ? true : undefined,
       };
     }
   }
@@ -460,7 +499,18 @@ export async function buildMessage(
     reactions,
     reply_to: replyTo,
     replyTo,
+    link_preview: linkPreview,
+    linkPreview,
   };
+}
+
+function parseMessageCursor(value?: string): { createdAt: string; id: string } | null {
+  if (!value) return null;
+  const separator = value.lastIndexOf("::");
+  if (separator <= 0 || separator === value.length - 2) return null;
+  const createdAt = value.slice(0, separator);
+  const id = value.slice(separator + 2);
+  return createdAt && id ? { createdAt, id } : null;
 }
 
 /** Messages visible to the viewer, with sender + reply metadata joined in. */
@@ -473,8 +523,20 @@ export async function listRoomMessages(
   const member = await getMember(chatRoomId, viewerId);
 
   const conds = [eq(chat_room_messages.chat_room_id, chatRoomId)];
-  if (opts.before) conds.push(lt(chat_room_messages.created_at, opts.before));
-  if (opts.after) conds.push(gt(chat_room_messages.created_at, opts.after));
+  const before = parseMessageCursor(opts.before);
+  const after = parseMessageCursor(opts.after);
+  if (before) {
+    conds.push(or(
+      lt(chat_room_messages.created_at, before.createdAt),
+      and(eq(chat_room_messages.created_at, before.createdAt), lt(chat_room_messages.id, before.id)),
+    )!);
+  }
+  if (after) {
+    conds.push(or(
+      gt(chat_room_messages.created_at, after.createdAt),
+      and(eq(chat_room_messages.created_at, after.createdAt), gt(chat_room_messages.id, after.id)),
+    )!);
+  }
 
   const rows = await db
     .select({
@@ -492,6 +554,7 @@ export async function listRoomMessages(
       audio_duration: chat_room_messages.audio_duration,
       file_type: chat_room_messages.file_type,
       is_voice_note: chat_room_messages.is_voice_note,
+      link_preview: chat_room_messages.link_preview,
       reactions: chat_room_messages.reactions,
       deleted_for: chat_room_messages.deleted_for,
       is_edited: chat_room_messages.is_edited,
@@ -520,14 +583,11 @@ export async function listRoomMessages(
     )
     .limit(limit);
 
-  // Hide messages the viewer deleted-for-me / recalled / cleared.
-  const visible = rows.filter((r) => {
-    if (r.is_recalled) return false;
-    const deletedFor = parseJsonArray(r.deleted_for);
-    if (deletedFor.includes(viewerId)) return false;
-    if (member?.cleared_at && r.created_at <= member.cleared_at) return false;
-    return true;
-  });
+  // Keep deleted/recalled rows in chronological history. The message payload
+  // carries `isDeleted`; the client renders the persistent placeholder while
+  // preserving the original message id and timestamp. Only this user's clear
+  // marker removes rows from their local presentation.
+  const visible = rows.filter((r) => !member?.cleared_at || r.created_at > member.cleared_at);
 
   // Resolve reply-to previews in one pass.
   const replyIds = [...new Set(visible.map((r) => r.reply_to_id).filter(Boolean))] as string[];
@@ -542,6 +602,7 @@ export async function listRoomMessages(
         sender_name: users.full_name,
         sender_display_name: profiles.display_name,
         sender_username: users.username,
+        is_recalled: chat_room_messages.is_recalled,
       })
       .from(chat_room_messages)
       .innerJoin(users, eq(users.id, chat_room_messages.sender_id))

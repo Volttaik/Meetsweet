@@ -41,7 +41,7 @@ export async function GET(
     .where(and(condition, eq(users.is_active, true), isNull(users.deleted_at)))
     .limit(1);
 
-  if (!user || !user.is_creator) return err("Creator not found", 404);
+  if (!user) return err("Profile not found", 404);
 
   // Counts in parallel
   const [followerCount, subscriberCount, postCount, videoCount, shortCount, albumCount, settings] =
@@ -111,8 +111,8 @@ export async function GET(
   // Pricing source of truth: creator_settings, falling back to the legacy
   // profiles.subscription_price. subscriber_plus falls back to 2× the base
   // price so the client always shows the real charge (never a fake "Free").
-  const basePrice = resolveBasePrice(settings?.subscription_price, user.subscription_price);
-  const plusPrice = settings?.subscription_plus_price ?? Math.round(basePrice * 2);
+  const basePrice = user.is_creator ? resolveBasePrice(settings?.subscription_price, user.subscription_price) : 0;
+  const plusPrice = user.is_creator ? (settings?.subscription_plus_price ?? Math.round(basePrice * 2)) : 0;
 
   const creator = {
     id: user.id,
@@ -149,7 +149,9 @@ export async function GET(
     subscriptionPlusPrice: plusPrice,
     allow_dms: settings?.allow_dms ?? true,
     allow_comments: settings?.allow_comments ?? true,
-    who_can_message: (settings?.who_can_message as 'everyone' | 'subscribers' | 'none') ?? 'everyone',
+    who_can_message: user.is_creator
+      ? ((settings?.who_can_message as 'everyone' | 'subscribers' | 'none') ?? 'everyone')
+      : 'everyone',
     is_following: isFollowing,
     isFollowing,
     is_subscribed: isSubscribed,
@@ -161,8 +163,10 @@ export async function GET(
     // an unsubscribed viewer must NOT see ANY of the creator's content there
     // (free content remains discoverable in Explore, not on the profile). The
     // owner always sees their own content.
-    content_locked: isOwner ? false : !isSubscribed,
-    contentLocked: isOwner ? false : !isSubscribed,
+    content_locked: user.is_creator ? (isOwner ? false : !isSubscribed) : false,
+    contentLocked: user.is_creator ? (isOwner ? false : !isSubscribed) : false,
+    is_creator: Boolean(user.is_creator),
+    isCreator: Boolean(user.is_creator),
     subscription_tier: subscriptionTier,
     subscriptionTier,
     // Viewer's active subscription id for this creator — lets the app offer
