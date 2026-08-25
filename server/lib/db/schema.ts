@@ -752,10 +752,21 @@ export const creator_settings = sqliteTable("creator_settings", {
 // ─── Private Inbox ─────────────────────────────────────────────────────────
 
 /**
- * Email-style paid correspondence — NOT a chat room. One row is either the
- * original paid message a fan sent to a creator, or the creator's single
- * reply (parent_message_id points at the original). Threading is exactly
- * one level deep: original → reply.
+ * Email-style paid correspondence — NOT a chat room. Each row is one message
+ * in a thread. The thread ROOT (parent_message_id = NULL) is the original
+ * paid message a fan sent to a creator; every reply (parent_message_id
+ * pointing at any message in the thread) keeps the same two participants
+ * and stays attached to the root — email-style: original → reply → reply
+ * to reply → … No chat bubbles, presence, or delivery ticks.
+ *
+ * Waiting: when the recipient has RESTRICTED the sender (dm_restrictions),
+ * a new message is created with status "waiting" — it never reaches the
+ * normal inbox until the recipient approves it.
+ *
+ * Deletion: per-participant visibility flags. The SENDER deleting a message
+ * hides it for BOTH parties (sets both timestamps); the RECEIVER deleting
+ * hides it only from their own inbox (sets the recipient flag alone), so
+ * the sender keeps their Outbox copy.
  *
  * Idempotency: (sender_id, idempotency_key) is unique so a retried submit
  * can never double-charge the wallet or duplicate a message.
@@ -770,19 +781,45 @@ export const private_messages = sqliteTable(
     body: text("body").notNull(),
     // What the sender actually paid to deliver THIS message (0 for replies).
     price_paid: real("price_paid").notNull().default(0),
-    // sent → read → replied (recipient side). No delivery ticks.
-    status: text("status", { enum: ["sent", "read", "replied"] }).notNull().default("sent"),
+    // sent → read → replied (recipient side), or "waiting" when the
+    // recipient restricted the sender and hasn't approved it yet.
+    status: text("status", { enum: ["sent", "read", "replied", "waiting"] }).notNull().default("sent"),
     idempotency_key: text("idempotency_key").notNull(),
     read_at: text("read_at"),
     replied_at: text("replied_at"),
+    // Sender deleted their copy → both flags set (gone for both).
+    // Receiver deleted their copy → recipient flag alone (sender keeps it).
+    deleted_for_sender_at: text("deleted_for_sender_at"),
+    deleted_for_recipient_at: text("deleted_for_recipient_at"),
     created_at: createdAt(),
     updated_at: updatedAt(),
   },
   (table) => [
     uniqueIndex("private_messages_idempotency_idx").on(table.sender_id, table.idempotency_key),
-    uniqueIndex("private_messages_parent_idx").on(table.parent_message_id).where(sql`${table.parent_message_id} IS NOT NULL`),
+    // Threading is a flat chain per root: multiple replies per thread root.
+    index("private_messages_parent_thread_idx").on(table.parent_message_id),
     index("private_messages_recipient_idx").on(table.recipient_id, table.created_at),
     index("private_messages_sender_idx").on(table.sender_id, table.created_at),
+  ],
+);
+
+/**
+ * Per-sender message restrictions ("mute" / "set to waiting"). When user A
+ * restricts user B, B's future private messages land in A's Waiting queue
+ * instead of the normal inbox. Independent from blocked_users (a block
+ * REJECTS messages outright; a restriction just queues them for approval).
+ */
+export const dm_restrictions = sqliteTable(
+  "dm_restrictions",
+  {
+    id: id(),
+    user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    restricted_id: text("restricted_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    created_at: createdAt(),
+  },
+  (table) => [
+    uniqueIndex("dm_restrictions_pair_idx").on(table.user_id, table.restricted_id),
+    index("dm_restrictions_user_idx").on(table.user_id),
   ],
 );
 

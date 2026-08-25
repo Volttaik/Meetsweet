@@ -1,14 +1,17 @@
 /**
- * GET  /api/private-messages?box=inbox|outbox&before=<iso>
- *      List the authenticated user's Private Inbox or Outbox originals,
- *      newest first, with replies and attachment state attached.
+ * GET  /api/private-messages?box=inbox|outbox|waiting&before=<iso>
+ *      List the authenticated user's Private Inbox, Outbox, or Waiting
+ *      originals, newest first, with reply previews and attachment state.
+ *      Waiting = messages from senders the recipient restricted, queued
+ *      until approved. Sender-deleted threads never appear; receiver-
+ *      deleted threads are hidden only from the receiver.
  *
  * POST /api/private-messages
  *      Send one paid private message to a creator.
  *      Body: { recipient_id, body, idempotency_key, attachments?: [{ media_id, media_type }] }
  *      The price is read from the creator's settings server-side; the wallet
  *      debit + message insert are atomic; retries with the same idempotency
- *      key never double-charge.
+ *      key never double-charge. Restricted senders land in Waiting.
  */
 
 import type { NextRequest } from "next/server";
@@ -26,7 +29,7 @@ import {
 } from "@/lib/services/private-inbox";
 
 const listQuerySchema = z.object({
-  box: z.enum(["inbox", "outbox"]).default("inbox"),
+  box: z.enum(["inbox", "outbox", "waiting"]).default("inbox"),
   before: z.string().optional(),
 });
 
@@ -50,7 +53,7 @@ export async function GET(req: NextRequest) {
   if (!parsed.success) return parsed.response;
 
   try {
-    const box = parsed.data.box === "outbox" ? ("outbox" as const) : ("inbox" as const);
+    const box = parsed.data.box ?? "inbox";
     const messages = await listMessages(auth.user.userId, box, parsed.data.before);
     return ok({ box, messages });
   } catch (error) {

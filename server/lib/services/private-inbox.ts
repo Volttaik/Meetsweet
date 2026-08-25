@@ -26,6 +26,7 @@ import { db } from "@/lib/db";
 import {
   blocked_users,
   creator_settings,
+  dm_restrictions,
   media,
   private_message_attachments,
   private_messages,
@@ -76,7 +77,7 @@ export interface PrivateMessageView {
   recipient_id: string;
   parent_message_id: string | null;
   body: string;
-  status: "sent" | "read" | "replied";
+  status: "sent" | "read" | "replied" | "waiting";
   price_paid: number;
   created_at: string;
   read_at: string | null;
@@ -88,7 +89,12 @@ export interface PrivateMessageView {
   recipient_username: string | null;
   recipient_avatar: string | null;
   attachments: MessageAttachmentView[];
-  reply: PrivateMessageView | null; // populated on originals when a reply exists
+  /** Number of replies below this message (0 on leaves). */
+  reply_count: number;
+  /** Latest descendant view — populated on list rows (original → preview). */
+  reply: PrivateMessageView | null;
+  /** Full thread oldest → newest — populated only by getMessageThread. */
+  thread?: PrivateMessageView[];
 }
 
 type UserBrief = { id: string; name: string | null; username: string | null; avatar: string | null };
@@ -143,44 +149,77 @@ function buildAttachmentViews(
   });
 }
 
-async function buildViews(
-  messages: MessageRow[],
-  viewerId: string,
-): Promise<PrivateMessageView[]> {
-  if (messages.length === 0) return [];
+/**
+ * Load a thread's full row set: the originals plus every descendant reply
+ * (replies to replies included), bounded to a sane depth. Indexed query per
+ * level on parent_message_id — a thread is a small flat chain, so this is
+ * a handful of lookups at most, never N+1 per row.
+ */
+async function loadThreadRows(
+  originals: MessageRow[],
+): Promise<{ rows: MessageRow[]; byId: Map<string, MessageRow> }> {
+  const rows = [...originals];
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  let frontier = originals.map((m) => m.id);
+  for (let depth = 0; depth < 12 && frontier.length > 0; depth++) {
+    const children = await db
+      .select()
+      .from(private_messages)
+      .where(inArray(private_messages.parent_message_id, frontier));
+    const fresh = children.filter((c) => !byId.has(c.id));
+    for (const c of fresh) {
+      byId.set(c.id, c);
+      rows.push(c);
+    }
+    frontier = fresh.map((c) => c.id);
+  }
+  return { rows, byId };
+}
 
+/** Walk a parent chain up to the thread root (bounded). */
+async function rootOf(message: MessageRow): Promise<MessageRow> {
+  let cur = message;
+  for (let depth = 0; depth < 12 && cur.parent_message_id; depth++) {
+    const [parent] = await db
+      .select()
+      .from(private_messages)
+      .where(eq(private_messages.id, cur.parent_message_id))
+      .limit(1);
+    if (!parent) break;
+    cur = parent;
+  }
+  return cur;
+}
+
+/**
+ * Build views for a set of messages that are all part of the same threads.
+ * `originals` must be the thread roots; the full descendant set is loaded and
+ * attached, so list rows carry reply_count + latest reply preview while the
+ * detail path can read the ordered thread off the root view.
+ */
+async function buildViews(
+  originals: MessageRow[],
+  viewerId: string,
+  opts?: { withThread?: boolean },
+): Promise<PrivateMessageView[]> {
+  if (originals.length === 0) return [];
+
+  const { rows, byId } = await loadThreadRows(originals);
+  const rootIds = new Set(originals.map((m) => m.id));
   const userIds = new Set<string>();
-  for (const m of messages) {
+  for (const m of rows) {
     userIds.add(m.sender_id);
     userIds.add(m.recipient_id);
   }
 
-  // Attachments + reply attachments in ONE extra query per set (no N+1).
-  const ids = messages.map((m) => m.id);
+  // Attachments for every message in the threads — one query per set.
+  const ids = rows.map((m) => m.id);
   const allAttachments = await db
     .select()
     .from(private_message_attachments)
     .where(inArray(private_message_attachments.message_id, ids));
 
-  // Replies to any of these originals (threading is one level deep).
-  const replies =
-    messages.some((m) => m.parent_message_id === null) && messages.length > 0
-      ? await db
-          .select()
-          .from(private_messages)
-          .where(inArray(private_messages.parent_message_id, ids))
-      : [];
-
-  const replyIds = replies.map((r) => r.id);
-  const replyAttachments =
-    replyIds.length > 0
-      ? await db
-          .select()
-          .from(private_message_attachments)
-          .where(inArray(private_message_attachments.message_id, replyIds))
-      : [];
-
-  const mediaIds = [...allAttachments, ...replyAttachments].map((a) => a.media_id);
+  const mediaIds = allAttachments.map((a) => a.media_id);
   const mediaRows =
     mediaIds.length > 0
       ? await db.select().from(media).where(inArray(media.id, mediaIds))
@@ -195,12 +234,6 @@ async function buildViews(
     const list = attachmentsByMessage.get(a.message_id) ?? [];
     list.push(a);
     attachmentsByMessage.set(a.message_id, list);
-  }
-  const replyAttachmentsByMessage = new Map<string, AttachmentRow[]>();
-  for (const a of replyAttachments) {
-    const list = replyAttachmentsByMessage.get(a.message_id) ?? [];
-    list.push(a);
-    replyAttachmentsByMessage.set(a.message_id, list);
   }
 
   const viewOf = (m: MessageRow): PrivateMessageView => ({
@@ -225,26 +258,71 @@ async function buildViews(
       viewerId,
       mediaById,
     ),
+    reply_count: 0,
     reply: null,
   });
 
-  const replyViews = new Map<string, PrivateMessageView>();
-  for (const r of replies) {
-    const v = viewOf(r);
-    replyViews.set(r.parent_message_id!, v);
+  // Children map + root resolution for grouping descendants.
+  const childrenOf = new Map<string, MessageRow[]>();
+  const rootOfRow = (m: MessageRow): MessageRow => {
+    let cur = m;
+    while (cur.parent_message_id) {
+      const parent = byId.get(cur.parent_message_id);
+      if (!parent) break;
+      cur = parent;
+    }
+    return cur;
+  };
+  for (const r of rows) {
+    if (!r.parent_message_id) continue;
+    const list = childrenOf.get(r.parent_message_id) ?? [];
+    list.push(r);
+    childrenOf.set(r.parent_message_id, list);
   }
 
-  const views = messages.map((m) => {
-    const v = viewOf(m);
-    if (m.parent_message_id === null) {
-      const reply = replyViews.get(m.id);
-      if (reply) {
-        v.reply = reply;
-        v.status = "replied";
-      }
+  const collectDescendants = (rootId: string): MessageRow[] => {
+    const out: MessageRow[] = [];
+    const stack = [...(childrenOf.get(rootId) ?? [])];
+    while (stack.length) {
+      const m = stack.pop()!;
+      out.push(m);
+      stack.push(...(childrenOf.get(m.id) ?? []));
     }
-    return v;
-  });
+    return out;
+  };
+
+  const viewById = new Map<string, PrivateMessageView>();
+  for (const r of rows) viewById.set(r.id, viewOf(r));
+
+  // A row is visible to the viewer unless THEY deleted their own copy of it
+  // (sender-delete hides it for both; receiver-delete hides it for the
+  // receiver only, so the sender still sees their own sent copy).
+  const isVisible = (m: MessageRow): boolean =>
+    (m.sender_id === viewerId && !m.deleted_for_sender_at) ||
+    (m.recipient_id === viewerId && !m.deleted_for_recipient_at);
+
+  const views: PrivateMessageView[] = [];
+  for (const root of originals) {
+    const rootView = viewById.get(root.id)!;
+    const descendants = collectDescendants(root.id).filter(isVisible);
+    if (descendants.length > 0) {
+      // Newest descendant is the thread's latest reply preview.
+      const latest = [...descendants].sort((a, b) =>
+        a.created_at === b.created_at ? (a.id < b.id ? -1 : 1) : a.created_at < b.created_at ? -1 : 1,
+      )[descendants.length - 1];
+      rootView.reply_count = descendants.length;
+      rootView.reply = viewById.get(latest.id) ?? null;
+      rootView.status = "replied";
+    }
+    if (opts?.withThread) {
+      const ordered = [root, ...descendants].sort((a, b) =>
+        a.created_at === b.created_at ? (a.id < b.id ? -1 : 1) : a.created_at < b.created_at ? -1 : 1,
+      );
+      rootView.thread = ordered.map((m) => viewById.get(m.id)!);
+    }
+    // Sanity: a descendant whose root is not in `originals` must not leak.
+    if (rootOfRow(root).id === root.id) views.push(rootView);
+  }
   return views;
 }
 
@@ -371,6 +449,15 @@ export async function sendPrivateMessage(input: SendMessageInput): Promise<{
 
   await assertCanSendTo(senderId, recipientId, 0);
 
+  // Recipient restricted this sender ("mute → waiting"): the message must
+  // NOT reach the normal inbox — it queues for approval instead.
+  const [restriction] = await db
+    .select({ id: dm_restrictions.id })
+    .from(dm_restrictions)
+    .where(and(eq(dm_restrictions.user_id, recipientId), eq(dm_restrictions.restricted_id, senderId)))
+    .limit(1);
+  const waiting = Boolean(restriction);
+
   const attachments = input.attachmentMediaIds ?? [];
   if (attachments.length > 10) {
     throw new PrivateInboxError("Too many attachments", "INVALID_ATTACHMENT");
@@ -439,7 +526,7 @@ export async function sendPrivateMessage(input: SendMessageInput): Promise<{
         parent_message_id: null,
         body,
         price_paid: price,
-        status: "sent",
+        status: waiting ? "waiting" : "sent",
         idempotency_key: idempotencyKey,
       });
 
@@ -491,13 +578,14 @@ export async function sendPrivateMessage(input: SendMessageInput): Promise<{
   const [view] = await buildViews([created!], senderId);
 
   // ── Post-commit side effects ──────────────────────────────────────────────
-  // Realtime: creator's inbox updates immediately.
+  // Realtime: the recipient's box updates immediately (waiting queue when the
+  // sender is restricted, normal inbox otherwise).
   emitEvent({
     type: "private_message.created",
     channel: userChannel(recipientId),
     userId: recipientId,
     resourceId: messageId,
-    payload: { box: "inbox", message: view },
+    payload: { box: waiting ? "waiting" : "inbox", message: view },
   });
   // Sender's own outbox reflects the confirmed state on other devices too.
   emitEvent({
@@ -509,19 +597,21 @@ export async function sendPrivateMessage(input: SendMessageInput): Promise<{
   });
 
   // In-app notification + push (backgrounded recipients), preference-gated.
+  // Restricted senders land in the Waiting queue, so the copy says so — the
+  // recipient must approve before the message is visible in their inbox.
   await createNotification(recipientId, "notif_messages", {
     actor_id: senderId,
     type: "private_message",
     entity_type: "private_message",
     entity_id: messageId,
-    body: "sent you a private message",
+    body: waiting ? "sent you a private message awaiting approval" : "sent you a private message",
   });
   getActorUsername(senderId).then((username) => {
     sendPushToUser(
       recipientId,
       {
-        title: "New Private Message",
-        body: `${username} sent you a private message`,
+        title: waiting ? "Private Message Awaiting Approval" : "New Private Message",
+        body: waiting ? `${username} sent you a message — review it in Waiting` : `${username} sent you a private message`,
         data: { type: "private_message", private_message_id: messageId },
       },
       "notif_messages",
@@ -535,31 +625,57 @@ export async function sendPrivateMessage(input: SendMessageInput): Promise<{
 // ─── Reply ───────────────────────────────────────────────────────────────────
 
 export interface ReplyInput {
-  creatorId: string;
+  /** The participant writing the reply. */
+  userId: string;
+  /** The message being replied to (its parent in the thread). */
   messageId: string;
   body: string;
+  /** Optional — retries with the same key never duplicate the reply. */
+  idempotencyKey?: string;
   attachments?: Array<{ mediaId: string; mediaType: "image" | "video" | "file"; price?: number }>;
 }
 
-/** The creator replies ONCE to a message they received. Free to send. */
+/**
+ * Either participant may reply to any message inside a thread (email-style
+ * follow-ups). Replies are free; only the creator may price reply media.
+ * The thread stays anchored to its paid original — replies never become
+ * separate conversations.
+ */
 export async function replyToMessage(input: ReplyInput): Promise<{ message: PrivateMessageView }> {
-  const { creatorId, messageId, body } = input;
+  const { userId, messageId, body } = input;
 
-  const [original] = await db
+  const [parent] = await db
     .select()
     .from(private_messages)
     .where(eq(private_messages.id, messageId))
     .limit(1);
-  if (!original) throw new PrivateInboxError("Message not found", "NOT_FOUND");
+  if (!parent) throw new PrivateInboxError("Message not found", "NOT_FOUND");
 
-  // Only the intended recipient-creator may reply, and only to the original.
-  if (original.recipient_id !== creatorId) {
-    throw new PrivateInboxError("You can only reply to your own inbox", "FORBIDDEN");
+  // Only the two participants of the thread may reply to it.
+  if (parent.sender_id !== userId && parent.recipient_id !== userId) {
+    throw new PrivateInboxError("You are not part of this correspondence", "FORBIDDEN");
   }
-  const [creator] = await db.select({ is_creator: users.is_creator, role: users.role }).from(users).where(eq(users.id, creatorId)).limit(1);
-  if (!creator?.is_creator || creator.role !== "creator") {
-    throw new PrivateInboxError("Only creators can reply", "FORBIDDEN");
+
+  // The thread's paid original anchors everything; the other participant is
+  // the original's counterpart (participants never change within a thread).
+  const root = await rootOf(parent);
+  const otherId = root.sender_id === userId ? root.recipient_id : root.sender_id;
+  const isCreator = root.recipient_id === userId;
+
+  // Idempotent replay — retried submit returns the already-created reply.
+  const key = input.idempotencyKey || `reply_${messageId}_${userId}`;
+  const [existing] = await db
+    .select()
+    .from(private_messages)
+    .where(
+      and(eq(private_messages.sender_id, userId), eq(private_messages.idempotency_key, key)),
+    )
+    .limit(1);
+  if (existing) {
+    const [view] = await buildViews([existing], userId);
+    return { message: view };
   }
+
   const replyAttachments = input.attachments ?? [];
   if (replyAttachments.length > 10) {
     throw new PrivateInboxError("Too many attachments", "INVALID_ATTACHMENT");
@@ -572,7 +688,7 @@ export async function replyToMessage(input: ReplyInput): Promise<{ message: Priv
     for (const attachment of replyAttachments) {
       const row = byId.get(attachment.mediaId);
       const expectedType = attachment.mediaType === "file" ? "document" : attachment.mediaType;
-      if (!row || row.uploader_id !== creatorId || row.type !== expectedType) {
+      if (!row || row.uploader_id !== userId || row.type !== expectedType) {
         throw new PrivateInboxError("Attachment is invalid or not owned by you", "INVALID_ATTACHMENT");
       }
       if (attachment.price != null && (!Number.isFinite(attachment.price) || attachment.price < 0 || attachment.price > 1_000_000)) {
@@ -580,104 +696,117 @@ export async function replyToMessage(input: ReplyInput): Promise<{ message: Priv
       }
     }
   }
-  if (original.parent_message_id) {
-    throw new PrivateInboxError("A reply already exists for this message", "REPLY_EXISTS");
-  }
-
-  const [existingReply] = await db
-    .select({ id: private_messages.id })
-    .from(private_messages)
-    .where(eq(private_messages.parent_message_id, messageId))
-    .limit(1);
-  if (existingReply) {
-    throw new PrivateInboxError("You already replied to this message", "REPLY_EXISTS");
-  }
 
   const now = new Date().toISOString();
   const replyId = generateId();
 
-  await db.transaction(async (tx) => {
-    await tx.insert(private_messages).values({
-      id: replyId,
-      sender_id: creatorId,
-      recipient_id: original.sender_id,
-      parent_message_id: messageId,
-      body,
-      price_paid: 0,
-      status: "sent",
-      idempotency_key: `reply_${messageId}`,
-    });
-
-    for (const a of replyAttachments) {
-      await tx.insert(private_message_attachments).values({
-        id: generateId(),
-        message_id: replyId,
-        media_id: a.mediaId,
-        media_type: a.mediaType,
-        price: Math.max(0, Number(a.price) || 0),
+  try {
+    await db.transaction(async (tx) => {
+      await tx.insert(private_messages).values({
+        id: replyId,
+        sender_id: userId,
+        recipient_id: otherId,
+        parent_message_id: messageId,
+        body,
+        price_paid: 0,
+        status: "sent",
+        idempotency_key: key,
       });
-    }
 
-    await tx
-      .update(private_messages)
-      .set({ status: "replied", replied_at: now, updated_at: now })
-      .where(eq(private_messages.id, messageId));
-  });
+      for (const a of replyAttachments) {
+        await tx.insert(private_message_attachments).values({
+          id: generateId(),
+          message_id: replyId,
+          media_id: a.mediaId,
+          media_type: a.mediaType,
+          // Only the creator may price reply media; a fan's attachment is free.
+          price: isCreator ? Math.max(0, Number(a.price) || 0) : 0,
+        });
+      }
+
+      await tx
+        .update(private_messages)
+        .set({ status: "replied", replied_at: now, updated_at: now })
+        .where(eq(private_messages.id, root.id));
+    });
+  } catch (error) {
+    // Unique-index race: the same key won elsewhere — treat as replay.
+    if (
+      error instanceof Error &&
+      /UNIQUE|idempotency/i.test(`${(error as { code?: string }).code ?? ""} ${error.message}`)
+    ) {
+      const [row] = await db
+        .select()
+        .from(private_messages)
+        .where(
+          and(eq(private_messages.sender_id, userId), eq(private_messages.idempotency_key, key)),
+        )
+        .limit(1);
+      if (row) {
+        const [view] = await buildViews([row], userId);
+        return { message: view };
+      }
+    }
+    throw error;
+  }
 
   const [replyRow] = await db
     .select()
     .from(private_messages)
     .where(eq(private_messages.id, replyId))
     .limit(1);
-  const [updatedOriginal] = await db
+  const [rootRow] = await db
     .select()
     .from(private_messages)
-    .where(eq(private_messages.id, messageId))
+    .where(eq(private_messages.id, root.id))
     .limit(1);
 
-  const senderId = original.sender_id;
+  const replyView = (await buildViews([replyRow!], userId))[0];
+  const rootView = (await buildViews([rootRow!], otherId))[0];
 
-  // Realtime — both sides update without polling.
+  // Realtime — the other participant's side updates without polling.
   emitEvent({
     type: "private_message.reply_created",
-    channel: userChannel(senderId),
-    userId: senderId,
+    channel: userChannel(otherId),
+    userId: otherId,
     resourceId: replyId,
-    payload: { original_id: messageId, reply: replyRow ? (await buildViews([replyRow], senderId))[0] : null },
+    payload: { original_id: root.id, parent_id: messageId, reply: replyView },
   });
   emitEvent({
     type: "private_message.updated",
-    channel: userChannel(senderId),
-    userId: senderId,
-    resourceId: messageId,
-    payload: { box: "outbox", status: "replied", replied_at: now, message: updatedOriginal ? (await buildViews([updatedOriginal], senderId))[0] : null },
+    channel: userChannel(otherId),
+    userId: otherId,
+    resourceId: root.id,
+    payload: { box: otherId === root.recipient_id ? "inbox" : "outbox", status: "replied", replied_at: now, message: rootView },
   });
 
-  await createNotification(senderId, "notif_messages", {
-    actor_id: creatorId,
+  await createNotification(otherId, "notif_messages", {
+    actor_id: userId,
     type: "private_message_reply",
     entity_type: "private_message",
-    entity_id: messageId,
+    entity_id: root.id,
     body: "replied to your private message",
   });
-  getActorUsername(creatorId).then((username) => {
+  getActorUsername(userId).then((username) => {
     sendPushToUser(
-      senderId,
+      otherId,
       {
         title: "Private Message Reply",
         body: `${username} replied to your message`,
-        data: { type: "private_message", private_message_id: messageId },
+        data: { type: "private_message", private_message_id: root.id },
       },
       "notif_messages",
     );
   });
 
-  return { message: (await buildViews([replyRow!], creatorId))[0] };
+  return { message: replyView };
 }
 
 // ─── Read state ──────────────────────────────────────────────────────────────
 
 /** Recipient opened the message. Simple unread/read — no delivery ticks. */
+/** Recipient opened the thread — every unread message addressed to them in
+ * the thread is marked read at once (email-style, no delivery ticks). */
 export async function markRead(userId: string, messageId: string): Promise<void> {
   const [msg] = await db
     .select()
@@ -686,22 +815,29 @@ export async function markRead(userId: string, messageId: string): Promise<void>
     .limit(1);
   if (!msg) throw new PrivateInboxError("Message not found", "NOT_FOUND");
   if (msg.recipient_id !== userId) return; // not theirs — silently ignore read
-  if (msg.read_at) return; // already read
+
+  const root = await rootOf(msg);
+  const { rows } = await loadThreadRows([root]);
+  const mine = rows.filter(
+    (r) => r.recipient_id === userId && !r.read_at && r.status !== "waiting",
+  );
+  if (mine.length === 0) return; // already read
 
   const now = new Date().toISOString();
-  await db
-    .update(private_messages)
-    .set({ status: msg.status === "replied" ? "replied" : "read", read_at: now, updated_at: now })
-    .where(eq(private_messages.id, messageId));
-
-  // Let the SENDER know the correspondence was opened.
-  emitEvent({
-    type: "private_message.read",
-    channel: userChannel(msg.sender_id),
-    userId: msg.sender_id,
-    resourceId: messageId,
-    payload: { message_id: messageId, read_at: now },
-  });
+  for (const row of mine) {
+    await db
+      .update(private_messages)
+      .set({ status: row.status === "replied" ? "replied" : "read", read_at: now, updated_at: now })
+      .where(eq(private_messages.id, row.id));
+    // Let the other participant know their correspondence was opened.
+    emitEvent({
+      type: "private_message.read",
+      channel: userChannel(row.sender_id),
+      userId: row.sender_id,
+      resourceId: row.id,
+      payload: { message_id: row.id, read_at: now },
+    });
+  }
 }
 
 // ─── Attachment purchase ─────────────────────────────────────────────────────
@@ -845,15 +981,19 @@ async function buildAttachmentViewsFor(rows: AttachmentRow[], viewerId: string):
 const LIST_LIMIT = 50;
 
 /**
- * Inbox (received) or Outbox (sent) ORIGINALS with their replies attached.
+ * Inbox (received), Outbox (sent) or Waiting (received, awaiting approval)
+ * ORIGINALS with their reply previews attached. Deletion flags are honored
+ * per participant: sender-deleted rows never appear for anyone, receiver-
+ * deleted rows stay out of the receiver's inbox while the sender keeps them.
  * A fixed number of indexed queries total — never N+1 per row.
  */
 export async function listMessages(
   userId: string,
-  box: "inbox" | "outbox",
+  box: "inbox" | "outbox" | "waiting",
   before?: string,
 ): Promise<PrivateMessageView[]> {
-  const column = box === "inbox" ? private_messages.recipient_id : private_messages.sender_id;
+  const isWaiting = box === "waiting";
+  const column = box === "outbox" ? private_messages.sender_id : private_messages.recipient_id;
 
   const rows = await db
     .select()
@@ -862,6 +1002,16 @@ export async function listMessages(
       and(
         eq(column, userId),
         sql`${private_messages.parent_message_id} IS NULL`,
+        // Waiting messages show only in the Waiting box (recipient side) and
+        // in the sender's Outbox as "awaiting approval" — never in inbox.
+        box === "waiting"
+          ? eq(private_messages.status, "waiting")
+          : box === "outbox"
+            ? undefined
+            : sql`${private_messages.status} != 'waiting'`,
+        box === "outbox"
+          ? sql`${private_messages.deleted_for_sender_at} IS NULL`
+          : sql`${private_messages.deleted_for_recipient_at} IS NULL`,
         before ? lt(private_messages.created_at, before) : undefined,
       ),
     )
@@ -871,7 +1021,7 @@ export async function listMessages(
   return buildViews(rows, userId);
 }
 
-/** Full thread for one participant. */
+/** Full thread for one participant (root + every reply, oldest first). */
 export async function getMessageThread(
   userId: string,
   messageId: string,
@@ -883,8 +1033,189 @@ export async function getMessageThread(
     .limit(1);
   if (!msg) return null;
   if (msg.sender_id !== userId && msg.recipient_id !== userId) return null; // IDOR guard
-  const [view] = await buildViews([msg], userId);
+  // Deleted-for-me — treat as gone even on a direct URL open.
+  if (msg.sender_id === userId && msg.deleted_for_sender_at) return null;
+  if (msg.recipient_id === userId && msg.deleted_for_recipient_at) return null;
+
+  const root = await rootOf(msg);
+  if (root.sender_id === userId && root.deleted_for_sender_at) return null;
+  if (root.recipient_id === userId && root.deleted_for_recipient_at) return null;
+
+  const [view] = await buildViews([root], userId, { withThread: true });
+  return view ?? null;
+}
+
+// ─── Waiting / restrictions ─────────────────────────────────────────────────
+
+/**
+ * Restrict a sender: their future private messages queue in the recipient's
+ * Waiting section instead of the normal inbox. Idempotent. This is distinct
+ * from blocking — a block REJECTS sends outright.
+ */
+export async function restrictSender(userId: string, restrictedId: string): Promise<void> {
+  if (userId === restrictedId) {
+    throw new PrivateInboxError("You cannot restrict yourself", "FORBIDDEN");
+  }
+  const [existing] = await db
+    .select({ id: dm_restrictions.id })
+    .from(dm_restrictions)
+    .where(and(eq(dm_restrictions.user_id, userId), eq(dm_restrictions.restricted_id, restrictedId)))
+    .limit(1);
+  if (existing) return; // already restricted
+  await db.insert(dm_restrictions).values({
+    id: generateId(),
+    user_id: userId,
+    restricted_id: restrictedId,
+  });
+}
+
+/**
+ * Allow a sender again: the restriction is lifted AND every message still
+ * waiting from them is approved into the normal inbox. Returns how many
+ * messages were approved.
+ */
+export async function allowSender(
+  userId: string,
+  restrictedId: string,
+): Promise<{ approved: number }> {
+  await db
+    .delete(dm_restrictions)
+    .where(and(eq(dm_restrictions.user_id, userId), eq(dm_restrictions.restricted_id, restrictedId)));
+
+  const waiting = await db
+    .select()
+    .from(private_messages)
+    .where(
+      and(
+        eq(private_messages.recipient_id, userId),
+        eq(private_messages.sender_id, restrictedId),
+        eq(private_messages.status, "waiting"),
+      ),
+    );
+  if (waiting.length > 0) {
+    const now = new Date().toISOString();
+    await db
+      .update(private_messages)
+      .set({ status: "sent", updated_at: now })
+      .where(inArray(private_messages.id, waiting.map((w) => w.id)));
+    for (const w of waiting) {
+      emitEvent({
+        type: "private_message.approved",
+        channel: userChannel(w.sender_id),
+        userId: w.sender_id,
+        resourceId: w.id,
+        payload: { message_id: w.id, status: "sent" },
+      });
+    }
+  }
+  return { approved: waiting.length };
+}
+
+/**
+ * Approve ONE waiting message into the recipient's normal inbox. The
+ * sender restriction (if any) stays — the recipient can still keep future
+ * messages queued. Only the recipient may approve.
+ */
+export async function approveMessage(
+  userId: string,
+  messageId: string,
+): Promise<PrivateMessageView> {
+  const [msg] = await db
+    .select()
+    .from(private_messages)
+    .where(eq(private_messages.id, messageId))
+    .limit(1);
+  if (!msg) throw new PrivateInboxError("Message not found", "NOT_FOUND");
+  if (msg.recipient_id !== userId) {
+    throw new PrivateInboxError("Only the recipient can approve this message", "FORBIDDEN");
+  }
+  if (msg.status !== "waiting") {
+    const [view] = await buildViews([msg], userId);
+    return view; // already approved — idempotent
+  }
+
+  const now = new Date().toISOString();
+  await db
+    .update(private_messages)
+    .set({ status: "sent", updated_at: now })
+    .where(eq(private_messages.id, messageId));
+  const [fresh] = await db
+    .select()
+    .from(private_messages)
+    .where(eq(private_messages.id, messageId))
+    .limit(1);
+  const [view] = await buildViews([fresh!], userId);
+
+  emitEvent({
+    type: "private_message.approved",
+    channel: userChannel(msg.sender_id),
+    userId: msg.sender_id,
+    resourceId: messageId,
+    payload: { message_id: messageId, status: "sent" },
+  });
   return view;
+}
+
+// ─── Deletion ───────────────────────────────────────────────────────────────
+
+/**
+ * Delete a thread by ownership:
+ *  • The SENDER of the message deleting → the WHOLE thread is deleted for
+ *    BOTH participants (both flags set everywhere).
+ *  • The RECEIVER deleting → hidden only from the receiver's inbox; the
+ *    sender keeps their Outbox copy untouched.
+ */
+export async function deleteMessage(
+  userId: string,
+  messageId: string,
+): Promise<{ thread_id: string; deleted_for_both: boolean }> {
+  const [msg] = await db
+    .select()
+    .from(private_messages)
+    .where(eq(private_messages.id, messageId))
+    .limit(1);
+  if (!msg) throw new PrivateInboxError("Message not found", "NOT_FOUND");
+  if (msg.sender_id !== userId && msg.recipient_id !== userId) {
+    throw new PrivateInboxError("You are not part of this correspondence", "FORBIDDEN");
+  }
+
+  const root = await rootOf(msg);
+  const { rows } = await loadThreadRows([root]);
+  const senderInitiated = msg.sender_id === userId;
+  const now = new Date().toISOString();
+
+  await db.transaction(async (tx) => {
+    for (const row of rows) {
+      await tx
+        .update(private_messages)
+        .set(
+          senderInitiated
+            ? { deleted_for_sender_at: now, deleted_for_recipient_at: now, updated_at: now }
+            : { deleted_for_recipient_at: now, updated_at: now },
+        )
+        .where(eq(private_messages.id, row.id));
+    }
+  });
+
+  // Realtime — the other participant's boxes/threads refresh without polling.
+  const otherId = root.sender_id === userId ? root.recipient_id : root.sender_id;
+  const payload = { thread_id: root.id, deleted_for_both: senderInitiated };
+  emitEvent({
+    type: "private_message.deleted",
+    channel: userChannel(otherId),
+    userId: otherId,
+    resourceId: root.id,
+    payload,
+  });
+  emitEvent({
+    type: "private_message.deleted",
+    channel: userChannel(userId),
+    userId,
+    resourceId: root.id,
+    payload,
+  });
+
+  return { thread_id: root.id, deleted_for_both: senderInitiated };
 }
 
 async function getBalance(userId: string): Promise<number> {

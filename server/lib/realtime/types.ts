@@ -29,6 +29,8 @@ export const REALTIME_EVENT_TYPES = [
   "private_message.read",
   "private_message.reply_created",
   "private_message.updated",
+  "private_message.approved",
+  "private_message.deleted",
   "private_message.attachment_purchased",
   "private_inbox.settings_updated",
   "notification.created",
