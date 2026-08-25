@@ -9,6 +9,8 @@ import { eq, and } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { devices, users, subscriptions, notifications, user_settings } from "@/lib/db/schema";
 import { generateId } from "@/lib/auth/codes";
+import { emitEvent } from "@/lib/realtime/emit";
+import { userChannel } from "@/lib/realtime/types";
 
 const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
 
@@ -119,13 +121,23 @@ export async function createNotification(
     if (category && !(await categoryEnabled(userId, category))) return;
     const notificationId = generateId();
     const createdAt = new Date().toISOString();
-    await db.insert(notifications).values({
+    const row = {
       id: notificationId,
       user_id: userId,
       created_at: createdAt,
       ...values,
-    });
+    };
+    await db.insert(notifications).values(row);
 
+    // Realtime: the recipient's notification feed/badge updates instantly
+    // while the app is connected. Durable record above remains authoritative.
+    emitEvent({
+      type: "notification.created",
+      channel: userChannel(userId),
+      userId,
+      resourceId: notificationId,
+      payload: { notification: { ...row, is_read: false } },
+    });
   } catch {
     // Notification writes are best-effort — never break the API response.
   }

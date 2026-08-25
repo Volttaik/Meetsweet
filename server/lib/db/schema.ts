@@ -712,6 +712,12 @@ export const creator_settings = sqliteTable("creator_settings", {
   subscription_plus_price: real("subscription_plus_price"),
   allow_dms: integer("allow_dms", { mode: "boolean" }).notNull().default(true),
   allow_comments: integer("allow_comments", { mode: "boolean" }).notNull().default(true),
+  // ── Private Inbox (creator monetization) ─────────────────────────────────
+  // When enabled, other users can pay private_message_price to send this
+  // creator one private message. Server-authoritative — the client never sets
+  // the price it pays.
+  private_inbox_enabled: integer("private_inbox_enabled", { mode: "boolean" }).notNull().default(true),
+  private_message_price: real("private_message_price").notNull().default(100),
   // who_can_message: 'everyone' | 'subscribers' | 'none'
   // - 'everyone': Anyone can message
   // - 'subscribers': Only subscribers can message
@@ -724,5 +730,93 @@ export const creator_settings = sqliteTable("creator_settings", {
   created_at: createdAt(),
   updated_at: updatedAt(),
 });
+
+// ─── Private Inbox ─────────────────────────────────────────────────────────
+
+/**
+ * Email-style paid correspondence — NOT a chat room. One row is either the
+ * original paid message a fan sent to a creator, or the creator's single
+ * reply (parent_message_id points at the original). Threading is exactly
+ * one level deep: original → reply.
+ *
+ * Idempotency: (sender_id, idempotency_key) is unique so a retried submit
+ * can never double-charge the wallet or duplicate a message.
+ */
+export const private_messages = sqliteTable(
+  "private_messages",
+  {
+    id: id(),
+    sender_id: text("sender_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    recipient_id: text("recipient_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    parent_message_id: text("parent_message_id"),
+    body: text("body").notNull(),
+    // What the sender actually paid to deliver THIS message (0 for replies).
+    price_paid: real("price_paid").notNull().default(0),
+    // sent → read → replied (recipient side). No delivery ticks.
+    status: text("status", { enum: ["sent", "read", "replied"] }).notNull().default("sent"),
+    idempotency_key: text("idempotency_key").notNull(),
+    read_at: text("read_at"),
+    replied_at: text("replied_at"),
+    created_at: createdAt(),
+    updated_at: updatedAt(),
+  },
+  (table) => [
+    uniqueIndex("private_messages_idempotency_idx").on(table.sender_id, table.idempotency_key),
+    uniqueIndex("private_messages_parent_idx").on(table.parent_message_id).where(sql`${table.parent_message_id} IS NOT NULL`),
+    index("private_messages_recipient_idx").on(table.recipient_id, table.created_at),
+    index("private_messages_sender_idx").on(table.sender_id, table.created_at),
+  ],
+);
+
+/**
+ * Media attached to a private message. Media bytes live in R2 via the
+ * standard upload pipeline; only metadata references are stored here.
+ * A reply attachment with price > 0 stays LOCKED until the original sender
+ * buys it — purchase state lives on this row so a second payment attempt
+ * can never succeed after the first.
+ */
+export const private_message_attachments = sqliteTable(
+  "private_message_attachments",
+  {
+    id: id(),
+    message_id: text("message_id").notNull().references(() => private_messages.id, { onDelete: "cascade" }),
+    media_id: text("media_id").notNull().references(() => media.id, { onDelete: "cascade" }),
+    media_type: text("media_type", { enum: ["image", "video", "file"] }).notNull().default("image"),
+    price: real("price").notNull().default(0),
+    purchased_by: text("purchased_by").references(() => users.id, { onDelete: "set null" }),
+    purchase_transaction_id: text("purchase_transaction_id"),
+    purchased_at: text("purchased_at"),
+    created_at: createdAt(),
+  },
+  (table) => [
+    index("private_message_attachments_message_idx").on(table.message_id),
+    uniqueIndex("private_message_attachments_purchase_tx_idx")
+      .on(table.purchase_transaction_id)
+      .where(sql`${table.purchase_transaction_id} IS NOT NULL`),
+  ],
+);
+
+// ─── Realtime outbox ────────────────────────────────────────────────────────
+
+/**
+ * Durable realtime event log. The WebSocket layer only NOTIFIES clients;
+ * this table is what makes reconnects lossless: every durable event gets a
+ * monotonic seq and a client that reconnects replays everything since its
+ * last seen seq (`sync`). Self-initializes on first use.
+ */
+export const realtime_events = sqliteTable(
+  "realtime_events",
+  {
+    seq: integer("seq").primaryKey({ autoIncrement: true }),
+    id: text("id").notNull(),
+    type: text("type").notNull(),
+    channel: text("channel").notNull(),
+    user_id: text("user_id"),
+    resource_id: text("resource_id"),
+    payload: text("payload").notNull(),
+    created_at: createdAt(),
+  },
+  (table) => [index("realtime_events_channel_seq_idx").on(table.channel, table.seq)],
+);
 
 

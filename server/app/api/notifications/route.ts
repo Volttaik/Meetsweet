@@ -88,8 +88,8 @@ export async function GET(req: NextRequest) {
           : n.entity_type === "comment" ? "post" : null) as string | null,
         entity_type: n.entity_type ?? null,
         entity_id: n.entity_id ?? null,
-        // Chat rooms: the mobile app routes message notifications via this id.
-        chat_room_id: n.entity_type === "chat_room" ? n.entity_id : null,
+        // Private Inbox: the mobile app routes these to the message thread.
+        private_message_id: n.entity_type === "private_message" ? n.entity_id : null,
         // Convenience aliases for each content type
         post_id: n.entity_type === "post" ? n.entity_id : null,
         video_id: n.entity_type === "video" ? n.entity_id : null,

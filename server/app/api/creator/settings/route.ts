@@ -2,16 +2,21 @@ import { NextRequest } from "next/server";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { creator_settings, profiles } from "@/lib/db/schema";
+import { creator_settings, profiles, users } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok } from "@/lib/api/response";
 import { generateId } from "@/lib/auth/codes";
 import { DEFAULT_SUBSCRIPTION_PRICE } from "@/lib/services/pricing";
+import { emitEvent } from "@/lib/realtime/emit";
+import { userChannel } from "@/lib/realtime/types";
 
 const patchSchema = z.object({
   subscription_price: z.number().finite().min(0).optional(),
   subscription_plus_price: z.number().finite().min(0).nullable().optional(),
+  // ── Private Inbox ──────────────────────────────────────────────────────
+  private_inbox_enabled: z.boolean().optional(),
+  private_message_price: z.number().finite().min(1).max(1_000_000).optional(),
   allow_dms: z.boolean().optional(),
   allow_comments: z.boolean().optional(),
   // Accept both field names from mobile
@@ -36,6 +41,11 @@ function buildSettingsResponse(
     welcome_message: settings.welcome_message,
     verification_status: settings.verification_status,
     is_verified_creator: isVerifiedCreator,
+    // Private Inbox (creator monetization controls)
+    private_inbox_enabled: settings.private_inbox_enabled,
+    privateInboxEnabled: settings.private_inbox_enabled,
+    private_message_price: settings.private_message_price,
+    privateMessagePrice: settings.private_message_price,
   };
 }
 
@@ -51,6 +61,8 @@ async function getVerifiedStatus(userId: string): Promise<boolean> {
 export async function GET(req: NextRequest) {
   const auth = await requireAuth(req);
   if ("response" in auth) return auth.response;
+  const [account] = await db.select({ is_creator: users.is_creator, role: users.role }).from(users).where(eq(users.id, auth.user.userId)).limit(1);
+  if (!account?.is_creator || account.role !== "creator") return new Response(JSON.stringify({ error: "Creator access required", code: "FORBIDDEN" }), { status: 403, headers: { "Content-Type": "application/json" } });
 
   let [settings] = await db
     .select()
@@ -77,6 +89,8 @@ export async function GET(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   const auth = await requireAuth(req);
   if ("response" in auth) return auth.response;
+  const [account] = await db.select({ is_creator: users.is_creator, role: users.role }).from(users).where(eq(users.id, auth.user.userId)).limit(1);
+  if (!account?.is_creator || account.role !== "creator") return new Response(JSON.stringify({ error: "Creator access required", code: "FORBIDDEN" }), { status: 403, headers: { "Content-Type": "application/json" } });
 
   const parsed = await parseBody(req, patchSchema);
   if (!parsed.success) return parsed.response;
@@ -108,5 +122,22 @@ export async function PATCH(req: NextRequest) {
 
   const [settings] = await db.select().from(creator_settings).where(eq(creator_settings.user_id, auth.user.userId)).limit(1);
   const isVerified = await getVerifiedStatus(auth.user.userId);
+
+  // Live pricing updates propagate to fans viewing the creator's profile.
+  const inboxFieldsChanged =
+    "private_inbox_enabled" in updates || "private_message_price" in updates;
+  if (inboxFieldsChanged) {
+    emitEvent({
+      type: "private_inbox.settings_updated",
+      channel: userChannel(auth.user.userId),
+      userId: auth.user.userId,
+      resourceId: auth.user.userId,
+      payload: {
+        private_inbox_enabled: settings?.private_inbox_enabled ?? true,
+        private_message_price: settings?.private_message_price ?? 100,
+      },
+    });
+  }
+
   return ok(buildSettingsResponse(settings!, isVerified));
 }

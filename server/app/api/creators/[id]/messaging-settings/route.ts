@@ -1,87 +1,77 @@
 import { NextRequest } from "next/server";
 import { eq, and } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { creator_settings, subscriptions, user_settings, users } from "@/lib/db/schema";
+import { blocked_users, creator_settings, subscriptions, users } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
 import { ok } from "@/lib/api/response";
 
 /**
  * GET /api/creators/:id/messaging-settings
  *
- * Returns the creator's messaging policy PLUS the requesting user's
- * subscription state, so the mobile client can decide whether the current user
- * may open a chat room. Mirrors the /subscriptions/check/:creatorId contract.
+ * Returns the creator's PRIVATE INBOX pricing (server-authoritative — the
+ * client displays this price but never dictates it) plus just enough context
+ * for the Compose screen: whether the inbox is open to this viewer and what
+ * a message will cost.
  */
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = await requireAuth(_req);
+  const auth = await requireAuth(req);
   if ("response" in auth) return auth.response;
 
   const { id } = await params;
+  const viewerId = auth.user.userId;
 
   const [creator] = await db
-    .select({ id: users.id, is_creator: users.is_creator })
+    .select({ id: users.id, is_creator: users.is_creator, role: users.role })
     .from(users)
     .where(eq(users.id, id))
     .limit(1);
+  if (!creator) return ok({ enabled: false, can_message: false, price: 0 });
 
   const [settings] = await db
     .select({
+      private_inbox_enabled: creator_settings.private_inbox_enabled,
+      private_message_price: creator_settings.private_message_price,
       who_can_message: creator_settings.who_can_message,
-      subscription_price: creator_settings.subscription_price,
-      subscription_plus_price: creator_settings.subscription_plus_price,
     })
     .from(creator_settings)
     .where(eq(creator_settings.user_id, id))
     .limit(1);
 
-  // Default: everyone can message non-creators or creators without settings.
-  const who_can_message = creator?.is_creator
-    ? (settings?.who_can_message ?? "everyone")
-    : "everyone";
+  const enabled = Boolean(creator.is_creator) && creator.role === "creator" && (settings?.private_inbox_enabled ?? true);
 
-  // Current user's subscription state for this creator.
   const [sub] = await db
     .select({ id: subscriptions.id })
     .from(subscriptions)
     .where(
       and(
-        eq(subscriptions.subscriber_id, auth.user.userId),
+        eq(subscriptions.subscriber_id, viewerId),
         eq(subscriptions.creator_id, id),
         eq(subscriptions.status, "active"),
       ),
     )
     .limit(1);
-  const subscribed = Boolean(sub);
 
-  // The recipient's own privacy policy (Settings → Privacy → Who Can Message
-  // Me) is enforced here too, mirroring messagingAllowedError() so the client
-  // pre-check and the server gate always agree.
-  const [privacy] = await db
-    .select({ allow_dms: user_settings.allow_dms, message_perm: user_settings.message_perm })
-    .from(user_settings)
-    .where(eq(user_settings.user_id, id))
+  // Viewer-side block? A creator who blocked the viewer must not be messaged.
+  const [blocked] = await db
+    .select({ id: blocked_users.id })
+    .from(blocked_users)
+    .where(and(eq(blocked_users.blocker_id, id), eq(blocked_users.blocked_id, viewerId)))
     .limit(1);
-  let privacy_allows = true;
-  if (privacy) {
-    if (privacy.allow_dms === false || privacy.message_perm === "nobody") privacy_allows = false;
-    else if (privacy.message_perm === "subscribers") privacy_allows = subscribed;
-  }
-
-  const creator_allows =
-    who_can_message === "everyone" ||
-    (who_can_message === "subscribers" && subscribed);
-
-  const can_message = creator_allows && privacy_allows;
 
   return ok({
-    who_can_message,
-    whoCanMessage: who_can_message,
-    subscribed,
-    can_message,
-    subscription_price: settings?.subscription_price ?? 0,
-    subscription_plus_price: settings?.subscription_plus_price ?? null,
+    enabled,
+    price: settings?.private_message_price ?? 100,
+    subscribed: Boolean(sub),
+    blocked: Boolean(blocked),
+    is_self: viewerId === id,
+    can_message: enabled && !blocked && viewerId !== id && (settings?.who_can_message !== "none") && (settings?.who_can_message !== "subscribers" || Boolean(sub)),
+    // Legacy aliases kept so older clients fail soft instead of crashing.
+    who_can_message: settings?.who_can_message ?? "everyone",
+    whoCanMessage: settings?.who_can_message ?? "everyone",
+    subscription_price: 0,
+    subscription_plus_price: null,
   });
 }
