@@ -297,11 +297,15 @@ export async function GET(req: NextRequest) {
     })
     .from(users)
     .leftJoin(profiles, eq(profiles.user_id, users.id))
+    .leftJoin(user_settings, eq(user_settings.user_id, users.id))
     .where(
       and(
         eq(users.is_creator, true),
         eq(users.is_active, true),
         isNull(users.deleted_at),
+        // Private accounts are not discoverable — reachable only via a direct
+        // profile link, never surfaced in Explore.
+        or(isNull(user_settings.private_account), eq(user_settings.private_account, false)),
         ...(hiddenCreatorIds.length > 0 ? [notInArray(users.id, hiddenCreatorIds)] : []),
       ),
     )

@@ -105,6 +105,8 @@ export const user_settings = sqliteTable("user_settings", {
   allow_dms: integer("allow_dms", { mode: "boolean" }).default(true),
   allow_mentions: integer("allow_mentions", { mode: "boolean" }).default(true),
   allow_tags: integer("allow_tags", { mode: "boolean" }).default(true),
+  // Comments OFF turns off commenting on this user's posts entirely.
+  allow_comments: integer("allow_comments", { mode: "boolean" }).default(true),
   profile_visibility: text("profile_visibility").default("everyone"),
   message_perm: text("message_perm").default("everyone"),
   search_visible: integer("search_visible", { mode: "boolean" }).default(true),

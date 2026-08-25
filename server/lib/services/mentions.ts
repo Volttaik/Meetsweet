@@ -78,13 +78,21 @@ export async function notifyMentionedUsers(input: {
     const targetIds = rows.map((r) => r.id);
     const actorName = (await getActorUsername(input.actorId)).replace(/^@/, "");
 
-    // Privacy gate: allow_mentions OFF on the TAGGED user blocks the tag.
+    // Privacy gate: a tag is blocked when the TAGGED user turned off either
+    // "Allow Mentions" or "Allow Tags" — both must be enabled to be taggable.
     const settingsRows = await db
-      .select({ user_id: user_settings.user_id, allow_mentions: user_settings.allow_mentions })
+      .select({
+        user_id: user_settings.user_id,
+        allow_mentions: user_settings.allow_mentions,
+        allow_tags: user_settings.allow_tags,
+      })
       .from(user_settings)
       .where(inArray(user_settings.user_id, targetIds));
-    const allowMentions = new Map(
-      settingsRows.map((s) => [s.user_id, s.allow_mentions !== false]),
+    const allowTag = new Map(
+      settingsRows.map((s) => [
+        s.user_id,
+        s.allow_mentions !== false && s.allow_tags !== false,
+      ]),
     );
 
     const title = (input.entityTitle ?? "").trim();
@@ -98,7 +106,7 @@ export async function notifyMentionedUsers(input: {
       rows
         // Never notify the author for tagging themselves.
         .filter((r) => r.id !== input.actorId)
-        .filter((r) => allowMentions.get(r.id) ?? true)
+        .filter((r) => allowTag.get(r.id) ?? true)
         .map(async (r) => {
           // In-app row — gated by the tagged user's notif_mentions preference
           // (createNotification checks the category before writing).

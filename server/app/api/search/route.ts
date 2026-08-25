@@ -104,6 +104,9 @@ export async function GET(req: NextRequest) {
           // Privacy: accounts that turned off Search Visibility never appear
           // in search — enforced server-side, not filtered on the client.
           or(isNull(user_settings.search_visible), eq(user_settings.search_visible, true)),
+          // Private accounts are not discoverable — they can only be reached
+          // via a direct profile link.
+          or(isNull(user_settings.private_account), eq(user_settings.private_account, false)),
           ...hiddenCond,
         ),
       )
