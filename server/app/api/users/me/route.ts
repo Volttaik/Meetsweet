@@ -9,7 +9,6 @@ import {
   posts,
   albums,
   comments,
-  comment_replies,
   comment_likes,
   subscriptions,
   refresh_tokens,
@@ -274,12 +273,11 @@ export async function DELETE(req: NextRequest) {
     await tx.update(albums)
       .set({ deleted_at: now, updated_at: now })
       .where(and(eq(albums.creator_id, uid), isNull(albums.deleted_at)));
+    // Covers top-level comments AND every nested reply (replies live in the
+    // same unified comments table with a parent_id).
     await tx.update(comments)
       .set({ deleted_at: now, updated_at: now })
       .where(and(eq(comments.author_id, uid), isNull(comments.deleted_at)));
-    await tx.update(comment_replies)
-      .set({ deleted_at: now, updated_at: now })
-      .where(and(eq(comment_replies.author_id, uid), isNull(comment_replies.deleted_at)));
 
     // ── Social graph & preferences ───────────────────────────────────────
     await tx.delete(follows).where(or(eq(follows.follower_id, uid), eq(follows.following_id, uid)));

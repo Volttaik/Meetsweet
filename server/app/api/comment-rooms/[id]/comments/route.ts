@@ -1,13 +1,13 @@
 import { NextRequest } from "next/server";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import {
-  comment_replies,
   comments,
   posts,
   profiles,
   users,
+  user_settings,
 } from "@/lib/db/schema";
 import { requireAuth, optionalAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
@@ -52,6 +52,17 @@ export async function POST(
     .limit(1);
   if (!post) return err("Post not found", 404);
 
+  // "Comments OFF" — the post owner disabled commenting on all their posts.
+  // Enforced at creation so the toggle is authoritative, never a client filter.
+  const [ownerSettings] = await db
+    .select({ allow_comments: user_settings.allow_comments })
+    .from(user_settings)
+    .where(eq(user_settings.user_id, post.creator_id))
+    .limit(1);
+  if (ownerSettings?.allow_comments === false) {
+    return err("Comments are disabled for this post", 403, "COMMENTS_DISABLED");
+  }
+
   const room = await ensureCommentRoom(id);
   if (room && !room.comments_enabled) {
     return err("Comments are disabled for this post", 403, "COMMENTS_DISABLED");
@@ -69,19 +80,23 @@ export async function POST(
 
   const parentId = parsed.data.parent_id ?? parsed.data.parentId ?? null;
 
-  // Threaded reply
+  // Threaded reply — the parent may be a top-level comment OR any deeper
+  // reply in the same room. The new row is a comment whose parent_id is the
+  // exact target; no depth limit is imposed, and a reply can never become a
+  // top-level comment or a child of a later sibling.
   if (parentId) {
     const [parent] = await db
-      .select({ id: comments.id })
+      .select({ id: comments.id, post_id: comments.post_id })
       .from(comments)
-      .where(eq(comments.id, parentId))
+      .where(and(eq(comments.id, parentId), isNull(comments.deleted_at)))
       .limit(1);
-    if (!parent) return err("Parent comment not found", 404);
+    if (!parent || parent.post_id !== id) return err("Parent comment not found", 404);
 
     const replyId = generateId();
-    await db.insert(comment_replies).values({
+    await db.insert(comments).values({
       id: replyId,
-      comment_id: parentId,
+      post_id: id,
+      parent_id: parentId,
       author_id: auth.user.userId,
       body: parsed.data.body,
     });
@@ -89,21 +104,23 @@ export async function POST(
 
     const [row] = await db
       .select({
-        id: comment_replies.id,
-        body: comment_replies.body,
-        like_count: comment_replies.like_count,
-        created_at: comment_replies.created_at,
-        updated_at: comment_replies.updated_at,
+        id: comments.id,
+        body: comments.body,
+        is_pinned: comments.is_pinned,
+        like_count: comments.like_count,
+        reply_count: comments.reply_count,
+        created_at: comments.created_at,
+        updated_at: comments.updated_at,
         author_id: users.id,
         author_name: users.full_name,
         author_display_name: profiles.display_name,
         author_username: users.username,
         author_avatar: profiles.avatar_url,
       })
-      .from(comment_replies)
-      .innerJoin(users, eq(users.id, comment_replies.author_id))
-      .leftJoin(profiles, eq(profiles.user_id, comment_replies.author_id))
-      .where(eq(comment_replies.id, replyId))
+      .from(comments)
+      .innerJoin(users, eq(users.id, comments.author_id))
+      .leftJoin(profiles, eq(profiles.user_id, comments.author_id))
+      .where(eq(comments.id, replyId))
       .limit(1);
 
     // @username tags inside a reply notify the tagged users (gated server-side

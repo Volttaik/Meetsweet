@@ -6,6 +6,7 @@ import {
   sqliteTable,
   text,
   uniqueIndex,
+  type AnySQLiteColumn,
 } from "drizzle-orm/sqlite-core";
 import { DEFAULT_SUBSCRIPTION_PRICE } from "../services/pricing";
 
@@ -537,18 +538,34 @@ export const recent_searches = sqliteTable("recent_searches", {
 
 // ─── Comments ─────────────────────────────────────────────────────────────
 
-export const comments = sqliteTable("comments", {
-  id: id(),
-  post_id: text("post_id").notNull().references(() => posts.id, { onDelete: "cascade" }),
-  author_id: text("author_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  body: text("body").notNull(),
-  is_pinned: integer("is_pinned", { mode: "boolean" }).notNull().default(false),
-  like_count: integer("like_count").notNull().default(0),
-  reply_count: integer("reply_count").notNull().default(0),
-  created_at: createdAt(),
-  updated_at: updatedAt(),
-  deleted_at: text("deleted_at"),
-});
+// One unified comments table — top-level comments AND replies of every depth
+// live here. `parent_id` self-references `comments.id`: NULL means a top-level
+// comment, otherwise the row is a reply whose direct parent is that comment
+// (or reply). No depth limit is imposed anywhere — the tree is bounded only by
+// the recursive traversal used to read a thread.
+export const comments = sqliteTable(
+  "comments",
+  {
+    id: id(),
+    post_id: text("post_id").notNull().references(() => posts.id, { onDelete: "cascade" }),
+    author_id: text("author_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    // Direct parent comment/reply id — NULL for top-level comments. The
+    // AnySQLiteColumn annotation is required for the self-referential FK.
+    parent_id: text("parent_id").references((): AnySQLiteColumn => comments.id, { onDelete: "cascade" }),
+    body: text("body").notNull(),
+    is_pinned: integer("is_pinned", { mode: "boolean" }).notNull().default(false),
+    like_count: integer("like_count").notNull().default(0),
+    // Number of DIRECT replies (children), maintained on every reply insert.
+    reply_count: integer("reply_count").notNull().default(0),
+    created_at: createdAt(),
+    updated_at: updatedAt(),
+    deleted_at: text("deleted_at"),
+  },
+  (table) => [
+    index("comments_post_idx").on(table.post_id),
+    index("comments_parent_idx").on(table.parent_id),
+  ],
+);
 
 export const comment_replies = sqliteTable("comment_replies", {
   id: id(),

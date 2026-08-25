@@ -46,7 +46,7 @@ export async function DELETE(
   const { id, commentId } = await params;
 
   const [comment] = await db
-    .select({ id: comments.id, author_id: comments.author_id })
+    .select({ id: comments.id, author_id: comments.author_id, parent_id: comments.parent_id })
     .from(comments)
     .where(and(eq(comments.id, commentId), eq(comments.post_id, id), isNull(comments.deleted_at)))
     .limit(1);
@@ -55,7 +55,16 @@ export async function DELETE(
   if (comment.author_id !== auth.user.userId && auth.user.role !== "admin") return err("Forbidden", 403);
 
   await db.update(comments).set({ deleted_at: new Date().toISOString() }).where(eq(comments.id, commentId));
-  await db.update(posts).set({ comment_count: sql`MAX(0, ${posts.comment_count} - 1)` }).where(eq(posts.id, id));
+  if (comment.parent_id) {
+    // A reply removal shrinks its parent's reply count, not the post's
+    // top-level comment count (which only tracks top-level comments).
+    await db
+      .update(comments)
+      .set({ reply_count: sql`MAX(0, ${comments.reply_count} - 1)` })
+      .where(eq(comments.id, comment.parent_id));
+  } else {
+    await db.update(posts).set({ comment_count: sql`MAX(0, ${posts.comment_count} - 1)` }).where(eq(posts.id, id));
+  }
 
   return ok({ deleted: true });
 }
