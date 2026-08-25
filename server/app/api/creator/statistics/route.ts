@@ -23,9 +23,17 @@ export async function GET(req: NextRequest) {
   const creatorId = auth.user.userId;
   const period = req.nextUrl.searchParams.get("period");
 
-  const EARN_TYPES: Array<"subscription_earn" | "album_unlock_earn"> = [
+  // All earning-side transaction types credited into the creator's wallet by
+  // recordCreatorEarning(): subscriptions, album unlocks, and paid private
+  // messages (+ priced reply attachments). Private-message revenue must be
+  // counted here or the dashboard under-reports total earnings.
+  const EARN_TYPES: Array<
+    "subscription_earn" | "album_unlock_earn" | "private_message_earn" | "private_message_attachment_earn"
+  > = [
     "subscription_earn",
     "album_unlock_earn",
+    "private_message_earn",
+    "private_message_attachment_earn",
   ];
 
   // ── Active subscribers (status = 'active') ──────────────────────────────
@@ -62,6 +70,36 @@ export async function GET(req: NextRequest) {
         eq(transactions.status, "success"),
       ),
     );
+
+  // ── Per-source earnings (Subscriptions / Private Messages / Albums) ──────
+  // The same success-filtered earning transactions, grouped by type so the
+  // dashboard can show exactly where the creator's money came from. Private
+  // messages combine the base message charge and priced reply attachments.
+  const earnTypeRows = await db
+    .select({
+      type: transactions.type,
+      amount: sql<number>`COALESCE(SUM(${transactions.amount}), 0)`,
+    })
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.user_id, creatorId),
+        inArray(transactions.type, EARN_TYPES),
+        eq(transactions.status, "success"),
+      ),
+    )
+    .groupBy(transactions.type);
+  const earnByType = new Map<string, number>(
+    earnTypeRows.map((r) => [r.type, Number(r.amount ?? 0)]),
+  );
+  const earnings = {
+    total: Number(revenueRow?.total ?? 0),
+    subscriptions: earnByType.get("subscription_earn") ?? 0,
+    private_messages:
+      (earnByType.get("private_message_earn") ?? 0) +
+      (earnByType.get("private_message_attachment_earn") ?? 0),
+    albums: earnByType.get("album_unlock_earn") ?? 0,
+  };
 
   // ── Views + likes per publish month ─────────────────────────────────────
   const postPeriodRows = await db
@@ -163,6 +201,8 @@ export async function GET(req: NextRequest) {
     period_stats,
     active_subscribers: activeSubRow?.count ?? 0,
     total_posts: postCountRow?.count ?? 0,
-    total_revenue: Number(revenueRow?.total ?? 0),
+    total_revenue: earnings.total,
+    // Authoritative per-source breakdown — the dashboard renders this directly.
+    earnings,
   });
 }

@@ -67,7 +67,9 @@ export async function GET(
     subscribed: Boolean(sub),
     blocked: Boolean(blocked),
     is_self: viewerId === id,
-    can_message: enabled && !blocked && viewerId !== id && (settings?.who_can_message !== "none") && (settings?.who_can_message !== "subscribers" || Boolean(sub)),
+    // Subscriber-only access: an active subscription is always required to
+    // send (the legacy "everyone" mode is treated as subscriber-only too).
+    can_message: enabled && !blocked && viewerId !== id && (settings?.who_can_message !== "none") && Boolean(sub),
     // Legacy aliases kept so older clients fail soft instead of crashing.
     who_can_message: settings?.who_can_message ?? "everyone",
     whoCanMessage: settings?.who_can_message ?? "everyone",

@@ -294,19 +294,23 @@ async function assertCanSendTo(senderId: string, creatorId: string, price: numbe
   if (settings.whoCanMessage === "none") {
     throw new PrivateInboxError("This creator is not accepting private messages", "INBOX_CLOSED");
   }
-  if (settings.whoCanMessage === "subscribers") {
-    const [subscription] = await db
-      .select({ id: subscriptions.id })
-      .from(subscriptions)
-      .where(and(
-        eq(subscriptions.subscriber_id, senderId),
-        eq(subscriptions.creator_id, creatorId),
-        eq(subscriptions.status, "active"),
-      ))
-      .limit(1);
-    if (!subscription) {
-      throw new PrivateInboxError("You must be subscribed to message this creator", "SUBSCRIPTION_REQUIRED");
-    }
+  // CRITICAL PRODUCT RULE — subscriber-only access. Sending a private message
+  // ALWAYS requires an active subscription to the recipient creator. This is
+  // enforced for every inbox (the legacy "everyone" mode is treated as
+  // subscriber-only too), so a non-subscriber is rejected server-side no
+  // matter what the client displays. Expired/cancelled subscriptions fail
+  // here because they no longer match status = "active".
+  const [subscription] = await db
+    .select({ id: subscriptions.id })
+    .from(subscriptions)
+    .where(and(
+      eq(subscriptions.subscriber_id, senderId),
+      eq(subscriptions.creator_id, creatorId),
+      eq(subscriptions.status, "active"),
+    ))
+    .limit(1);
+  if (!subscription) {
+    throw new PrivateInboxError("You must be subscribed to message this creator", "SUBSCRIPTION_REQUIRED");
   }
   void price;
 }

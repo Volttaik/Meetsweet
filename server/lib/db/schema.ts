@@ -719,10 +719,11 @@ export const creator_settings = sqliteTable("creator_settings", {
   private_inbox_enabled: integer("private_inbox_enabled", { mode: "boolean" }).notNull().default(true),
   private_message_price: real("private_message_price").notNull().default(100),
   // who_can_message: 'everyone' | 'subscribers' | 'none'
-  // - 'everyone': Anyone can message
-  // - 'subscribers': Only subscribers can message
-  // - 'none': No one can message
-  who_can_message: text("who_can_message", { enum: ["everyone", "subscribers", "none"] }).notNull().default("everyone"),
+  // - 'everyone': Legacy alias — treated as subscriber-only (the product rule
+  //   requires an active subscription to send, enforced in the service).
+  // - 'subscribers': Only subscribers can message (default).
+  // - 'none': No one can message.
+  who_can_message: text("who_can_message", { enum: ["everyone", "subscribers", "none"] }).notNull().default("subscribers"),
   welcome_message: text("welcome_message"),
   verification_status: text("verification_status").notNull().default("none"),
   // Dedicated column for withdrawal bank details (JSON: { bankName, accountNumber, accountName })
