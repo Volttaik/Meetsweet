@@ -1,19 +1,37 @@
 import type { Metadata } from "next";
 
+const SITE_URL = "https://meetsweet.space";
+
 export const metadata: Metadata = {
-  title: "MeetSweet — Connect. Create. Captivate.",
+  metadataBase: new URL(SITE_URL),
+  applicationName: "MeetSweet",
+  title: {
+    default: "MeetSweet — Connect. Create. Captivate.",
+    template: "%s | MeetSweet",
+  },
   description:
     "MeetSweet is a creator platform where you can share exclusive content, connect with fans, and build your community.",
+  themeColor: "#0C0C0F",
   openGraph: {
-    title: "MeetSweet",
+    title: "MeetSweet — Connect. Create. Captivate.",
     description: "Connect. Create. Captivate.",
     siteName: "MeetSweet",
     type: "website",
+    url: SITE_URL,
+    images: [
+      {
+        url: "/og-image.png",
+        width: 1200,
+        height: 630,
+        alt: "MeetSweet — Connect. Create. Captivate.",
+      },
+    ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "MeetSweet",
+    title: "MeetSweet — Connect. Create. Captivate.",
     description: "Connect. Create. Captivate.",
+    images: ["/og-image.png"],
   },
 };
 
@@ -51,7 +69,7 @@ export default function RootLayout({
           button { font-family: inherit; cursor: pointer; }
           a:focus, button:focus { outline: none; }
           a:focus-visible, button:focus-visible {
-            outline: 2px solid rgba(255,255,255,0.9);
+            outline: 2px solid rgba(255,20,147,0.9);
             outline-offset: 3px;
           }
           @keyframes spin { to { transform: rotate(360deg); } }

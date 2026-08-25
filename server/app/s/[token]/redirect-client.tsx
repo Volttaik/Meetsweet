@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { BRAND, GRADIENT_BUTTON } from "@/lib/frontend/brand";
 
-const ACCENT = "#C45A72";
+const ACCENT = BRAND.pink;
 const BG = "#0C0C0F";
 const SURFACE = "#161619";
 const SURFACE_2 = "#1E1E24";
@@ -192,15 +193,15 @@ const s: Record<string, React.CSSProperties> = {
     alignItems: "center",
     textAlign: "center",
     gap: 16,
-    boxShadow: "0 24px 64px rgba(0,0,0,0.4), 0 0 0 1px rgba(196,90,114,0.08)",
+    boxShadow: "0 24px 64px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,20,147,0.08)",
   },
   iconWrap: {
     width: 72,
     height: 72,
     borderRadius: 22,
     background:
-      "linear-gradient(135deg, rgba(196,90,114,0.25) 0%, rgba(196,90,114,0.08) 100%)",
-    border: "1px solid rgba(196,90,114,0.2)",
+      "linear-gradient(135deg, rgba(255,20,147,0.24) 0%, rgba(128,0,128,0.1) 100%)",
+    border: "1px solid rgba(255,20,147,0.2)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
@@ -211,7 +212,7 @@ const s: Record<string, React.CSSProperties> = {
     width: 28,
     height: 28,
     borderRadius: "50%",
-    border: `3px solid rgba(196,90,114,0.2)`,
+    border: "3px solid rgba(255,20,147,0.2)",
     borderTopColor: ACCENT,
     animation: "ms-spin 0.8s linear infinite",
   },
@@ -234,7 +235,7 @@ const s: Record<string, React.CSSProperties> = {
     fontWeight: 600,
   },
   contentTypeBadge: {
-    background: "rgba(196,90,114,0.15)",
+    background: "rgba(255,20,147,0.15)",
     color: ACCENT,
     borderRadius: 50,
     padding: "4px 14px",
@@ -259,8 +260,7 @@ const s: Record<string, React.CSSProperties> = {
   btnPrimary: {
     display: "block",
     width: "100%",
-    background: ACCENT,
-    color: "#fff",
+    ...GRADIENT_BUTTON,
     border: "none",
     borderRadius: 50,
     padding: "16px 0",

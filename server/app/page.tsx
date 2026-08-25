@@ -1,4 +1,18 @@
 import type { Metadata } from "next";
+import {
+  BG,
+  BRAND,
+  GRADIENT_BUTTON,
+  GLOW_AMBER,
+  GLOW_CARD,
+  GLOW_CENTER,
+  GLOW_TOP,
+  SURFACE,
+  SURFACE_2,
+  TEXT_2,
+  TEXT_3,
+  gradientText,
+} from "@/lib/frontend/brand";
 
 export const metadata: Metadata = {
   title: "MeetSweet — Connect. Create. Captivate.",
@@ -17,7 +31,13 @@ export default function HomePage() {
       <nav style={s.nav}>
         <div style={s.navInner}>
           <a href="/" style={s.navBrand}>
-            <span style={s.logoMark}><img src="/meetsweet-logo.png" alt="" style={s.logoImage} /></span>
+            <img
+              src="/meetsweet-logo-white.png"
+              alt="MeetSweet"
+              width={26}
+              height={26}
+              style={s.logoImage}
+            />
             <span>MeetSweet</span>
           </a>
           <a href="#download" style={s.navCta}>
@@ -115,7 +135,13 @@ export default function HomePage() {
       <footer style={s.footer}>
         <div style={s.footerInner}>
           <a href="/" style={s.footerBrand}>
-            <span style={s.logoMark}><img src="/meetsweet-logo.png" alt="" style={s.logoImage} /></span>
+            <img
+              src="/meetsweet-logo-white.png"
+              alt="MeetSweet"
+              width={22}
+              height={22}
+              style={s.footerLogo}
+            />
             <span>MeetSweet</span>
           </a>
           <span style={s.footerMuted}>
@@ -154,12 +180,6 @@ const FEATURES = [
   },
 ];
 
-const ACCENT = "#C45A72";
-const BG = "#0C0C0F";
-const SURFACE = "#161619";
-const SURFACE_2 = "#1E1E24";
-const TEXT_2 = "rgba(255,255,255,0.55)";
-const TEXT_3 = "rgba(255,255,255,0.28)";
 
 const s: Record<string, React.CSSProperties> = {
   page: {
@@ -173,8 +193,7 @@ const s: Record<string, React.CSSProperties> = {
   gradient: {
     position: "fixed",
     inset: 0,
-    background:
-      "radial-gradient(ellipse 80% 50% at 50% -10%, rgba(196,90,114,0.18) 0%, transparent 60%)",
+    background: `${GLOW_TOP}, ${GLOW_AMBER}`,
     pointerEvents: "none",
     zIndex: 0,
   },
@@ -185,7 +204,7 @@ const s: Record<string, React.CSSProperties> = {
     transform: "translate(-50%, -50%)",
     width: 800,
     height: 800,
-    background: "radial-gradient(circle, rgba(196,90,114,0.06) 0%, transparent 70%)",
+    background: GLOW_CENTER,
     pointerEvents: "none",
     zIndex: 0,
   },
@@ -216,25 +235,20 @@ const s: Record<string, React.CSSProperties> = {
     color: "#fff",
     textDecoration: "none",
   },
-  logoMark: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    background: "#fff",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden",
+  logoImage: {
+    width: 26,
+    height: 26,
+    display: "block",
     flexShrink: 0,
   },
-  logoImage: {
-    width: "100%",
-    height: "100%",
-    objectFit: "cover" as const,
+  footerLogo: {
+    width: 22,
+    height: 22,
+    display: "block",
+    flexShrink: 0,
   },
   navCta: {
-    background: ACCENT,
-    color: "#fff",
+    ...GRADIENT_BUTTON,
     border: "none",
     borderRadius: 50,
     padding: "10px 24px",
@@ -262,8 +276,8 @@ const s: Record<string, React.CSSProperties> = {
   },
   badge: {
     display: "inline-block",
-    background: "rgba(196,90,114,0.16)",
-    color: ACCENT,
+    background: "rgba(255,20,147,0.14)",
+    color: BRAND.pink,
     borderRadius: 50,
     padding: "6px 16px",
     fontSize: 12,
@@ -279,7 +293,7 @@ const s: Record<string, React.CSSProperties> = {
     lineHeight: 1.1,
     letterSpacing: "-1.5px",
   },
-  accent: { color: ACCENT },
+  accent: gradientText(),
   heroSub: {
     margin: "0 0 36px",
     fontSize: 18,
@@ -293,8 +307,7 @@ const s: Record<string, React.CSSProperties> = {
     flexWrap: "wrap" as const,
   },
   btnPrimary: {
-    background: ACCENT,
-    color: "#fff",
+    ...GRADIENT_BUTTON,
     border: "none",
     borderRadius: 50,
     padding: "16px 32px",
@@ -303,7 +316,7 @@ const s: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     textDecoration: "none",
     display: "inline-block",
-    transition: "opacity 0.2s",
+    transition: "opacity 0.2s, transform 0.15s",
   },
   btnGhost: {
     background: "rgba(255,255,255,0.08)",
@@ -332,7 +345,7 @@ const s: Record<string, React.CSSProperties> = {
     borderRadius: 36,
     border: "2px solid rgba(255,255,255,0.08)",
     overflow: "hidden",
-    boxShadow: "0 40px 80px rgba(0,0,0,0.5), 0 0 0 1px rgba(196,90,114,0.1)",
+    boxShadow: "0 40px 80px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,20,147,0.1)",
   },
   phoneSurface: {
     height: "100%",
@@ -350,7 +363,7 @@ const s: Record<string, React.CSSProperties> = {
     width: 40,
     height: 40,
     borderRadius: 20,
-    background: `linear-gradient(135deg, ${ACCENT} 0%, #8B2A47 100%)`,
+    background: "linear-gradient(135deg, #FF8C00 0%, #FF1493 45%, #800080 100%)",
   },
   phoneLine1: {
     height: 12,
@@ -367,9 +380,10 @@ const s: Record<string, React.CSSProperties> = {
   phoneMediaCard: {
     height: 140,
     borderRadius: 16,
-    background: `linear-gradient(135deg, rgba(196,90,114,0.3) 0%, rgba(139,42,71,0.2) 100%)`,
+    background:
+      "linear-gradient(135deg, rgba(255,20,147,0.28) 0%, rgba(128,0,128,0.22) 100%)",
     marginTop: 4,
-    border: "1px solid rgba(196,90,114,0.2)",
+    border: "1px solid rgba(255,20,147,0.22)",
   },
   phoneLine3: {
     height: 10,
@@ -394,7 +408,7 @@ const s: Record<string, React.CSSProperties> = {
   },
   sectionEyebrow: {
     margin: "0 0 12px",
-    color: ACCENT,
+    color: BRAND.pink,
     fontSize: 12,
     fontWeight: 600,
     letterSpacing: "0.1em",
@@ -452,7 +466,7 @@ const s: Record<string, React.CSSProperties> = {
     transform: "translate(-50%, -50%)",
     width: 500,
     height: 500,
-    background: "radial-gradient(circle, rgba(196,90,114,0.15) 0%, transparent 65%)",
+    background: GLOW_CARD,
     pointerEvents: "none",
     zIndex: 0,
   },
@@ -475,11 +489,11 @@ const s: Record<string, React.CSSProperties> = {
   helpLink: {
     display: "inline-block",
     marginTop: 16,
-    color: ACCENT,
+    color: BRAND.pink,
     fontSize: 14,
     fontWeight: 600,
     textDecoration: "none",
-    borderBottom: "1px solid rgba(196,90,114,0.35)",
+    borderBottom: "1px solid rgba(255,20,147,0.35)",
     transition: "opacity 0.2s",
   },
 

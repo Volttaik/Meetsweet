@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { GRADIENT_BUTTON } from "@/lib/frontend/brand";
 
 export default function ReferralPage({ params }: { params: Promise<{ code: string }> }) {
   const [code, setCode] = useState("");
@@ -27,7 +28,13 @@ export default function ReferralPage({ params }: { params: Promise<{ code: strin
   return (
     <main style={styles.page}>
       <div style={styles.card}>
-        <div style={styles.logo}>♥</div>
+        <img
+          src="/meetsweet-logo-white.png"
+          alt="MeetSweet"
+          width={64}
+          height={64}
+          style={styles.logo}
+        />
         <h1 style={styles.title}>{opened ? "Join MeetSweet" : "Opening MeetSweet…"}</h1>
         <p style={styles.body}>
           {code ? `You were invited with referral code ${code}.` : "Your creator invitation is ready."}
@@ -43,9 +50,9 @@ export default function ReferralPage({ params }: { params: Promise<{ code: strin
 const styles: Record<string, React.CSSProperties> = {
   page: { minHeight: "100vh", background: "#0C0C0F", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", padding: 24, fontFamily: "system-ui, sans-serif" },
   card: { maxWidth: 420, width: "100%", background: "#161619", border: "1px solid rgba(255,255,255,.08)", borderRadius: 24, padding: 32, textAlign: "center" },
-  logo: { width: 64, height: 64, borderRadius: 20, margin: "0 auto 18px", display: "grid", placeItems: "center", background: "rgba(196,90,114,.18)", color: "#C45A72", fontSize: 30 },
+  logo: { width: 64, height: 64, margin: "0 auto 18px", display: "block" },
   title: { fontSize: 24, margin: "0 0 12px" },
   body: { color: "rgba(255,255,255,.6)", lineHeight: 1.6, margin: "0 0 24px" },
-  primary: { display: "block", padding: "14px 18px", borderRadius: 999, background: "#C45A72", color: "#fff", textDecoration: "none", fontWeight: 700, marginBottom: 10 },
+  primary: { display: "block", padding: "14px 18px", borderRadius: 999, ...GRADIENT_BUTTON, textDecoration: "none", fontWeight: 700, marginBottom: 10 },
   secondary: { display: "block", padding: "14px 18px", borderRadius: 999, background: "rgba(255,255,255,.08)", color: "#fff", textDecoration: "none", fontWeight: 600 },
 };

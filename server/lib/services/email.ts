@@ -1,39 +1,49 @@
 import { Resend } from "resend";
 import { config } from "@/lib/config";
+import { MEETSWEET_EMAIL_LOGO_B64 } from "./email-logo";
 
 /**
  * MeetSweet transactional email service (Resend).
  *
- * Branding: the app's header wordmark rendered as TEXT — "Meet" in white and
- * "Sweet" in the MeetSweet rose — sitting inside a subtle gray crystal-style
- * header band. There is deliberately NO hosted logo image and NO remote asset:
- * a wordmark made of spans renders everywhere, even with images blocked.
+ * Branding: the platform gradient (amber → pink → orchid → violet, matching the
+ * mobile app's AppGradients.brand) is the visual identity. The header shows the
+ * MeetSweet logo — a gradient square + white heart — embedded as a Resend
+ * inline image via Content-ID (cid:meetsweet-logo), with the wordmark also
+ * rendered as TEXT ("Meet" white / "Sweet" hot pink) so branding survives even
+ * with images blocked.
  *
  * Layout notes:
  *  - Table-based layout with inline styles only — no JavaScript, no external
  *    CSS, no features Gmail/Outlook strip (no flexbox, no clip-path).
- *  - The crystal header uses an inline SVG data-URI gradient treatment with a
- *    solid dark-gray fallback (bgcolor + background-color) for clients that
- *    strip SVG/data-URI backgrounds — the wordmark remains readable either way.
+ *  - The header uses an inline SVG data-URI gradient treatment with a solid
+ *    deep-violet fallback (bgcolor + background-color) for clients that strip
+ *    SVG/data-URI backgrounds — the logo + wordmark remain readable either way.
+ *  - The logo is a fully opaque PNG (no alpha), so it renders correctly even in
+ *    Outlook desktop, and is sent as an inline attachment (NOT a downloadable
+ *    file) via Resend's inlineContentId mechanism.
  *  - Content sits on a clean white card with dark text for maximum
  *    readability; the decorative treatment stays in the header only.
  *  - Every event has its own template with the correct dynamic data — nothing
  *    is hard-coded into the shared shell.
  */
 
-// ─── Brand tokens ────────────────────────────────────────────────────────────
+// ─── Brand tokens (platform gradient — matches mobile constants/theme.ts) ────
 
-const ROSE = "#C45A72";
+const PINK = "#FF1493"; // gradient stop 2 — primary CTA / wordmark accent
+const ORCHID = "#B521C4"; // gradient stop 3
+const VIOLET = "#800080"; // gradient stop 5 — deep end
+const AMBER = "#FF8C00"; // gradient stop 1 — warm end
 const INK = "#1B1B24"; // primary body text
 const INK_2 = "#5C5C6B"; // secondary text
 const INK_3 = "#8E8E9C"; // tertiary / labels
 const PAGE_BG = "#EEEEF2"; // page background (light gray)
 const CARD_BG = "#FFFFFF";
 const CARD_BORDER = "#E4E4EA";
-const HEADER_BG = "#15151B"; // crystal header solid fallback
+const HEADER_BG = "#160F1E"; // deep violet-charcoal header fallback
 const FONT = "'Poppins','Helvetica Neue',Helvetica,Arial,sans-serif";
 const COMPANY = "MeetSweet Industries";
 const PRODUCT = "MeetSweet";
+const LOGO_CID = "meetsweet-logo"; // Content-ID used by both HTML <img> and attachment
 
 // ─── Provider ────────────────────────────────────────────────────────────────
 
@@ -60,35 +70,55 @@ export function emailSender(): string {
 }
 
 /**
- * The crystal header treatment: a subtle charcoal-gray gradient with soft rose
- * and violet glows, as an inline SVG data URI (no hosted asset). Clients that
- * render SVG backgrounds show the full treatment; Gmail and Outlook desktop
- * fall back to the solid HEADER_BG — the wordmark is text, so branding is
- * never lost.
+ * The header treatment: a deep violet-charcoal gradient with the platform
+ * gradient's warm (amber) and cool (violet) glows, as an inline SVG data URI
+ * (no hosted asset). Clients that render SVG backgrounds show the full
+ * treatment; Gmail and Outlook desktop fall back to the solid HEADER_BG — the
+ * logo image and wordmark are on top, so branding is never lost.
  */
 function crystalHeaderBg(): string {
   const svg = [
     `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="300" viewBox="0 0 600 300">`,
     `<defs>`,
     `<linearGradient id="g" x1="0" y1="0" x2="0" y2="1">`,
-    `<stop offset="0" stop-color="#1E1E27"/>`,
-    `<stop offset="1" stop-color="#121217"/>`,
+    `<stop offset="0" stop-color="#221832"/>`,
+    `<stop offset="1" stop-color="#120C1A"/>`,
     `</linearGradient>`,
-    `<radialGradient id="a" cx="50%" cy="0%" r="90%">`,
-    `<stop offset="0" stop-color="${ROSE}" stop-opacity="0.30"/>`,
-    `<stop offset="100%" stop-color="${ROSE}" stop-opacity="0"/>`,
+    `<radialGradient id="a" cx="96%" cy="0%" r="80%">`,
+    `<stop offset="0" stop-color="${AMBER}" stop-opacity="0.20"/>`,
+    `<stop offset="100%" stop-color="${AMBER}" stop-opacity="0"/>`,
     `</radialGradient>`,
-    `<radialGradient id="b" cx="94%" cy="100%" r="75%">`,
-    `<stop offset="0" stop-color="#7A5CC7" stop-opacity="0.24"/>`,
-    `<stop offset="100%" stop-color="#7A5CC7" stop-opacity="0"/>`,
+    `<radialGradient id="b" cx="4%" cy="100%" r="85%">`,
+    `<stop offset="0" stop-color="${VIOLET}" stop-opacity="0.38"/>`,
+    `<stop offset="100%" stop-color="${VIOLET}" stop-opacity="0"/>`,
+    `</radialGradient>`,
+    `<radialGradient id="c" cx="50%" cy="35%" r="60%">`,
+    `<stop offset="0" stop-color="${PINK}" stop-opacity="0.16"/>`,
+    `<stop offset="100%" stop-color="${PINK}" stop-opacity="0"/>`,
     `</radialGradient>`,
     `</defs>`,
     `<rect width="600" height="300" fill="url(#g)"/>`,
     `<rect width="600" height="300" fill="url(#a)"/>`,
     `<rect width="600" height="300" fill="url(#b)"/>`,
+    `<rect width="600" height="300" fill="url(#c)"/>`,
     `</svg>`,
   ].join("");
   return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+
+/**
+ * The MeetSweet logo as a Resend inline attachment. The HTML references it with
+ * <img src="cid:meetsweet-logo">; matching inlineContentId marks it as an
+ * inline (not downloadable) image. Content is an embedded base64 PNG so the
+ * email is fully self-contained — no hosted or signed storage URLs.
+ */
+export function logoAttachment(): { filename: string; content: string; contentType: string; inlineContentId: string } {
+  return {
+    filename: "meetsweet-logo.png",
+    content: MEETSWEET_EMAIL_LOGO_B64,
+    contentType: "image/png",
+    inlineContentId: LOGO_CID,
+  };
 }
 
 // ─── Delivery (with diagnostics) ─────────────────────────────────────────────
@@ -104,6 +134,7 @@ async function deliver(
       subject: opts.subject,
       html: opts.html,
       text: opts.text,
+      attachments: [logoAttachment()],
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -115,20 +146,23 @@ async function deliver(
 // ─── Shared components ───────────────────────────────────────────────────────
 
 /**
- * Crystal-style header band: dark charcoal-gray with a subtle glow treatment,
- * holding the MeetSweet wordmark ("Meet" white / "Sweet" rose) plus a short
- * event tagline. Pure text — no images, no hosted assets.
+ * MeetSweet-branded header band: deep violet-charcoal with platform-gradient
+ * glows, holding the logo (inline CID image) plus the MeetSweet wordmark
+ * ("Meet" white / "Sweet" hot pink) and a short event tagline. The wordmark is
+ * text, so branding never depends on the image loading.
  */
-function crystalHeader(tagline: string): string {
+export function crystalHeader(tagline: string): string {
   return `
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
       <tr>
-        <td bgcolor="${HEADER_BG}"
-          style="background-color:${HEADER_BG};background-image:url('${crystalHeaderBg()}');background-repeat:no-repeat;background-position:center top;background-size:cover;border-radius:20px 20px 0 0;padding:46px 24px 38px 24px;">
-          <p style="margin:0;font-size:30px;font-weight:700;letter-spacing:-1px;line-height:1.1;color:#FFFFFF;font-family:${FONT};text-align:center;">
-            Meet<span style="color:${ROSE};">Sweet</span>
+        <td bgcolor="${HEADER_BG}" align="center"
+          style="background-color:${HEADER_BG};background-image:url('${crystalHeaderBg()}');background-repeat:no-repeat;background-position:center top;background-size:cover;border-radius:20px 20px 0 0;padding:40px 24px 34px 24px;">
+          <img src="cid:${LOGO_CID}" alt="${PRODUCT}" width="72" height="72"
+            style="display:block;margin:0 auto 16px auto;width:72px;height:72px;border:0;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic;" />
+          <p style="margin:0;font-size:28px;font-weight:700;letter-spacing:-0.8px;line-height:1.1;color:#FFFFFF;font-family:${FONT};text-align:center;">
+            Meet<span style="color:${PINK};">Sweet</span>
           </p>
-          <p style="margin:10px 0 0 0;font-size:11px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:rgba(255,255,255,0.48);font-family:${FONT};text-align:center;">
+          <p style="margin:9px 0 0 0;font-size:11px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:rgba(255,255,255,0.5);font-family:${FONT};text-align:center;">
             ${tagline}
           </p>
         </td>
@@ -194,12 +228,12 @@ function securityNote(text: string): string {
       font-family:${FONT};text-align:center;padding:0 6px;">${text}</p>`;
 }
 
-/** Table-based call-to-action button (rounded, rose, white label). */
+/** Table-based call-to-action button (rounded, hot pink — gradient stop 2, white label). */
 function button(href: string, label: string): string {
   return `
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:26px auto 6px auto;">
       <tr>
-        <td align="center" bgcolor="${ROSE}" style="background-color:${ROSE};border-radius:28px;">
+        <td align="center" bgcolor="${PINK}" style="background-color:${PINK};border-radius:28px;">
           <a href="${href}" target="_blank"
             style="display:inline-block;padding:14px 34px;font-family:${FONT};font-size:15px;font-weight:600;color:#FFFFFF;text-decoration:none;border-radius:28px;">
             ${label}

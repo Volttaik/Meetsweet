@@ -1,4 +1,17 @@
 import type { Metadata } from "next";
+import {
+  BG,
+  BRAND,
+  GRADIENT_BUTTON,
+  GLOW_AMBER,
+  GLOW_CARD,
+  GLOW_CENTER,
+  GLOW_TOP,
+  SURFACE,
+  SURFACE_2,
+  TEXT_2,
+  TEXT_3,
+} from "@/lib/frontend/brand";
 
 export const metadata: Metadata = {
   title: "Install MeetSweet — Android setup guide",
@@ -74,9 +87,13 @@ export default function InstallHelpPage() {
       <nav style={s.nav}>
         <div style={s.navInner}>
           <a href="/" style={s.navBrand}>
-            <span style={s.logoMark}>
-              <img src="/meetsweet-logo.png" alt="" style={s.logoImage} />
-            </span>
+            <img
+              src="/meetsweet-logo-white.png"
+              alt="MeetSweet"
+              width={26}
+              height={26}
+              style={s.logoImage}
+            />
             <span>MeetSweet</span>
           </a>
           <a href="/" style={s.navBack}>
@@ -165,9 +182,13 @@ export default function InstallHelpPage() {
       <footer style={s.footer}>
         <div style={s.footerInner}>
           <a href="/" style={s.footerBrand}>
-            <span style={s.logoMark}>
-              <img src="/meetsweet-logo.png" alt="" style={s.logoImage} />
-            </span>
+            <img
+              src="/meetsweet-logo-white.png"
+              alt="MeetSweet"
+              width={22}
+              height={22}
+              style={s.footerLogo}
+            />
             <span>MeetSweet</span>
           </a>
           <span style={s.footerMuted}>
@@ -178,13 +199,6 @@ export default function InstallHelpPage() {
     </main>
   );
 }
-
-const ACCENT = "#C45A72";
-const BG = "#0C0C0F";
-const SURFACE = "#161619";
-const SURFACE_2 = "#1E1E24";
-const TEXT_2 = "rgba(255,255,255,0.55)";
-const TEXT_3 = "rgba(255,255,255,0.28)";
 
 const s: Record<string, React.CSSProperties> = {
   page: {
@@ -198,8 +212,7 @@ const s: Record<string, React.CSSProperties> = {
   gradient: {
     position: "fixed",
     inset: 0,
-    background:
-      "radial-gradient(ellipse 80% 50% at 50% -10%, rgba(196,90,114,0.18) 0%, transparent 60%)",
+    background: `${GLOW_TOP}, ${GLOW_AMBER}`,
     pointerEvents: "none",
     zIndex: 0,
   },
@@ -210,7 +223,7 @@ const s: Record<string, React.CSSProperties> = {
     transform: "translate(-50%, -50%)",
     width: 900,
     height: 900,
-    background: "radial-gradient(circle, rgba(196,90,114,0.05) 0%, transparent 70%)",
+    background: GLOW_CENTER,
     pointerEvents: "none",
     zIndex: 0,
   },
@@ -241,21 +254,17 @@ const s: Record<string, React.CSSProperties> = {
     color: "#fff",
     textDecoration: "none",
   },
-  logoMark: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    background: "#fff",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden",
+  logoImage: {
+    width: 26,
+    height: 26,
+    display: "block",
     flexShrink: 0,
   },
-  logoImage: {
-    width: "100%",
-    height: "100%",
-    objectFit: "cover" as const,
+  footerLogo: {
+    width: 22,
+    height: 22,
+    display: "block",
+    flexShrink: 0,
   },
   navBack: {
     color: TEXT_2,
@@ -279,7 +288,7 @@ const s: Record<string, React.CSSProperties> = {
   },
   sectionEyebrow: {
     margin: "0 0 12px",
-    color: ACCENT,
+    color: BRAND.pink,
     fontSize: 12,
     fontWeight: 600,
     letterSpacing: "0.1em",
@@ -306,8 +315,7 @@ const s: Record<string, React.CSSProperties> = {
     flexWrap: "wrap" as const,
   },
   btnPrimary: {
-    background: ACCENT,
-    color: "#fff",
+    ...GRADIENT_BUTTON,
     border: "none",
     borderRadius: 50,
     padding: "16px 32px",
@@ -316,7 +324,7 @@ const s: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     textDecoration: "none",
     display: "inline-block",
-    transition: "opacity 0.2s",
+    transition: "opacity 0.2s, transform 0.15s",
   },
   btnGhost: {
     background: "rgba(255,255,255,0.08)",
@@ -387,8 +395,8 @@ const s: Record<string, React.CSSProperties> = {
   stepBadge: {
     display: "inline-block",
     alignSelf: "flex-start",
-    background: "rgba(196,90,114,0.16)",
-    color: ACCENT,
+    background: "rgba(255,20,147,0.14)",
+    color: BRAND.pink,
     borderRadius: 50,
     padding: "5px 14px",
     fontSize: 12,
@@ -462,7 +470,7 @@ const s: Record<string, React.CSSProperties> = {
     transform: "translate(-50%, -50%)",
     width: 460,
     height: 460,
-    background: "radial-gradient(circle, rgba(196,90,114,0.16) 0%, transparent 65%)",
+    background: GLOW_CARD,
     pointerEvents: "none",
     zIndex: 0,
   },

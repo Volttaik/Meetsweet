@@ -1,5 +1,14 @@
 import type { Metadata } from "next";
 import { and, asc, eq, gt, isNull, or } from "drizzle-orm";
+import {
+  BG,
+  BRAND,
+  GRADIENT_BUTTON,
+  GLOW_AMBER,
+  GLOW_TOP,
+  SURFACE,
+  TEXT_2,
+} from "@/lib/frontend/brand";
 import { db } from "@/lib/db";
 import { albums, media, posts, profiles, shares, users } from "@/lib/db/schema";
 import { ShareRedirectClient } from "./redirect-client";
@@ -205,10 +214,8 @@ export default async function SharePage({
       {/* Nav */}
       <nav style={navStyle}>
         <a href="/" style={brandStyle}>
-          <span style={logoMarkStyle}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/meetsweet-logo.png" alt="" style={logoImageStyle} />
-          </span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/meetsweet-logo-white.png" alt="MeetSweet" width={26} height={26} style={logoImageStyle} />
           <span>MeetSweet</span>
         </a>
       </nav>
@@ -228,10 +235,8 @@ function NotFound() {
       <div style={gradientStyle} aria-hidden="true" />
       <nav style={navStyle}>
         <a href="/" style={brandStyle}>
-          <span style={logoMarkStyle}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/meetsweet-logo.png" alt="" style={logoImageStyle} />
-          </span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/meetsweet-logo-white.png" alt="MeetSweet" width={26} height={26} style={logoImageStyle} />
           <span>MeetSweet</span>
         </a>
       </nav>
@@ -249,10 +254,7 @@ function NotFound() {
   );
 }
 
-const ACCENT = "#C45A72";
-const BG = "#0C0C0F";
-const SURFACE = "#161619";
-const TEXT_2 = "rgba(255,255,255,0.55)";
+
 
 const pageStyle: React.CSSProperties = {
   minHeight: "100vh",
@@ -265,8 +267,7 @@ const pageStyle: React.CSSProperties = {
 const gradientStyle: React.CSSProperties = {
   position: "fixed",
   inset: 0,
-  background:
-    "radial-gradient(ellipse 80% 50% at 50% -10%, rgba(196,90,114,0.2) 0%, transparent 60%)",
+  background: `${GLOW_TOP}, ${GLOW_AMBER}`,
   pointerEvents: "none",
   zIndex: 0,
 };
@@ -288,21 +289,11 @@ const brandStyle: React.CSSProperties = {
   textDecoration: "none",
   letterSpacing: "-0.5px",
 };
-const logoMarkStyle: React.CSSProperties = {
-  width: 34,
-  height: 34,
-  borderRadius: 10,
-  background: "#fff",
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  overflow: "hidden",
-  flexShrink: 0,
-};
 const logoImageStyle: React.CSSProperties = {
-  width: "100%",
-  height: "100%",
-  objectFit: "contain",
+  width: 26,
+  height: 26,
+  display: "block",
+  flexShrink: 0,
 };
 const centerStyle: React.CSSProperties = {
   position: "relative",
@@ -327,14 +318,15 @@ const cardStyle: React.CSSProperties = {
   alignItems: "center",
   textAlign: "center",
   gap: 16,
-  boxShadow: "0 24px 64px rgba(0,0,0,0.4), 0 0 0 1px rgba(196,90,114,0.08)",
+  boxShadow: "0 24px 64px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,20,147,0.08)",
 };
 const iconWrapStyle: React.CSSProperties = {
   width: 72,
   height: 72,
   borderRadius: 22,
-  background: "linear-gradient(135deg, rgba(196,90,114,0.25) 0%, rgba(196,90,114,0.08) 100%)",
-  border: "1px solid rgba(196,90,114,0.2)",
+  background:
+    "linear-gradient(135deg, rgba(255,20,147,0.24) 0%, rgba(128,0,128,0.1) 100%)",
+  border: "1px solid rgba(255,20,147,0.2)",
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
@@ -356,8 +348,7 @@ const cardSubStyle: React.CSSProperties = {
 const btnPrimaryStyle: React.CSSProperties = {
   display: "block",
   width: "100%",
-  background: ACCENT,
-  color: "#fff",
+  ...GRADIENT_BUTTON,
   border: "none",
   borderRadius: 50,
   padding: "16px 0",
