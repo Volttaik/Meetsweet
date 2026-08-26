@@ -43,9 +43,13 @@ const attachmentSchema = z.object({
 
 const sendSchema = z.object({
   recipient_id: z.string().min(1),
-  body: z.string().trim().min(1).max(5000),
+  // Body is optional — a message may be media-only (image/video with no
+  // caption). At least one of body/attachments must be present.
+  body: z.string().trim().max(5000).optional(),
   idempotency_key: z.string().min(8).max(128),
   attachments: z.array(attachmentSchema).max(10).optional(),
+}).refine((v) => (v.body && v.body.length > 0) || (v.attachments?.length ?? 0) > 0, {
+  message: "A message must contain text or media",
 });
 
 export async function GET(req: NextRequest) {
@@ -71,7 +75,8 @@ export async function POST(req: NextRequest) {
 
   const parsed = await parseBody(req, sendSchema);
   if (!parsed.success) return parsed.response;
-  const { recipient_id, body, idempotency_key, attachments } = parsed.data;
+  const { recipient_id, idempotency_key, attachments } = parsed.data;
+  const body = parsed.data.body ?? "";
 
   // The recipient must be a live account; the service re-checks creator +
   // inbox status authoritatively.

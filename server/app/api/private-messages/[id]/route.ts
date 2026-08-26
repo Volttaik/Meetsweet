@@ -31,7 +31,9 @@ import {
 } from "@/lib/services/private-inbox";
 
 const replySchema = z.object({
-  body: z.string().trim().min(1).max(5000),
+  // Body is optional — a reply may be media-only (image/video with no
+  // caption). At least one of body/attachments must be present.
+  body: z.string().trim().max(5000).optional(),
   idempotency_key: z.string().min(8).max(128).optional(),
   attachments: z
     .array(
@@ -43,6 +45,8 @@ const replySchema = z.object({
     )
     .max(10)
     .optional(),
+}).refine((v) => (v.body && v.body.length > 0) || (v.attachments?.length ?? 0) > 0, {
+  message: "A message must contain text or media",
 });
 
 export async function GET(
@@ -73,7 +77,7 @@ export async function POST(
     const { message } = await replyToMessage({
       userId: auth.user.userId,
       messageId: id,
-      body: parsed.data.body,
+      body: parsed.data.body ?? "",
       idempotencyKey: parsed.data.idempotency_key,
       attachments: parsed.data.attachments?.map((a) => ({
         mediaId: a.media_id,

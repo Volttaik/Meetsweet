@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { wallets, transactions } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
@@ -23,7 +23,15 @@ export async function GET(req: NextRequest) {
   const txRows = await db
     .select()
     .from(transactions)
-    .where(eq(transactions.user_id, auth.user.userId))
+    .where(
+      and(
+        eq(transactions.user_id, auth.user.userId),
+        // Subscriptions are content payments, not wallet funding — they do not
+        // belong in Recent Transactions. Creator EARNINGS are recorded as
+        // `<source>_earn` rows (money added to the wallet) and stay visible.
+        sql`${transactions.type} != 'subscription'`,
+      ),
+    )
     .orderBy(desc(transactions.created_at))
     .limit(50);
 

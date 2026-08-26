@@ -22,7 +22,7 @@
 
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { notifications, profiles, subscriptions, user_settings, users } from "@/lib/db/schema";
+import { notifications, posts, private_messages, profiles, subscriptions, user_settings, users } from "@/lib/db/schema";
 import { generateId } from "@/lib/auth/codes";
 import { emitEvent } from "@/lib/realtime/emit";
 import { userChannel } from "@/lib/realtime/types";
@@ -77,6 +77,11 @@ export function emitNotificationCreated(row: NotificationRow): void {
         }
       }
 
+      // Purpose-built preview block (post thumbnail/caption, message body) so
+      // the recipient's client can render the card immediately — no extra
+      // fetch, no guessing. Best-effort: null when there is nothing to preview.
+      const [preview] = await notificationPreviewsFor([row]);
+
       emitEvent({
         type: "notification.created",
         channel: userChannel(row.user_id),
@@ -95,6 +100,7 @@ export function emitNotificationCreated(row: NotificationRow): void {
             actor_name,
             actor_username,
             actor_avatar,
+            preview,
             data: notificationDataBlock({
               entity_type: row.entity_type,
               entity_id: row.entity_id,
@@ -113,6 +119,85 @@ export function emitNotificationCreated(row: NotificationRow): void {
 }
 
 // ─── Core notify() ───────────────────────────────────────────────────────────
+
+// ─── Preview block (what the card shows) ─────────────────────────────────────
+
+export type NotificationPreviewBlock = {
+  /** Media thumbnail for content notifications (post/video/short/album). */
+  thumbnail: string | null;
+  title: string | null;
+  caption: string | null;
+  /** Actual message text for private-message notifications. */
+  body: string | null;
+};
+
+const CONTENT_ENTITY_TYPES = ["post", "video", "short", "album"] as const;
+
+/**
+ * Build the compact `preview` block for a batch of notification rows.
+ *
+ * One batched query per entity family (content → posts, private_message →
+ * private_messages) so a page of notifications never turns into N queries.
+ * Returns one entry per input item, aligned by index (null = no preview).
+ */
+export async function notificationPreviewsFor(
+  items: Array<{ entity_type?: string | null; entity_id?: string | null }>,
+): Promise<(NotificationPreviewBlock | null)[]> {
+  const contentIds = items
+    .filter(
+      (i) =>
+        i.entity_type &&
+        (CONTENT_ENTITY_TYPES as readonly string[]).includes(i.entity_type) &&
+        i.entity_id,
+    )
+    .map((i) => i.entity_id as string);
+  const messageIds = items
+    .filter((i) => i.entity_type === "private_message" && i.entity_id)
+    .map((i) => i.entity_id as string);
+
+  const [postRows, messageRows] = await Promise.all([
+    contentIds.length > 0
+      ? db
+          .select({
+            id: posts.id,
+            thumbnail_url: posts.thumbnail_url,
+            title: posts.title,
+            caption: posts.caption,
+          })
+          .from(posts)
+          .where(inArray(posts.id, contentIds))
+      : Promise.resolve([] as { id: string; thumbnail_url: string | null; title: string | null; caption: string | null }[]),
+    messageIds.length > 0
+      ? db
+          .select({ id: private_messages.id, body: private_messages.body })
+          .from(private_messages)
+          .where(inArray(private_messages.id, messageIds))
+      : Promise.resolve([] as { id: string; body: string }[]),
+  ]);
+
+  const postMap = new Map(postRows.map((p) => [p.id, p]));
+  const messageMap = new Map(messageRows.map((m) => [m.id, m]));
+
+  return items.map((item) => {
+    if (!item.entity_type || !item.entity_id) return null;
+    if ((CONTENT_ENTITY_TYPES as readonly string[]).includes(item.entity_type)) {
+      const post = postMap.get(item.entity_id);
+      if (!post) return null;
+      return {
+        thumbnail: post.thumbnail_url ?? null,
+        title: post.title ?? null,
+        caption: post.caption ?? null,
+        body: null,
+      };
+    }
+    if (item.entity_type === "private_message") {
+      const message = messageMap.get(item.entity_id);
+      if (!message) return null;
+      return { thumbnail: null, title: null, caption: null, body: message.body };
+    }
+    return null;
+  });
+}
 
 export interface NotifyInput {
   /** The notification recipient. */
@@ -486,6 +571,35 @@ export async function notifyPurchase(input: {
         [input.sourceType === "private_message" ? "private_message_id" : `${input.sourceType}_id`]:
           input.sourceId,
       },
+    },
+  });
+}
+
+/** A withdrawal was requested or its status changed (account-critical). */
+export async function notifyWithdrawal(input: {
+  userId: string;
+  amount: number;
+  status: string;
+  reference?: string;
+}): Promise<{ created: boolean }> {
+  const naira = input.amount.toLocaleString("en-NG");
+  const body =
+    input.status === "processing" || input.status === "pending"
+      ? `Your withdrawal of ₦${naira} is being processed — it may take up to 24 hours.`
+      : `Your withdrawal of ₦${naira} is ${input.status}.`;
+  return notify({
+    recipientId: input.userId,
+    category: null, // account-critical — never preference-gated
+    type: "withdrawal",
+    entity_type: "withdrawal",
+    entity_id: input.reference ?? null,
+    body,
+    actorId: null,
+    dedupeKey: `withdrawal:${input.reference ?? input.userId}:${input.status}`,
+    push: {
+      title: "Withdrawal Update",
+      body,
+      data: { type: "withdrawal", wallet: true },
     },
   });
 }

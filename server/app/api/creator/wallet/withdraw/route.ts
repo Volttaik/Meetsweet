@@ -9,6 +9,7 @@ import { ok, err } from "@/lib/api/response";
 import { generateId } from "@/lib/auth/codes";
 import { createTransferRecipient, initiateTransfer } from "@/lib/services/paystack";
 import { sendWithdrawalRequestedEmail } from "@/lib/services/email";
+import { notifyWithdrawal } from "@/lib/services/notifications";
 
 const schema = z.object({
   amount: z.number().positive(),
@@ -158,6 +159,15 @@ export async function POST(req: NextRequest) {
       // Non-critical
     }
 
+    // Account-critical status event — the withdrawal is now visible in-app and
+    // as an OS push (fire-and-forget, never blocks the response).
+    void notifyWithdrawal({
+      userId: auth.user.userId,
+      amount,
+      status: settled,
+      reference,
+    });
+
     return ok({
       success: true,
       id: txId,
@@ -177,6 +187,12 @@ export async function POST(req: NextRequest) {
         .update(transactions)
         .set({ status: "failed", updated_at: new Date().toISOString() })
         .where(eq(transactions.id, txId));
+    });
+    void notifyWithdrawal({
+      userId: auth.user.userId,
+      amount,
+      status: "failed",
+      reference,
     });
     return err(
       e instanceof Error ? e.message : "Withdrawal failed",

@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { users, profiles, notifications } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
 import { ok } from "@/lib/api/response";
-import { notificationTitle } from "@/lib/services/notifications";
+import { notificationTitle, notificationPreviewsFor } from "@/lib/services/notifications";
 import { notificationDataBlock } from "@/lib/services/push";
 
 export async function GET(req: NextRequest) {
@@ -55,14 +55,19 @@ export async function GET(req: NextRequest) {
 
   const unread_count = unreadRow?.count ?? 0;
 
+  // Compact preview content for the cards (thumbnail/caption for content,
+  // message text for private-message notifications). Batched, not per-row.
+  const previews = await notificationPreviewsFor(rows);
+
   return ok({
-    notifications: rows.map((n) => ({
+    notifications: rows.map((n, i) => ({
       id: n.id,
       type: n.type,
       title: notificationTitle(n.type ?? ""),
       body: n.body ?? "",
       is_read: n.is_read,
       created_at: n.created_at,
+      preview: previews[i] ?? null,
       // Mobile normalizer reads from raw.data sub-object — the SAME navigation
       // block the realtime event and the push carry (single source of truth).
       data: notificationDataBlock({
