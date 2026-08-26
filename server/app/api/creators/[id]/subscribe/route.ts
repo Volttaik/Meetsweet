@@ -14,7 +14,7 @@ import { requireAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err, created } from "@/lib/api/response";
 import { generateId } from "@/lib/auth/codes";
-import { sendPushToUser, getActorUsername, createNotification } from "@/lib/services/push";
+import { notifySubscription } from "@/lib/services/notifications";
 import { tierIndex } from "@/lib/services/content";
 import { resolveBasePrice } from "@/lib/services/pricing";
 import { recordCreatorEarning } from "@/lib/services/creator-finance";
@@ -255,23 +255,10 @@ export async function POST(
   }
 
   // Best-effort notification + push — outside the transaction so a delivery
-  // failure can never roll back the committed subscription. The in-app row is
-  // gated by the creator's New Subscribers preference.
-  await createNotification(creator_id, "notif_new_subscribers", {
-    actor_id: auth.user.userId,
-    type: "subscribe",
-    entity_type: "user",
-    entity_id: auth.user.userId,
-    body: "just subscribed to you",
-  });
-
-  getActorUsername(auth.user.userId).then((actor) =>
-    sendPushToUser(creator_id, {
-      title: "New Subscriber",
-      body: `${actor} just subscribed to you`,
-      data: { type: "subscribe", wallet: true, actor_id: auth.user.userId, actor_username: actor.replace(/^@/, "") },
-    }, "notif_new_subscribers"),
-  );
+  // failure can never roll back the committed subscription. The service gates
+  // the row + push by the creator's New Subscribers preference and dedupes so
+  // a retried subscribe never double-notifies.
+  void notifySubscription({ actorId: auth.user.userId, creatorId: creator_id });
 
   return created({
     subscribed: true,

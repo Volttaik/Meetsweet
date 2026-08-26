@@ -4,25 +4,8 @@ import { db } from "@/lib/db";
 import { users, profiles, notifications } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
 import { ok } from "@/lib/api/response";
-
-function notificationTitle(type: string): string {
-  const map: Record<string, string> = {
-    like: "New Like",
-    comment: "New Comment",
-    follow: "New Follower",
-    subscribe: "New Subscriber",
-    new_post: "New Post",
-    reply: "New Reply",
-    mention: "You were mentioned",
-    tip: "New Tip",
-    payment: "Payment Received",
-    message: "New Message",
-    withdrawal: "Withdrawal Update",
-    referral_reward: "Referral Reward",
-    system: "MeetSweet",
-  };
-  return map[type] ?? "Notification";
-}
+import { notificationTitle } from "@/lib/services/notifications";
+import { notificationDataBlock } from "@/lib/services/push";
 
 export async function GET(req: NextRequest) {
   const auth = await requireAuth(req);
@@ -80,27 +63,16 @@ export async function GET(req: NextRequest) {
       body: n.body ?? "",
       is_read: n.is_read,
       created_at: n.created_at,
-      // Mobile normalizer reads from raw.data sub-object
-      data: {
-        // content_type lets the mobile app route to the correct screen
-        content_type: (["post", "video", "short", "album"].includes(n.entity_type ?? "")
-          ? n.entity_type
-          : n.entity_type === "comment" ? "post" : null) as string | null,
-        entity_type: n.entity_type ?? null,
-        entity_id: n.entity_id ?? null,
-        // Private Inbox: the mobile app routes these to the message thread.
-        private_message_id: n.entity_type === "private_message" ? n.entity_id : null,
-        // Convenience aliases for each content type
-        post_id: n.entity_type === "post" ? n.entity_id : null,
-        video_id: n.entity_type === "video" ? n.entity_id : null,
-        short_id: n.entity_type === "short" ? n.entity_id : null,
-        album_id: n.entity_type === "album" ? n.entity_id : null,
-        comment_id: n.entity_type === "comment" ? n.entity_id : null,
-        actor_id: n.actor_id ?? null,
-        actor_name: n.actor_name ?? null,
-        actor_username: n.actor_username ?? null,
-        actor_avatar: n.actor_avatar ?? null,
-      },
+      // Mobile normalizer reads from raw.data sub-object — the SAME navigation
+      // block the realtime event and the push carry (single source of truth).
+      data: notificationDataBlock({
+        entity_type: n.entity_type,
+        entity_id: n.entity_id,
+        actor_id: n.actor_id,
+        actor_name: n.actor_name,
+        actor_username: n.actor_username,
+        actor_avatar: n.actor_avatar,
+      }),
     })),
     unread_count,
   });

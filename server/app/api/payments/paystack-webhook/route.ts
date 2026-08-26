@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { wallets, transactions } from "@/lib/db/schema";
 import { verifyWebhookSignature } from "@/lib/services/paystack";
 import { settleCreatorActivation, CREATOR_ACTIVATION_NAIRA } from "@/lib/services/referrals";
-import { sendPushToUser } from "@/lib/services/push";
+import { notifyReferralReward } from "@/lib/services/notifications";
 
 /**
  * POST /api/payments/paystack-webhook
@@ -111,11 +111,13 @@ async function handleActivationSuccess(
   try {
     const settled = await settleCreatorActivation(userId, transactionId, paystackRef);
     if (settled.referrerId && settled.rewardAmount > 0) {
-      void sendPushToUser(settled.referrerId, {
-        title: "Referral Reward",
-        body: "You received ₦200 in your MeetSweet wallet.",
-        data: { type: "referral_reward", wallet: true, referred_user_id: userId },
-      }, "notif_creator_updates");
+      // In-app row + push — deduped by (user, event) so Paystack webhook
+      // replays can never double-notify the referrer.
+      void notifyReferralReward({
+        userId: settled.referrerId,
+        referredUserId: userId,
+        amount: settled.rewardAmount,
+      });
     }
   } catch {
     // Non-critical — Paystack retries the webhook and the mobile verify path is idempotent.

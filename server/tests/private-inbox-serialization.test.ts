@@ -36,6 +36,7 @@ function messageView(part: Partial<PrivateMessageView> & Pick<PrivateMessageView
     recipient_name: "Recipient",
     recipient_username: "recipient",
     recipient_avatar: null,
+    thread_creator_id: "recipient",
     attachments: [],
     reply_count: 0,
     reply: null,
@@ -109,6 +110,21 @@ test("new DTO for a message with NO replies stays acyclic (single-element thread
   assert.equal(dto.thread!.length, 1);
   assert.equal(dto.thread![0].id, "solo");
   assert.equal(dto.thread![0].parent_message_id, null);
+});
+
+test("new DTO preserves thread_creator_id — the pricing anchor for every message in the thread", () => {
+  const root = messageView({ id: "root", thread_creator_id: "creator-user" });
+  const reply = messageView({
+    id: "reply-1",
+    parent_message_id: "root",
+    thread_creator_id: "creator-user",
+  });
+  root.thread = [root, reply];
+  const dto = toThreadMessageView(root);
+  const serialized = JSON.parse(JSON.stringify(dto));
+  assert.equal(serialized.thread_creator_id, "creator-user");
+  assert.equal(serialized.thread[0].thread_creator_id, "creator-user");
+  assert.equal(serialized.thread[1].thread_creator_id, "creator-user");
 });
 
 test("new DTO preserves attachments and metadata for media / paid media", () => {

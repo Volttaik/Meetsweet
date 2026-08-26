@@ -189,15 +189,26 @@ export const login_history = sqliteTable(
   (table) => [index("login_history_user_idx").on(table.user_id)],
 );
 
-export const devices = sqliteTable("devices", {
-  id: id(),
-  user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  push_token: text("push_token"),
-  platform: text("platform"),
-  device_name: text("device_name"),
-  last_seen_at: text("last_seen_at"),
-  created_at: createdAt(),
-});
+export const devices = sqliteTable(
+  "devices",
+  {
+    id: id(),
+    user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    push_token: text("push_token"),
+    platform: text("platform"),
+    device_name: text("device_name"),
+    last_seen_at: text("last_seen_at"),
+    created_at: createdAt(),
+  },
+  (table) => [
+    // One row per installation: a token identifies a device, not a session.
+    // Re-registration (same user, or a user logging in on an existing
+    // installation) upserts this row instead of duplicating it.
+    uniqueIndex("devices_push_token_idx")
+      .on(table.push_token)
+      .where(sql`${table.push_token} IS NOT NULL`),
+  ],
+);
 
 // ─── Credential broker ───────────────────────────────────────────────────────
 
@@ -619,17 +630,30 @@ export const reports = sqliteTable("reports", {
 
 // ─── Notifications ────────────────────────────────────────────────────────
 
-export const notifications = sqliteTable("notifications", {
-  id: id(),
-  user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  actor_id: text("actor_id").references(() => users.id, { onDelete: "set null" }),
-  type: text("type").notNull(),
-  entity_type: text("entity_type"),
-  entity_id: text("entity_id"),
-  body: text("body"),
-  is_read: integer("is_read", { mode: "boolean" }).notNull().default(false),
-  created_at: createdAt(),
-});
+export const notifications = sqliteTable(
+  "notifications",
+  {
+    id: id(),
+    user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    actor_id: text("actor_id").references(() => users.id, { onDelete: "set null" }),
+    type: text("type").notNull(),
+    entity_type: text("entity_type"),
+    entity_id: text("entity_id"),
+    body: text("body"),
+    is_read: integer("is_read", { mode: "boolean" }).notNull().default(false),
+    // One logical event → at most one notification row per recipient. The
+    // NotificationService derives this from the event (e.g. like:{post}:{actor})
+    // so retried/replayed events never duplicate rows or double-push.
+    dedupe_key: text("dedupe_key"),
+    created_at: createdAt(),
+  },
+  (table) => [
+    uniqueIndex("notifications_dedupe_user_idx")
+      .on(table.user_id, table.dedupe_key)
+      .where(sql`${table.dedupe_key} IS NOT NULL`),
+    index("notifications_user_created_idx").on(table.user_id, table.created_at),
+  ],
+);
 
 // ─── Monetisation ─────────────────────────────────────────────────────────
 

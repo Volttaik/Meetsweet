@@ -5,7 +5,7 @@ import { posts, post_likes } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
 import { ok, err } from "@/lib/api/response";
 import { generateId } from "@/lib/auth/codes";
-import { sendPushToUser, getActorUsername, createNotification } from "@/lib/services/push";
+import { notifyLike } from "@/lib/services/notifications";
 
 export async function POST(
   req: NextRequest,
@@ -40,38 +40,17 @@ export async function POST(
     await db.insert(post_likes).values({ id: generateId(), user_id: auth.user.userId, post_id: id });
     await db.update(posts).set({ like_count: sql`${posts.like_count} + 1` }).where(eq(posts.id, id));
 
-    // Notify post creator (skip if creator liked their own post). The in-app
-    // notification row is gated by their Likes preference — when OFF, no event
-    // is written and no push is sent (the push below is already gated). The
-    // context includes the post title so the notification is meaningful.
+    // Notify post creator (skip if creator liked their own post). The service
+    // gates the row + push by their Likes preference, dedupes the event, and
+    // builds the navigation payload — never awaited so it can't delay the reply.
     if (post.creator_id && post.creator_id !== auth.user.userId) {
-      const postTitle = (post.title ?? post.caption ?? "").trim();
-      const likeContext = postTitle
-        ? `liked your post "${postTitle.slice(0, 60)}"`
-        : "liked your post";
-
-      await createNotification(post.creator_id, "notif_likes", {
-        actor_id: auth.user.userId,
-        type: "like",
-        entity_type: "post",
-        entity_id: id,
-        body: likeContext,
+      void notifyLike({
+        actorId: auth.user.userId,
+        recipientId: post.creator_id,
+        postId: id,
+        contentType: post.content_type ?? "post",
+        title: post.title ?? post.caption,
       });
-
-      // Fire push in background — don't await so it never delays the response
-      getActorUsername(auth.user.userId).then((actor) =>
-        sendPushToUser(post.creator_id!, {
-          title: "New Like",
-          body: `${actor} ${likeContext}`,
-          data: {
-            type: "like",
-            post_id: id,
-            actor_id: auth.user.userId,
-            content_type: post.content_type ?? "post",
-            actor_username: actor.replace(/^@/, ""),
-          },
-        }, "notif_likes"),
-      );
     }
   }
 

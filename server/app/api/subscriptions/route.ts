@@ -7,7 +7,7 @@ import { requireAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err, created } from "@/lib/api/response";
 import { generateId } from "@/lib/auth/codes";
-import { sendPushToUser, getActorUsername, createNotification } from "@/lib/services/push";
+import { notifySubscription } from "@/lib/services/notifications";
 import { resolveBasePrice } from "@/lib/services/pricing";
 import { recordCreatorEarning } from "@/lib/services/creator-finance";
 import { renewForUser } from "@/lib/services/subscription-renewal";
@@ -235,28 +235,9 @@ export async function POST(req: NextRequest) {
 
   const sub = { id: subId, creator_id, status: "active" as const, amount: price, started_at: now, expires_at: expires };
 
-  // Notify the creator about their new subscriber — gated by their New
-  // Subscribers preference (authoritative server-side).
-  await createNotification(creator_id, "notif_new_subscribers", {
-    actor_id: auth.user.userId,
-    type: "subscribe",
-    entity_type: "user",
-    entity_id: auth.user.userId,
-    body: "just subscribed to you",
-  });
-
-  getActorUsername(auth.user.userId).then((actor) =>
-    sendPushToUser(creator_id, {
-      title: "New Subscriber",
-      body: `${actor} just subscribed to you`,
-      data: {
-        type: "subscribe",
-        wallet: true,
-        actor_id: auth.user.userId,
-        actor_username: actor.replace(/^@/, ""),
-      },
-    }, "notif_new_subscribers"),
-  );
+  // Notify the creator about their new subscriber — the service gates by
+  // their New Subscribers preference and dedupes the event.
+  void notifySubscription({ actorId: auth.user.userId, creatorId: creator_id });
 
   return created({ subscribed: true, subscription_id: subId, tier: resolvedTier, subscription: sub });
 }

@@ -10,7 +10,10 @@ import {
 import { generateId } from "@/lib/auth/codes";
 import { resolveBasePrice } from "@/lib/services/pricing";
 import { recordCreatorEarning } from "@/lib/services/creator-finance";
-import { createNotification, sendPushToUser, getActorUsername } from "@/lib/services/push";
+import {
+  notifySubscriptionRenewal,
+  notifySubscriptionRenewalFailed,
+} from "@/lib/services/notifications";
 
 /**
  * Monthly subscription auto-renewal.
@@ -170,28 +173,14 @@ export async function renewExpiredSubscription(subId: string): Promise<
           ),
         );
 
-      // In-app notification (not preference-gated — this is an account-critical
-      // event the user must always see), then best-effort push.
-      await createNotification(sub.subscriber_id, null, {
-        type: "subscription_renewal_failed",
-        entity_type: "user",
-        entity_id: sub.creator_id,
-        body:
-          "Your subscription renewal failed because your wallet balance is insufficient. You are no longer subscribed to this creator. Top up your wallet and subscribe again to keep accessing their content.",
+      // In-app notification + push (not preference-gated — this is an
+      // account-critical event the user must always see). Deduped by
+      // subscription so retries never double-notify.
+      void notifySubscriptionRenewalFailed({
+        userId: sub.subscriber_id,
+        creatorId: sub.creator_id,
+        subscriptionId: sub.id,
       });
-
-      getActorUsername(sub.creator_id).then((creatorHandle) =>
-        sendPushToUser(sub.subscriber_id, {
-          title: "Subscription expired",
-          body: `Your renewal to ${creatorHandle} failed — wallet balance insufficient. You are no longer subscribed.`,
-          data: {
-            type: "subscription_renewal_failed",
-            creator_id: sub.creator_id,
-            subscription_id: sub.id,
-            wallet: true,
-          },
-        }),
-      );
 
       return "failed";
     }
@@ -220,12 +209,10 @@ export async function renewExpiredSubscription(subId: string): Promise<
               lt(subscriptions.expires_at, now),
             ),
           );
-        await createNotification(sub.subscriber_id, null, {
-          type: "subscription_renewal_failed",
-          entity_type: "user",
-          entity_id: sub.creator_id,
-          body:
-            "Your subscription renewal failed because your wallet balance is insufficient. You are no longer subscribed to this creator.",
+        void notifySubscriptionRenewalFailed({
+          userId: sub.subscriber_id,
+          creatorId: sub.creator_id,
+          subscriptionId: sub.id,
         });
         return "failed";
       }
@@ -271,6 +258,14 @@ export async function renewExpiredSubscription(subId: string): Promise<
           lt(subscriptions.expires_at, now),
         ),
       );
+
+    // Renewal succeeded — let the subscriber know (in-app + push, deduped).
+    void notifySubscriptionRenewal({
+      userId: sub.subscriber_id,
+      creatorId: sub.creator_id,
+      subscriptionId: sub.id,
+      amount: price,
+    });
 
     return "renewed";
   });

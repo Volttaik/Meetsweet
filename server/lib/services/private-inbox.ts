@@ -4,8 +4,11 @@
  * Product model (deliberately simple):
  *   Creator enables their Private Inbox and sets a price.
  *   A user pays that price ONCE to deliver one message to the creator.
- *   The creator may reply once — text plus optional media, optionally priced.
- *   The original sender can buy a priced reply attachment to unlock it.
+ *   The creator may reply — text plus optional media, optionally priced.
+ *   A creator may also initiate a message to one of their OWN subscribers:
+ *   delivery is free, and the creator can price image/video attachments that
+ *   stay locked until the subscriber pays to unlock them.
+ *   The fan (non-creator participant) can buy a priced attachment to unlock it.
  *
  * Rules enforced here:
  *  - The price is ALWAYS read from creator_settings server-side; the client
@@ -41,10 +44,10 @@ import { recordCreatorEarning } from "@/lib/services/creator-finance";
 import { emitEvent } from "@/lib/realtime/emit";
 import { userChannel } from "@/lib/realtime/types";
 import {
-  createNotification,
-  sendPushToUser,
-  getActorUsername,
-} from "@/lib/services/push";
+  notifyPrivateMessage,
+  notifyPrivateMessageReply,
+  notifyPurchase,
+} from "@/lib/services/notifications";
 
 export class PrivateInboxError extends Error {
   constructor(
@@ -88,6 +91,8 @@ export interface PrivateMessageView {
   recipient_name: string | null;
   recipient_username: string | null;
   recipient_avatar: string | null;
+  /** The thread's creator participant — only they may price attachments. */
+  thread_creator_id: string | null;
   attachments: MessageAttachmentView[];
   /** Number of replies below this message (0 on leaves). */
   reply_count: number;
@@ -97,7 +102,14 @@ export interface PrivateMessageView {
   thread?: PrivateMessageView[];
 }
 
-type UserBrief = { id: string; name: string | null; username: string | null; avatar: string | null };
+type UserBrief = {
+  id: string;
+  name: string | null;
+  username: string | null;
+  avatar: string | null;
+  is_creator: boolean | null;
+  role: string | null;
+};
 
 async function loadUserBriefs(userIds: string[]): Promise<Map<string, UserBrief>> {
   const map = new Map<string, UserBrief>();
@@ -109,6 +121,8 @@ async function loadUserBriefs(userIds: string[]): Promise<Map<string, UserBrief>
       display_name: profiles.display_name,
       full_name: users.full_name,
       avatar_url: profiles.avatar_url,
+      is_creator: users.is_creator,
+      role: users.role,
     })
     .from(users)
     .leftJoin(profiles, eq(profiles.user_id, users.id))
@@ -119,6 +133,8 @@ async function loadUserBriefs(userIds: string[]): Promise<Map<string, UserBrief>
       name: r.display_name || r.full_name || null,
       username: r.username,
       avatar: r.avatar_url ?? null,
+      is_creator: r.is_creator,
+      role: r.role,
     });
   }
   return map;
@@ -253,6 +269,8 @@ async function buildViews(
     recipient_name: briefOf(m.recipient_id)?.name ?? null,
     recipient_username: briefOf(m.recipient_id)?.username ?? null,
     recipient_avatar: briefOf(m.recipient_id)?.avatar ?? null,
+    // Populated below per thread root — the participant holding creator role.
+    thread_creator_id: null,
     attachments: buildAttachmentViews(
       attachmentsByMessage.get(m.id) ?? [],
       viewerId,
@@ -293,6 +311,21 @@ async function buildViews(
 
   const viewById = new Map<string, PrivateMessageView>();
   for (const r of rows) viewById.set(r.id, viewOf(r));
+
+  // The thread's creator participant — whichever side holds creator role (in a
+  // fan-initiated thread the recipient, in a creator-initiated thread the
+  // sender). Every message in the thread shares the same anchor; only this
+  // participant may price attachments.
+  const isCreatorUser = (u?: UserBrief | null) => Boolean(u?.is_creator) && u?.role === "creator";
+  for (const r of rows) {
+    const rootRow = rootOfRow(r);
+    const brief = (id: string) => briefOf(id);
+    let creatorId: string | null = null;
+    if (isCreatorUser(brief(rootRow.sender_id))) creatorId = rootRow.sender_id;
+    else if (isCreatorUser(brief(rootRow.recipient_id))) creatorId = rootRow.recipient_id;
+    const v = viewById.get(r.id);
+    if (v) v.thread_creator_id = creatorId;
+  }
 
   // A row is visible to the viewer unless THEY deleted their own copy of it
   // (sender-delete hides it for both; receiver-delete hides it for the
@@ -359,6 +392,7 @@ export function toFlatMessageView(v: PrivateMessageView): PrivateMessageView {
     recipient_name: v.recipient_name,
     recipient_username: v.recipient_username,
     recipient_avatar: v.recipient_avatar,
+    thread_creator_id: v.thread_creator_id,
     attachments: v.attachments.map((a) => ({ ...a })),
     reply_count: v.reply_count,
     reply: null,
@@ -454,8 +488,16 @@ export interface SendMessageInput {
   recipientId: string;
   body: string;
   idempotencyKey: string;
-  /** Media ids produced by the standard upload pipeline (optional). */
-  attachmentMediaIds?: Array<{ mediaId: string; mediaType: "image" | "video" | "file" }>;
+  /**
+   * Media ids produced by the standard upload pipeline (optional). A positive
+   * `price` is honoured ONLY for a creator sending to one of their own
+   * subscribers; every other sender's attachments are forced free server-side.
+   */
+  attachmentMediaIds?: Array<{
+    mediaId: string;
+    mediaType: "image" | "video" | "file";
+    price?: number;
+  }>;
 }
 
 /**
@@ -494,14 +536,68 @@ export async function sendPrivateMessage(input: SendMessageInput): Promise<{
     throw new PrivateInboxError("You cannot message yourself", "SELF_MESSAGE");
   }
 
+  const [sender] = await db
+    .select({ is_creator: users.is_creator, role: users.role })
+    .from(users)
+    .where(eq(users.id, senderId))
+    .limit(1);
   const [recipient] = await db
-    .select({ id: users.id })
+    .select({ id: users.id, is_creator: users.is_creator, role: users.role })
     .from(users)
     .where(eq(users.id, recipientId))
     .limit(1);
-  if (!recipient) throw new PrivateInboxError("Creator not found", "NOT_FOUND");
+  if (!recipient) throw new PrivateInboxError("Recipient not found", "NOT_FOUND");
 
-  await assertCanSendTo(senderId, recipientId, 0);
+  const isCreatorUser = (r?: { is_creator: boolean | null; role: string | null }) =>
+    Boolean(r?.is_creator) && r?.role === "creator";
+  const recipientIsCreator = isCreatorUser(recipient);
+  const senderIsCreator = isCreatorUser(sender);
+
+  // Mode selection — the product only supports correspondence between a
+  // creator and their subscriber, in either direction:
+  //  • fan → creator: the existing paid inbox (delivery price + subscription).
+  //  • creator → subscriber: free delivery; the creator may price attachments.
+  // Anything else (two fans, two creators with neither subscribed, etc.) is
+  // rejected rather than silently allowed.
+  let deliveryPrice = 0;
+  let allowPricedAttachments = false;
+  if (recipientIsCreator) {
+    await assertCanSendTo(senderId, recipientId, 0);
+    ({ price: deliveryPrice } = await getInboxSettings(recipientId));
+    allowPricedAttachments = false; // fans never price media
+  } else if (senderIsCreator) {
+    // Creator → subscriber: the recipient must be an ACTIVE subscriber of
+    // the sender. Expired/cancelled subscriptions fail here because they no
+    // longer match status = "active".
+    const [sub] = await db
+      .select({ id: subscriptions.id })
+      .from(subscriptions)
+      .where(and(
+        eq(subscriptions.subscriber_id, recipientId),
+        eq(subscriptions.creator_id, senderId),
+        eq(subscriptions.status, "active"),
+      ))
+      .limit(1);
+    if (!sub) {
+      throw new PrivateInboxError("You can only message your own subscribers", "SUBSCRIPTION_REQUIRED");
+    }
+    // The subscriber blocked this creator — respect it symmetrically.
+    const [blocked] = await db
+      .select({ id: blocked_users.id })
+      .from(blocked_users)
+      .where(and(eq(blocked_users.blocker_id, recipientId), eq(blocked_users.blocked_id, senderId)))
+      .limit(1);
+    if (blocked) {
+      throw new PrivateInboxError("You cannot message this user", "BLOCKED");
+    }
+    deliveryPrice = 0; // free delivery — the creator monetizes via attachments
+    allowPricedAttachments = true;
+  } else {
+    throw new PrivateInboxError(
+      "Private messaging is available between creators and their subscribers only",
+      "INBOX_CLOSED",
+    );
+  }
 
   // Recipient restricted this sender ("mute → waiting"): the message must
   // NOT reach the normal inbox — it queues for approval instead.
@@ -527,11 +623,21 @@ export async function sendPrivateMessage(input: SendMessageInput): Promise<{
       if (!row || row.uploader_id !== senderId || row.type !== expectedType) {
         throw new PrivateInboxError("Attachment is invalid or not owned by you", "INVALID_ATTACHMENT");
       }
+      // Server-authoritative prices: only a creator sender may price media,
+      // and only within the 0 – 1,000,000 bound. Never trust the client.
+      const p = attachment.price ?? 0;
+      if (!allowPricedAttachments) {
+        if (p !== 0) {
+          throw new PrivateInboxError("Only creators can price attachments", "INVALID_PRICE");
+        }
+      } else if (!Number.isFinite(p) || p < 0 || p > 1_000_000) {
+        throw new PrivateInboxError("Attachment price is invalid", "INVALID_PRICE");
+      }
     }
   }
 
   // Server-authoritative pricing — never trust the client's number.
-  const { price } = await getInboxSettings(recipientId);
+  const price = deliveryPrice;
 
   const now = new Date().toISOString();
   let messageId = "";
@@ -591,7 +697,9 @@ export async function sendPrivateMessage(input: SendMessageInput): Promise<{
             message_id: messageId,
             media_id: a.mediaId,
             media_type: a.mediaType,
-            price: 0,
+            // Only creator→subscriber sends may carry a price (validated
+            // above); everything else is forced free.
+            price: allowPricedAttachments ? Math.max(0, Number(a.price) || 0) : 0,
           })),
         );
       }
@@ -650,26 +758,15 @@ export async function sendPrivateMessage(input: SendMessageInput): Promise<{
     payload: { reason: "private_message_sent", amount: -price },
   });
 
-  // In-app notification + push (backgrounded recipients), preference-gated.
-  // Restricted senders land in the Waiting queue, so the copy says so — the
-  // recipient must approve before the message is visible in their inbox.
-  await createNotification(recipientId, "notif_messages", {
-    actor_id: senderId,
-    type: "private_message",
-    entity_type: "private_message",
-    entity_id: messageId,
-    body: waiting ? "sent you a private message awaiting approval" : "sent you a private message",
-  });
-  getActorUsername(senderId).then((username) => {
-    sendPushToUser(
-      recipientId,
-      {
-        title: waiting ? "Private Message Awaiting Approval" : "New Private Message",
-        body: waiting ? `${username} sent you a message — review it in Waiting` : `${username} sent you a private message`,
-        data: { type: "private_message", private_message_id: messageId },
-      },
-      "notif_messages",
-    );
+  // In-app notification + push (backgrounded recipients), preference-gated and
+  // deduped by the service. Restricted senders land in the Waiting queue, so
+  // the copy says so — the recipient must approve before the message is
+  // visible in their inbox.
+  void notifyPrivateMessage({
+    actorId: senderId,
+    recipientId,
+    messageId,
+    waiting,
   });
 
   const balance = await getBalance(senderId);
@@ -714,7 +811,29 @@ export async function replyToMessage(input: ReplyInput): Promise<{ message: Priv
   // the original's counterpart (participants never change within a thread).
   const root = await rootOf(parent);
   const otherId = root.sender_id === userId ? root.recipient_id : root.sender_id;
-  const isCreator = root.recipient_id === userId;
+
+  // The thread's CREATOR participant — whichever side holds creator role. In a
+  // fan-initiated thread that is the recipient; in a creator-initiated thread
+  // (creator messaging their subscriber) it is the sender. Only the creator
+  // may price reply media, in any thread they started or joined.
+  const [senderRow] = await db
+    .select({ is_creator: users.is_creator, role: users.role })
+    .from(users)
+    .where(eq(users.id, root.sender_id))
+    .limit(1);
+  const [recipientRow] = await db
+    .select({ is_creator: users.is_creator, role: users.role })
+    .from(users)
+    .where(eq(users.id, root.recipient_id))
+    .limit(1);
+  const isCreatorUser = (r?: { is_creator: boolean | null; role: string | null }) =>
+    Boolean(r?.is_creator) && r?.role === "creator";
+  const threadCreatorId = isCreatorUser(senderRow)
+    ? root.sender_id
+    : isCreatorUser(recipientRow)
+      ? root.recipient_id
+      : null;
+  const isCreator = threadCreatorId === userId;
 
   // Idempotent replay — retried submit returns the already-created reply.
   const key = input.idempotencyKey || `reply_${messageId}_${userId}`;
@@ -834,23 +953,11 @@ export async function replyToMessage(input: ReplyInput): Promise<{ message: Priv
     payload: { box: otherId === root.recipient_id ? "inbox" : "outbox", status: "replied", replied_at: now, message: rootView },
   });
 
-  await createNotification(otherId, "notif_messages", {
-    actor_id: userId,
-    type: "private_message_reply",
-    entity_type: "private_message",
-    entity_id: root.id,
-    body: "replied to your private message",
-  });
-  getActorUsername(userId).then((username) => {
-    sendPushToUser(
-      otherId,
-      {
-        title: "Private Message Reply",
-        body: `${username} replied to your message`,
-        data: { type: "private_message", private_message_id: root.id },
-      },
-      "notif_messages",
-    );
+  void notifyPrivateMessageReply({
+    actorId: userId,
+    recipientId: otherId,
+    threadId: root.id,
+    messageId: replyId,
   });
 
   return { message: replyView };
@@ -897,9 +1004,12 @@ export async function markRead(userId: string, messageId: string): Promise<void>
 // ─── Attachment purchase ─────────────────────────────────────────────────────
 
 /**
- * Buy a priced reply attachment. Only the original sender may purchase, and
- * the purchase state lives on the attachment row so a retry can never charge
- * twice.
+ * Buy a priced attachment. The buyer is always the non-creator participant
+ * (the message's recipient — the fan) in either thread direction: fan-initiated
+ * threads price creator reply media, creator-initiated threads price media on
+ * the creator's opening message or replies. The purchase state lives on the
+ * attachment row so a retry can never charge twice, and the creator's earnings
+ * are recorded in the same atomic transaction.
  */
 export async function purchaseAttachment(
   userId: string,
@@ -919,9 +1029,9 @@ export async function purchaseAttachment(
     .limit(1);
   if (!message) throw new PrivateInboxError("Message not found", "NOT_FOUND");
 
-  const creatorId = message.sender_id; // replies come FROM the creator
+  const creatorId = message.sender_id; // priced media always comes FROM the creator
   if (message.recipient_id !== userId) {
-    throw new PrivateInboxError("Only the original sender can purchase this", "FORBIDDEN");
+    throw new PrivateInboxError("Only the recipient of this message can unlock it", "FORBIDDEN");
   }
   if (attachment.price <= 0) {
     // Free attachment — nothing to buy.
@@ -1008,12 +1118,16 @@ export async function purchaseAttachment(
     payload: { attachment_id: attachmentId, message_id: message.id, buyer_id: userId },
   });
 
-  await createNotification(creatorId, "notif_creator_updates", {
-    actor_id: userId,
-    type: "payment",
-    entity_type: "private_message",
-    entity_id: message.id,
-    body: "purchased your reply attachment",
+  // In-app row + push, gated by the creator's Creator Updates preference and
+  // deduped so a retried purchase can never double-notify.
+  void notifyPurchase({
+    buyerId: userId,
+    creatorId,
+    sourceType: "private_message",
+    sourceId: message.id,
+    description: "purchased your reply attachment",
+    pushTitle: "Attachment Purchase",
+    pushVerb: "purchased your reply attachment",
   });
 
   return { attachment: viewList[0], balance: await getBalance(userId) };

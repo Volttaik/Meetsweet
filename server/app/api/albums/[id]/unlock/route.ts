@@ -7,7 +7,7 @@ import { err, ok } from "@/lib/api/response";
 import { generateId } from "@/lib/auth/codes";
 import { loadAlbum } from "@/lib/services/albums";
 import { recordCreatorEarning } from "@/lib/services/creator-finance";
-import { sendPushToUser, getActorUsername, createNotification } from "@/lib/services/push";
+import { notifyPurchase } from "@/lib/services/notifications";
 import { sendAlbumPurchaseEmail } from "@/lib/services/email";
 
 export async function POST(
@@ -80,22 +80,17 @@ export async function POST(
     throw error;
   }
 
-  // In-app row gated by the creator's Creator Updates preference — when OFF,
-  // the purchase never appears in their notification feed either.
-  await createNotification(album.creator_id, "notif_creator_updates", {
-    actor_id: auth.user.userId,
-    type: "payment",
-    entity_type: "album",
-    entity_id: id,
-    body: "Your album received a new purchase",
+  // In-app row + push gated by the creator's Creator Updates preference and
+  // deduped by the service so a webhook replay never double-notifies.
+  void notifyPurchase({
+    buyerId: auth.user.userId,
+    creatorId: album.creator_id,
+    sourceType: "album",
+    sourceId: id,
+    description: "Your album received a new purchase",
+    pushTitle: "Album Purchase",
+    pushVerb: "unlocked your album",
   });
-  getActorUsername(auth.user.userId).then((actor) =>
-    sendPushToUser(album.creator_id, {
-      title: "Album Purchase",
-      body: `${actor} unlocked your album`,
-      data: { type: "payment", wallet: true, content_type: "album", album_id: id, content_id: id },
-    }, "notif_creator_updates"),
-  );
 
   const [walletRow] = await db
     .select({ balance: wallets.balance })

@@ -14,8 +14,7 @@ import { parseBody } from "@/lib/api/validate";
 import { ok, err, created } from "@/lib/api/response";
 import { generateId } from "@/lib/auth/codes";
 import { listRoomComments, commentShape, ensureCommentRoom } from "@/lib/services/comment-rooms";
-import { sendPushToUser, getActorUsername, createNotification } from "@/lib/services/push";
-import { notifyMentionedUsers } from "@/lib/services/mentions";
+import { notifyComment, notifyCommentReply, notifyMentionedUsers } from "@/lib/services/notifications";
 
 export async function GET(
   req: NextRequest,
@@ -86,7 +85,7 @@ export async function POST(
   // top-level comment or a child of a later sibling.
   if (parentId) {
     const [parent] = await db
-      .select({ id: comments.id, post_id: comments.post_id })
+      .select({ id: comments.id, post_id: comments.post_id, author_id: comments.author_id })
       .from(comments)
       .where(and(eq(comments.id, parentId), isNull(comments.deleted_at)))
       .limit(1);
@@ -123,6 +122,20 @@ export async function POST(
       .where(eq(comments.id, replyId))
       .limit(1);
 
+    // A reply notifies the author of the comment it answers (never the
+    // replier, and the post owner separately when they are a different user).
+    // The service dedupes so retries never double-notify.
+    if (parent.author_id !== auth.user.userId) {
+      void notifyCommentReply({
+        actorId: auth.user.userId,
+        parentAuthorId: parent.author_id,
+        postId: id,
+        contentType: post.content_type ?? "post",
+        commentId: parentId,
+        commentBody: parsed.data.body,
+      });
+    }
+
     // @username tags inside a reply notify the tagged users (gated server-side
     // by their Allow Mentions privacy + Mentions preference).
     void notifyMentionedUsers({
@@ -145,35 +158,19 @@ export async function POST(
   });
   await db.update(posts).set({ comment_count: sql`${posts.comment_count} + 1` }).where(eq(posts.id, id));
 
-  // Notify the post creator (skip self-comments). The in-app notification row
-  // is gated by their Comments preference — when OFF, no event is written and
-  // no push is sent (the push below is already gated). Context includes the
-  // post title + comment preview so the notification is meaningful, not generic.
-  const postTitle = (post.title ?? post.caption ?? "").trim();
-  const commentContext = postTitle ? `commented on "${postTitle.slice(0, 60)}"` : "commented on your post";
+  // Notify the post creator (skip self-comments). The service gates the row +
+  // push by their Comments preference, dedupes the event, and builds the
+  // navigation payload — never awaited so it can't delay the reply.
   if (post.creator_id && post.creator_id !== auth.user.userId) {
-    await createNotification(post.creator_id, "notif_comments", {
-      actor_id: auth.user.userId,
-      type: "comment",
-      entity_type: "post",
-      entity_id: id,
-      body: commentContext,
+    void notifyComment({
+      actorId: auth.user.userId,
+      postOwnerId: post.creator_id,
+      postId: id,
+      contentType: post.content_type ?? "post",
+      title: post.title ?? post.caption,
+      commentBody: parsed.data.body,
+      commentId,
     });
-
-    const preview = parsed.data.body.length > 60 ? parsed.data.body.slice(0, 57) + "…" : parsed.data.body;
-    getActorUsername(auth.user.userId).then((actor) =>
-      sendPushToUser(post.creator_id!, {
-        title: "New Comment",
-        body: `${actor} ${commentContext}${preview ? `: “${preview}”` : ""}`,
-        data: {
-          type: "comment",
-          post_id: id,
-          actor_id: auth.user.userId,
-          content_type: post.content_type ?? "post",
-          actor_username: actor.replace(/^@/, ""),
-        },
-      }, "notif_comments"),
-    );
   }
 
   // @username tags inside a comment notify the tagged users (gated server-side

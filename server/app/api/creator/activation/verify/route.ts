@@ -20,7 +20,7 @@ import { db } from "@/lib/db";
 import { users, transactions } from "@/lib/db/schema";
 import { config } from "@/lib/config";
 import { settleCreatorActivation } from "@/lib/services/referrals";
-import { sendPushToUser } from "@/lib/services/push";
+import { notifyReferralReward } from "@/lib/services/notifications";
 
 export async function POST(req: NextRequest) {
   const auth = await requireAuth(req);
@@ -101,11 +101,13 @@ export async function POST(req: NextRequest) {
       paystackData.reference ?? reference,
     );
     if (settled.referrerId && settled.rewardAmount > 0) {
-      void sendPushToUser(settled.referrerId, {
-        title: "Referral Reward",
-        body: "You received ₦200 in your MeetSweet wallet.",
-        data: { type: "referral_reward", wallet: true, referred_user_id: auth.user.userId },
-      }, "notif_creator_updates");
+      // In-app row + push — deduped by (user, event) so replays never
+      // double-notify the referrer.
+      void notifyReferralReward({
+        userId: settled.referrerId,
+        referredUserId: auth.user.userId,
+        amount: settled.rewardAmount,
+      });
     }
     return ok({
       activated: settled.activated,

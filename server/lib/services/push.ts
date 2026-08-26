@@ -1,18 +1,20 @@
 /**
- * Expo Push Notification Service
+ * Expo Push Transport
  *
- * Sends push notifications to devices via the Expo Push API.
- * Automatically cleans up stale / unregistered tokens.
+ * The low-level delivery layer for OS-level push notifications. Sends to Expo
+ * Push Service, checks push receipts for delivery errors (DeviceNotRegistered
+ * tokens are removed so the server stops failing on dead devices), and owns
+ * the user preference gates. Notification ORCHESTRATION (the durable row, the
+ * realtime event, the feature-specific payloads) lives in
+ * `lib/services/notifications.ts` — routes never talk to this module directly.
  */
 
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { devices, users, profiles, subscriptions, notifications, user_settings } from "@/lib/db/schema";
-import { generateId } from "@/lib/auth/codes";
-import { emitEvent } from "@/lib/realtime/emit";
-import { userChannel } from "@/lib/realtime/types";
+import { devices, users, user_settings } from "@/lib/db/schema";
 
 const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
+const EXPO_RECEIPTS_URL = "https://exp.host/--/api/v2/push/getReceipts";
 
 export type PushPayload = {
   title: string;
@@ -36,6 +38,19 @@ type ExpoMessage = {
 type ExpoTicket =
   | { status: "ok"; id: string }
   | { status: "error"; message: string; details?: { error?: string } };
+
+type ExpoReceipt =
+  | { status: "ok" }
+  | { status: "error"; message?: string; details?: { error?: string } };
+
+// ─── Pending push-receipt tracking ───────────────────────────────────────────
+// Expo push tickets only prove the payload was RECEIVED by Expo; actual
+// delivery outcome (DeviceNotRegistered, MessageTooBig, …) is only known from
+// the push receipt. We track ticket ids → token here and poll receipts shortly
+// after sending so dead tokens are removed instead of failing forever.
+const pendingTickets = new Map<string, string>();
+const MAX_PENDING_TICKETS = 5000;
+let receiptCheckScheduled = false;
 
 export type NotifPreferenceKey =
   | "notif_messages"
@@ -77,9 +92,8 @@ async function isPushAllowed(
  * Whether an in-app notification category is enabled for a user. Unlike the
  * push gate (which also honors the master push_notifications switch), this is
  * category-only: a user who turned OFF "Comments" gets no comment event in
- * their in-app notification feed either — the setting is authoritative, not a
- * client-side filter. A missing settings row falls back to the schema default
- * (category enabled).
+ * their in-app notification feed either. A missing settings row falls back to
+ * the schema default (category enabled).
  */
 export async function categoryEnabled(
   userId: string,
@@ -100,9 +114,9 @@ export async function categoryEnabled(
 }
 
 /**
- * The notification payload shape handed to clients. Mirrors the `data` block
- * of GET /api/notifications so a client can render the row and navigate to
- * the right screen from the event alone — no follow-up request required.
+ * The notification navigation payload shape handed to clients. Mirrors the
+ * `data` block of GET /api/notifications so a client can render the row and
+ * navigate to the right screen from the event alone — no follow-up request.
  */
 export function notificationDataBlock(input: {
   entity_type?: string | null;
@@ -135,130 +149,82 @@ export function notificationDataBlock(input: {
   };
 }
 
-/**
- * A notification row as inserted into the `notifications` table. `user_id`
- * (the recipient) and `created_at` are always present; the emit helper below
- * appends display data + the navigation block before fanning out.
- */
-export type NotificationRow = {
-  id: string;
-  user_id: string;
-  created_at: string;
-  actor_id?: string | null;
-  type: string;
-  entity_type?: string | null;
-  entity_id?: string | null;
-  body?: string | null;
-};
+/** Delete a device row for a permanently-invalid push token. */
+async function removeStaleToken(token: string): Promise<void> {
+  try {
+    await db.delete(devices).where(eq(devices.push_token, token));
+    console.warn("[push] removed unregistered device token");
+  } catch (e) {
+    console.error("[push] failed to remove stale token:", e);
+  }
+}
 
-/**
- * Emit `notification.created` for an already-persisted notification row.
- *
- * The row is the source of truth (the caller inserted it); this only delivers
- * the realtime event. Actor display data is loaded best-effort so the
- * recipient's client can render the row immediately. Fire-and-forget — never
- * throws and never blocks the API response.
- */
-export function emitNotificationCreated(row: NotificationRow): void {
-  void (async () => {
-    try {
-      let actor_name: string | null = null;
-      let actor_username: string | null = null;
-      let actor_avatar: string | null = null;
-      if (row.actor_id) {
-        const [actor] = await db
-          .select({
-            full_name: users.full_name,
-            username: users.username,
-            avatar_url: profiles.avatar_url,
-          })
-          .from(users)
-          .leftJoin(profiles, eq(profiles.user_id, users.id))
-          .where(eq(users.id, row.actor_id))
-          .limit(1);
-        if (actor) {
-          actor_name = actor.full_name ?? null;
-          actor_username = actor.username ?? null;
-          actor_avatar = actor.avatar_url ?? null;
-        }
-      }
-
-      emitEvent({
-        type: "notification.created",
-        channel: userChannel(row.user_id),
-        userId: row.user_id,
-        resourceId: row.id,
-        payload: {
-          notification: {
-            id: row.id,
-            type: row.type,
-            entity_type: row.entity_type ?? null,
-            entity_id: row.entity_id ?? null,
-            body: row.body ?? null,
-            actor_id: row.actor_id ?? null,
-            created_at: row.created_at,
-            is_read: false,
-            actor_name,
-            actor_username,
-            actor_avatar,
-            data: notificationDataBlock({
-              entity_type: row.entity_type,
-              entity_id: row.entity_id,
-              actor_id: row.actor_id,
-              actor_name,
-              actor_username,
-              actor_avatar,
-            }),
-          },
-        },
-      });
-    } catch {
-      // Delivery is best-effort — the DB row is already authoritative.
-    }
-  })();
+/** Schedule a best-effort push-receipt poll for any pending tickets. */
+function scheduleReceiptCheck(delayMs = 60_000): void {
+  if (receiptCheckScheduled) return;
+  receiptCheckScheduled = true;
+  setTimeout(() => {
+    receiptCheckScheduled = false;
+    void checkPendingPushReceipts();
+  }, delayMs);
 }
 
 /**
- * Create an in-app notification row for a user, gated by their notification
- * preference for that category. When the category is OFF, nothing is written
- * and the event never appears in their notification feed — enforced here so
- * the backend cannot be bypassed by calling the event API directly.
- * Fire-and-forget — never throws.
+ * Check push receipts for pending tickets and handle delivery errors:
+ *  • DeviceNotRegistered → the token is permanently dead — remove it so the
+ *    server stops attempting delivery to that device.
+ *  • MessageTooBig / MessageRateExceeded / credential errors → log so the
+ *    failure is visible instead of silently swallowed.
+ * Receipts with no result yet are kept for the next poll. Best-effort and
+ * fire-and-forget — never throws.
  */
-export async function createNotification(
-  userId: string,
-  category: NotifPreferenceKey | null,
-  values: {
-    actor_id?: string | null;
-    type: string;
-    entity_type?: string | null;
-    entity_id?: string | null;
-    body?: string | null;
-  },
-): Promise<void> {
+async function checkPendingPushReceipts(): Promise<void> {
+  const ids = Array.from(pendingTickets.keys()).slice(0, 1000);
+  if (ids.length === 0) return;
   try {
-    if (category && !(await categoryEnabled(userId, category))) return;
-    const notificationId = generateId();
-    const createdAt = new Date().toISOString();
-    const row: NotificationRow = {
-      id: notificationId,
-      user_id: userId,
-      created_at: createdAt,
-      ...values,
-    };
-    await db.insert(notifications).values(row);
+    const res = await fetch(EXPO_RECEIPTS_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ ids }),
+    });
+    if (!res.ok) {
+      console.warn(`[push] receipt check failed: HTTP ${res.status}`);
+      return;
+    }
+    const json = (await res.json()) as { data?: Record<string, ExpoReceipt> };
+    const data = json.data ?? {};
+    for (const id of ids) {
+      const receipt = data[id];
+      if (!receipt) continue; // not ready yet — poll again next time
+      const token = pendingTickets.get(id);
+      pendingTickets.delete(id);
+      if (receipt.status === "ok") continue;
 
-    // Realtime: the recipient's notification feed/badge updates instantly
-    // while the app is connected. The durable row above remains authoritative.
-    emitNotificationCreated(row);
-  } catch {
-    // Notification writes are best-effort — never break the API response.
+      const error = receipt.details?.error ?? "unknown";
+      console.warn(
+        `[push] delivery error for ticket ${id}: ${error}${receipt.message ? ` — ${receipt.message}` : ""}`,
+      );
+      // The device unsubscribed or the app was uninstalled — this token can
+      // never deliver again. Drop it so we stop paying to fail on it.
+      if (error === "DeviceNotRegistered" && token) {
+        await removeStaleToken(token);
+      }
+      // MessageTooBig / MessageRateExceeded / InvalidCredentials / … are
+      // already logged above; they don't invalidate the token itself.
+    }
+  } catch (e) {
+    console.error("[push] receipt check failed:", e);
   }
 }
 
 /**
  * Send a push notification to one or more Expo push tokens.
- * Stale tokens that come back as DeviceNotRegistered are removed from the DB.
+ *
+ * Failures are LOGGED, not swallowed: HTTP/request-level errors, per-ticket
+ * errors, and (via the receipt poll) per-delivery errors are all surfaced.
+ * Tokens that come back as DeviceNotRegistered — at the ticket OR receipt
+ * level — are removed from the DB so dead devices stop receiving attempts.
+ * Fire-and-forget: push delivery must never break the API response.
  */
 export async function sendPushToTokens(
   tokens: string[],
@@ -286,32 +252,50 @@ export async function sendPushToTokens(
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify(messages),
     });
-    if (res.ok) {
-      const json = (await res.json()) as { data?: ExpoTicket[] };
-      tickets = json.data ?? [];
+    const json = (await res.json().catch(() => null)) as {
+      data?: ExpoTicket[];
+      errors?: Array<{ message?: string; code?: string }>;
+    } | null;
+    if (!res.ok) {
+      // Request-level failure (invalid payload, no credentials, 429, 5xx…).
+      const detail =
+        json?.errors?.map((e) => e.message ?? e.code).filter(Boolean).join("; ") ??
+        `HTTP ${res.status}`;
+      console.error(`[push] Expo push request failed (HTTP ${res.status}): ${detail}`);
+      return;
     }
-  } catch {
-    // Non-critical — push delivery failure should never break the API response
+    tickets = json?.data ?? [];
+  } catch (e) {
+    // Network failure reaching Expo's service.
+    console.error("[push] Expo push request failed:", e);
+    return;
   }
 
-  // Remove stale tokens
-  const staleTokens: string[] = [];
   tickets.forEach((ticket, i) => {
-    if (
-      ticket.status === "error" &&
-      ticket.details?.error === "DeviceNotRegistered"
-    ) {
-      staleTokens.push(validTokens[i]);
+    const token = validTokens[i];
+    if (ticket.status === "error") {
+      const error = ticket.details?.error ?? "unknown";
+      console.warn(
+        `[push] ticket error: ${error}${ticket.message ? ` — ${ticket.message}` : ""}`,
+      );
+      if (error === "DeviceNotRegistered" && token) {
+        void removeStaleToken(token);
+      }
+      return;
+    }
+    // Status ok → Expo accepted it; the delivery outcome is only known from
+    // the push receipt, so track the ticket for the receipt poll.
+    if (ticket.id && token) {
+      if (pendingTickets.size >= MAX_PENDING_TICKETS) {
+        // Evict oldest first so the map never grows unbounded.
+        const oldest = pendingTickets.keys().next().value;
+        if (oldest !== undefined) pendingTickets.delete(oldest);
+      }
+      pendingTickets.set(ticket.id, token);
     }
   });
 
-  if (staleTokens.length > 0) {
-    await Promise.all(
-      staleTokens.map((token) =>
-        db.delete(devices).where(eq(devices.push_token, token)).catch(() => {}),
-      ),
-    );
-  }
+  if (pendingTickets.size > 0) scheduleReceiptCheck();
 }
 
 /**
@@ -343,8 +327,8 @@ export async function sendPushToUser(
 }
 
 /**
- * Look up all push tokens for a list of user IDs and send each their notification.
- * Batches tokens together in one Expo API call where possible.
+ * Look up all push tokens for a list of user IDs and send each their
+ * notification. Batches tokens together in one Expo API call where possible.
  */
 export async function sendPushToUsers(
   userIds: string[],
@@ -370,75 +354,5 @@ export async function getActorUsername(userId: string): Promise<string> {
     return row?.username ? `@${row.username}` : "Someone";
   } catch {
     return "Someone";
-  }
-}
-
-/**
- * Notify every active subscriber when a creator publishes content.
- * The database notification is written alongside the push fan-out so users
- * still see the event in-app if push permissions are disabled.
- */
-export async function notifySubscribersOfNewPost(input: {
-  creatorId: string;
-  postId: string;
-  contentType: "post" | "video" | "short" | "album";
-  title?: string | null;
-}): Promise<void> {
-  try {
-    const [creator] = await db
-      .select({ username: users.username, full_name: users.full_name })
-      .from(users)
-      .where(eq(users.id, input.creatorId))
-      .limit(1);
-
-    const subscribers = await db
-      .select({ user_id: subscriptions.subscriber_id })
-      .from(subscriptions)
-      .where(
-        and(
-          eq(subscriptions.creator_id, input.creatorId),
-          eq(subscriptions.status, "active"),
-        ),
-      );
-
-    const recipientIds = subscribers
-      .map((row) => row.user_id)
-      .filter((id): id is string => Boolean(id) && id !== input.creatorId);
-    if (recipientIds.length === 0) return;
-
-    const creatorName = creator?.username
-      ? `@${creator.username}`
-      : creator?.full_name || "A creator";
-    const contentTitle = input.title?.trim() || `a new ${input.contentType}`;
-    const body = `${creatorName} just posted: ${contentTitle}`;
-    const data = {
-      type: "new_post",
-      post_id: input.postId,
-      content_id: input.postId,
-      ...(input.contentType === "album" ? { album_id: input.postId } : {}),
-      actor_id: input.creatorId,
-      actor_username: creator?.username ?? null,
-      content_type: input.contentType,
-    };
-
-    await Promise.all(
-      recipientIds.map(async (userId) =>
-        createNotification(userId, "notif_creator_updates", {
-          actor_id: input.creatorId,
-          type: "new_post",
-          entity_type: input.contentType,
-          entity_id: input.postId,
-          body,
-        }),
-      ),
-    );
-
-    await sendPushToUsers(
-      recipientIds,
-      { title: "New Post", body, data },
-      "notif_creator_updates",
-    );
-  } catch {
-    // Publishing must not fail because a notification provider is unavailable.
   }
 }

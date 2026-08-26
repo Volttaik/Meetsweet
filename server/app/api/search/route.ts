@@ -7,6 +7,7 @@ import { ok } from "@/lib/api/response";
 import { generateId } from "@/lib/auth/codes";
 import { recent_searches } from "@/lib/db/schema";
 import { getHiddenCreatorIds } from "@/lib/services/content";
+import { enrichCreatorRows } from "@/lib/services/creator-discovery";
 
 /**
  * GET /api/search?q=&type=&page=&limit=
@@ -68,6 +69,7 @@ export async function GET(req: NextRequest) {
     const relevance = sql`(
       CASE
         WHEN lower(${users.username}) = ${qLower} THEN 100
+        WHEN lower(COALESCE(${profiles.display_name}, ${users.full_name})) = ${qLower} THEN 90
         WHEN ${users.username} LIKE ${q} || '%' THEN 85
         WHEN lower(COALESCE(${profiles.display_name}, ${users.full_name})) LIKE ${q} || '%' THEN 70
         WHEN ${users.username} LIKE ${pattern} THEN 45
@@ -83,9 +85,14 @@ export async function GET(req: NextRequest) {
         id: users.id,
         full_name: users.full_name,
         username: users.username,
+        display_name: profiles.display_name,
         avatar_url: profiles.avatar_url,
+        banner_url: profiles.banner_url,
+        bio: profiles.bio,
         is_verified: users.is_verified,
         is_creator: users.is_creator,
+        is_verified_creator: profiles.is_verified_creator,
+        category: profiles.category,
         relevance,
       })
       .from(users)
@@ -114,17 +121,10 @@ export async function GET(req: NextRequest) {
       .limit(limit)
       .offset(offset);
 
-    userResults = rows.map((u) => ({
-      id: u.id,
-      name: u.full_name,
-      full_name: u.full_name,
-      username: u.username,
-      avatar_url: u.avatar_url,
-      avatarUrl: u.avatar_url,
-      is_verified: u.is_verified,
-      isVerified: u.is_verified,
-      is_creator: u.is_creator,
-    }));
+    // Enrich with live subscriber counts, viewer subscription state and
+    // online presence (same shape as the Explore featured-creators list) so
+    // creator search results render the full card without extra requests.
+    userResults = await enrichCreatorRows(rows, userId);
   }
 
   // ── Posts / videos / shorts ─────────────────────────────────────────────

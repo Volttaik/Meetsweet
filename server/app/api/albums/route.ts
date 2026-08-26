@@ -7,7 +7,7 @@ import { optionalAuth, requireAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { created, err, ok } from "@/lib/api/response";
 import { generateId } from "@/lib/auth/codes";
-import { notifySubscribersOfNewPost } from "@/lib/services/push";
+import { notifyNewPostToSubscribers } from "@/lib/services/notifications";
 
 const createSchema = z.object({
   title: z.string().trim().min(1).max(160),
@@ -257,7 +257,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  void notifySubscribersOfNewPost({
+  void notifyNewPostToSubscribers({
     creatorId: auth.user.userId,
     postId: albumId,
     contentType: "album",

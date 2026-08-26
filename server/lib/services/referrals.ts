@@ -12,7 +12,7 @@ import {
 import { generateId } from "@/lib/auth/codes";
 import { DEFAULT_SUBSCRIPTION_PRICE } from "@/lib/services/pricing";
 import { sendReferralBonusEmail } from "@/lib/services/email";
-import { emitNotificationCreated, type NotificationRow } from "@/lib/services/push";
+import { emitNotificationCreated, type NotificationRow } from "@/lib/services/notifications";
 import { emitEvent } from "@/lib/realtime/emit";
 import { userChannel } from "@/lib/realtime/types";
 
@@ -260,6 +260,9 @@ export async function settleCreatorActivation(
       entity_type: "wallet",
       entity_id: transactionId,
       body: "You received ₦200 referral reward after your referral became a creator.",
+      // Same key the NotificationService derives for this event — a concurrent
+      // or retried reward can never create a second row.
+      dedupe_key: `referral_reward:${userId}`,
       created_at: now,
     });
 

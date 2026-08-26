@@ -36,6 +36,9 @@ const listQuerySchema = z.object({
 const attachmentSchema = z.object({
   media_id: z.string().min(1),
   media_type: z.enum(["image", "video", "file"]).default("image"),
+  // Optional pay-to-unlock price (Naira). Honoured ONLY for creator →
+  // subscriber sends; every other path is forced free server-side.
+  price: z.number().finite().min(0).max(1_000_000).optional(),
 });
 
 const sendSchema = z.object({
@@ -88,6 +91,7 @@ export async function POST(req: NextRequest) {
       attachmentMediaIds: attachments?.map((a) => ({
         mediaId: a.media_id,
         mediaType: a.media_type,
+        price: a.price,
       })),
     });
     return ok(result);
