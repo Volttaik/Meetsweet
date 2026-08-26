@@ -67,11 +67,16 @@ async function getResolvedPrices(userId: string): Promise<{
 
 const patchSchema = z.object({
   full_name: z.string().min(2).max(100).optional(),
+  // The mobile profile screen sends `name` — accept both spellings.
+  name: z.string().min(2).max(100).optional(),
   display_name: z.string().min(1).max(100).optional(),
   username: z.string().min(2).max(30).regex(/^[a-zA-Z0-9_]+$/, "Only letters, numbers and underscores").optional(),
   bio: z.string().max(300).nullable().optional(),
   avatar_url: z.string().url().nullable().optional(),
+  // Mobile sends camelCase — accept both spellings (snake_case wins if both).
+  avatarUrl: z.string().url().nullable().optional(),
   banner_url: z.string().url().nullable().optional(),
+  bannerUrl: z.string().url().nullable().optional(),
   website: z.string().url().nullable().optional(),
   location: z.string().max(100).nullable().optional(),
   category: z.string().max(50).nullable().optional(),
@@ -164,12 +169,13 @@ export async function PATCH(req: NextRequest) {
   const parsed = await parseBody(req, patchSchema);
   if (!parsed.success) return parsed.response;
 
-  const { full_name, display_name, username, bio, avatar_url, banner_url, website, location, category, phone } = parsed.data;
+  const { full_name, name, display_name, username, bio, avatar_url, avatarUrl, banner_url, bannerUrl, website, location, category, phone } = parsed.data;
   const now = new Date().toISOString();
 
   // Build users-table update (fields that live on the users row)
   const userUpdates: Record<string, unknown> = { updated_at: now };
   if (full_name !== undefined) userUpdates.full_name = full_name;
+  else if (name !== undefined) userUpdates.full_name = name;
   if (phone !== undefined) userUpdates.phone = phone;
 
   if (username !== undefined) {
@@ -187,7 +193,9 @@ export async function PATCH(req: NextRequest) {
   if (display_name !== undefined) profileUpdates.display_name = display_name;
   if (bio !== undefined) profileUpdates.bio = bio;
   if (avatar_url !== undefined) profileUpdates.avatar_url = avatar_url;
+  else if (avatarUrl !== undefined) profileUpdates.avatar_url = avatarUrl;
   if (banner_url !== undefined) profileUpdates.banner_url = banner_url;
+  else if (bannerUrl !== undefined) profileUpdates.banner_url = bannerUrl;
   if (website !== undefined) profileUpdates.website = website;
   if (location !== undefined) profileUpdates.location = location;
   if (category !== undefined) profileUpdates.category = category;
