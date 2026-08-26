@@ -4,10 +4,15 @@ import { db } from "@/lib/db";
 import { wallets, transactions } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
 import { ok } from "@/lib/api/response";
+import { renewForUser } from "@/lib/services/subscription-renewal";
 
 export async function GET(req: NextRequest) {
   const auth = await requireAuth(req);
   if ("response" in auth) return auth.response;
+
+  // Lazy renewal: settle any expired subscriptions before returning the
+  // balance so it reflects automatic renewal debits (offline-safe re-sync).
+  await renewForUser(auth.user.userId);
 
   let [wallet] = await db
     .select()

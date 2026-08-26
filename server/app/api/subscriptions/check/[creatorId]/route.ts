@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { subscriptions, creator_settings, user_settings } from "@/lib/db/schema";
 import { optionalAuth } from "@/middleware/auth";
 import { ok, err } from "@/lib/api/response";
+import { renewForUser } from "@/lib/services/subscription-renewal";
 
 /**
  * GET /api/subscriptions/check/:creatorId
@@ -22,6 +23,13 @@ export async function GET(
 ) {
   const { creatorId } = await params;
   const auth = await optionalAuth(req);
+
+  // Lazy renewal: re-sync any expired subscription the viewer has with this
+  // creator before reporting status (works offline — the moment the user is
+  // next seen, an expired sub is renewed or cancelled correctly).
+  if (auth?.userId) {
+    await renewForUser(auth.userId);
+  }
 
   // Get subscription status
   let subscribed = false;

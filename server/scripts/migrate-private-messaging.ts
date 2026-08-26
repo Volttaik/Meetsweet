@@ -146,7 +146,8 @@ async function main() {
       console.log("[migrate] creator_settings.private_inbox_enabled exists — skipped");
     }
     if (!csCols.includes("private_message_price")) {
-      await tx.execute("ALTER TABLE creator_settings ADD COLUMN private_message_price REAL NOT NULL DEFAULT 100");
+      // Default 0 = FREE messaging; a positive price opts the inbox into PAID.
+      await tx.execute("ALTER TABLE creator_settings ADD COLUMN private_message_price REAL NOT NULL DEFAULT 0");
       console.log("[migrate] creator_settings.private_message_price added");
     } else {
       console.log("[migrate] creator_settings.private_message_price exists — skipped");

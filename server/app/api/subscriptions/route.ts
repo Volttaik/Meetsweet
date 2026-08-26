@@ -10,6 +10,7 @@ import { generateId } from "@/lib/auth/codes";
 import { sendPushToUser, getActorUsername, createNotification } from "@/lib/services/push";
 import { resolveBasePrice } from "@/lib/services/pricing";
 import { recordCreatorEarning } from "@/lib/services/creator-finance";
+import { renewForUser } from "@/lib/services/subscription-renewal";
 
 // Subscription tier pricing:
 //   subscriber      → creator's own subscription_price
@@ -25,6 +26,11 @@ export async function GET(req: NextRequest) {
   if ("response" in auth) return auth.response;
 
   const type = req.nextUrl.searchParams.get("type") ?? "subscribed"; // subscribed | subscribers
+
+  // Lazy renewal: if any of the viewer's subscriptions expired while they were
+  // offline, re-sync them now so the list reflects live renewal state (an
+  // expired one either renewed or was cancelled + the user notified).
+  await renewForUser(auth.user.userId);
 
   if (type === "subscribers") {
     const rows = await db
@@ -94,8 +100,16 @@ export async function POST(req: NextRequest) {
   const { creator_id, tier } = parsed.data;
   if (creator_id === auth.user.userId) return err("Cannot subscribe to yourself", 400);
 
-  const [creator] = await db.select({ id: users.id }).from(users).where(eq(users.id, creator_id)).limit(1);
+  const [creator] = await db
+    .select({ id: users.id, is_creator: users.is_creator })
+    .from(users)
+    .where(eq(users.id, creator_id))
+    .limit(1);
+  // Subscription functionality is creator-only. A non-creator account can
+  // never be a subscription target — enforced here server-side so it is
+  // impossible even if a stale/hand-crafted request reaches the API.
   if (!creator) return err("Creator not found", 404);
+  if (!creator.is_creator) return err("This account cannot be subscribed to", 400);
 
   // Resolve price from the same authoritative sources as /creators/[id] so the
   // charge here can never differ from the price the profile advertises.

@@ -318,12 +318,63 @@ async function buildViews(
       const ordered = [root, ...descendants].sort((a, b) =>
         a.created_at === b.created_at ? (a.id < b.id ? -1 : 1) : a.created_at < b.created_at ? -1 : 1,
       );
-      rootView.thread = ordered.map((m) => viewById.get(m.id)!);
+      // Build the thread as INDEPENDENT flat DTO snapshots — never the shared
+      // view objects. `viewById.get(root.id)` IS the root view returned as the
+      // top-level `message`, so embedding it directly would put the message
+      // inside its own `thread` array (index 0 closes the circle) and crash
+      // JSON serialization with "Converting circular structure to JSON".
+      // Each element references its parent only by id (`parent_message_id`).
+      rootView.thread = ordered.map((m) => toFlatMessageView(viewById.get(m.id)!));
     }
     // Sanity: a descendant whose root is not in `originals` must not leak.
     if (rootOfRow(root).id === root.id) views.push(rootView);
   }
   return views;
+}
+
+/**
+ * Produce an acyclic, JSON-safe snapshot of a message view.
+ *
+ * Returns a BRAND-NEW plain object containing only primitive fields + flat
+ * attachment copies. It never embeds a `thread` array, and it references a
+ * parent message only by `parent_message_id` — never by containing the parent
+ * object. This is the ONLY shape we hand to JSON serialization for the thread
+ * endpoint, so no shared/mutable reference can ever close a cycle.
+ */
+export function toFlatMessageView(v: PrivateMessageView): PrivateMessageView {
+  return {
+    id: v.id,
+    sender_id: v.sender_id,
+    recipient_id: v.recipient_id,
+    parent_message_id: v.parent_message_id,
+    body: v.body,
+    status: v.status,
+    price_paid: v.price_paid,
+    created_at: v.created_at,
+    read_at: v.read_at,
+    replied_at: v.replied_at,
+    sender_name: v.sender_name,
+    sender_username: v.sender_username,
+    sender_avatar: v.sender_avatar,
+    recipient_name: v.recipient_name,
+    recipient_username: v.recipient_username,
+    recipient_avatar: v.recipient_avatar,
+    attachments: v.attachments.map((a) => ({ ...a })),
+    reply_count: v.reply_count,
+    reply: null,
+  };
+}
+
+/**
+ * The thread ROOT view, ready for the wire: the root's own fields are flat and
+ * its `thread` is an array of INDEPENDENT acyclic snapshots (original + every
+ * reply, oldest first). The returned object shares no references with the
+ * elements of `thread`, so serializing it cannot produce a circular structure.
+ */
+export function toThreadMessageView(root: PrivateMessageView): PrivateMessageView {
+  const snapshot = toFlatMessageView(root);
+  snapshot.thread = (root.thread ?? [root]).map(toFlatMessageView);
+  return snapshot;
 }
 
 // ─── Creator inbox settings ──────────────────────────────────────────────────
@@ -351,7 +402,10 @@ export async function getInboxSettings(creatorId: string): Promise<{
   return {
     // Non-creators have no monetizable inbox at all.
     enabled: Boolean(creator?.is_creator) && creator?.role === "creator" && (settings?.private_inbox_enabled ?? true),
-    price: settings?.private_message_price ?? 100,
+    // 0 = FREE by default. The creator opts into PAID messaging by setting a
+    // positive price in the Creator Dashboard. Sending only ever debits the
+    // wallet when price > 0 (see sendPrivateMessage).
+    price: settings?.private_message_price ?? 0,
     whoCanMessage: settings?.who_can_message ?? "everyone",
   };
 }
@@ -1042,7 +1096,12 @@ export async function getMessageThread(
   if (root.recipient_id === userId && root.deleted_for_recipient_at) return null;
 
   const [view] = await buildViews([root], userId, { withThread: true });
-  return view ?? null;
+  if (!view) return null;
+  // Return an intentionally acyclic DTO: the root's own fields plus a flat,
+  // independent `thread` array (original + every reply). Never the raw shared
+  // view objects, which can reference each other and crash JSON serialization
+  // with a circular-structure error.
+  return toThreadMessageView(view);
 }
 
 // ─── Waiting / restrictions ─────────────────────────────────────────────────

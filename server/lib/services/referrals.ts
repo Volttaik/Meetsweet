@@ -12,6 +12,9 @@ import {
 import { generateId } from "@/lib/auth/codes";
 import { DEFAULT_SUBSCRIPTION_PRICE } from "@/lib/services/pricing";
 import { sendReferralBonusEmail } from "@/lib/services/email";
+import { emitNotificationCreated, type NotificationRow } from "@/lib/services/push";
+import { emitEvent } from "@/lib/realtime/emit";
+import { userChannel } from "@/lib/realtime/types";
 
 export const REFERRAL_REWARD_NAIRA = 200;
 export const CREATOR_ACTIVATION_NAIRA = 1000;
@@ -104,6 +107,9 @@ export async function settleCreatorActivation(
     newBalance: number;
     referredUserName: string;
   };
+  // The committed notification row — emitted as a realtime event after the
+  // transaction commits (the socket must never fire before its DB row exists).
+  notificationRow?: NotificationRow;
 }> {
   const result = await db.transaction(async (tx) => {
     const [user] = await tx
@@ -245,8 +251,9 @@ export async function settleCreatorActivation(
       updated_at: now,
     });
 
+    const referralNotificationId = generateId();
     await tx.insert(notifications).values({
-      id: generateId(),
+      id: referralNotificationId,
       user_id: referrer.id,
       actor_id: userId,
       type: "referral_reward",
@@ -262,6 +269,19 @@ export async function settleCreatorActivation(
       rewardAmount: REFERRAL_REWARD_NAIRA,
       referrerId: referrer.id,
       emailData,
+      // The notification row + wallet credit commit inside this transaction;
+      // the realtime fan-out happens below, AFTER commit, so a rolled-back
+      // reward never emits an event its DB row does not back.
+      notificationRow: {
+        id: referralNotificationId,
+        user_id: referrer.id,
+        actor_id: userId,
+        type: "referral_reward",
+        entity_type: "wallet",
+        entity_id: transactionId,
+        body: "You received ₦200 referral reward after your referral became a creator.",
+        created_at: now,
+      },
     };
   });
 
@@ -275,6 +295,20 @@ export async function settleCreatorActivation(
       newBalance: result.emailData.newBalance,
       referredUserName: result.emailData.referredUserName,
     }).catch(() => null);
+  }
+
+  // Realtime AFTER commit: the referrer's notification feed/badge and wallet
+  // balance update instantly on every connected device. The DB rows committed
+  // above remain authoritative — the socket only delivers.
+  if (result.notificationRow) {
+    emitNotificationCreated(result.notificationRow);
+    emitEvent({
+      type: "wallet.updated",
+      channel: userChannel(result.notificationRow.user_id),
+      userId: result.notificationRow.user_id,
+      resourceId: result.notificationRow.entity_id ?? undefined,
+      payload: { reason: "referral_reward", amount: REFERRAL_REWARD_NAIRA },
+    });
   }
 
   return result;

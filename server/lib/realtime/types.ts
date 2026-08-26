@@ -35,6 +35,8 @@ export const REALTIME_EVENT_TYPES = [
   "private_inbox.settings_updated",
   "notification.created",
   "notification.read",
+  "notification.read_all",
+  "notification.deleted",
   "wallet.updated",
 ] as const;
 

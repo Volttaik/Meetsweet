@@ -63,7 +63,8 @@ export async function GET(
 
   return ok({
     enabled,
-    price: settings?.private_message_price ?? 100,
+    // 0 means FREE — the creator sets a positive price to make messaging paid.
+    price: settings?.private_message_price ?? 0,
     subscribed: Boolean(sub),
     blocked: Boolean(blocked),
     is_self: viewerId === id,

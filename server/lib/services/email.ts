@@ -13,16 +13,17 @@ import { MEETSWEET_EMAIL_LOGO_B64 } from "./email-logo";
  * with images blocked.
  *
  * Layout notes:
- *  - Table-based layout with inline styles only — no JavaScript, no external
- *    CSS, no features Gmail/Outlook strip (no flexbox, no clip-path).
- *  - The header uses an inline SVG data-URI gradient treatment with a solid
- *    deep-violet fallback (bgcolor + background-color) for clients that strip
- *    SVG/data-URI backgrounds — the logo + wordmark remain readable either way.
- *  - The logo is a fully opaque PNG (no alpha), so it renders correctly even in
- *    Outlook desktop, and is sent as an inline attachment (NOT a downloadable
+ *  - Minimal, modern transactional layout — table-based with inline styles
+ *    only (no JavaScript, no external CSS, no SVG, no flexbox/clip-path that
+ *    Gmail or Outlook desktop would strip).
+ *  - A thin platform-gradient accent strip (solid brand-stop cells) sits at the
+ *    top of the header — an email-safe approximation of the brand gradient.
+ *  - The logo is a fully opaque RGB PNG (no alpha) whose corners are baked to
+ *    the header background, so it renders as a clean rounded squircle even in
+ *    Outlook desktop; it is sent as an inline attachment (NOT a downloadable
  *    file) via Resend's inlineContentId mechanism.
- *  - Content sits on a clean white card with dark text for maximum
- *    readability; the decorative treatment stays in the header only.
+ *  - Content sits on a clean white area with dark text for maximum readability
+ *    — no cards, no side borders, no decorative backgrounds.
  *  - Every event has its own template with the correct dynamic data — nothing
  *    is hard-coded into the shared shell.
  */
@@ -70,47 +71,12 @@ export function emailSender(): string {
 }
 
 /**
- * The header treatment: a deep violet-charcoal gradient with the platform
- * gradient's warm (amber) and cool (violet) glows, as an inline SVG data URI
- * (no hosted asset). Clients that render SVG backgrounds show the full
- * treatment; Gmail and Outlook desktop fall back to the solid HEADER_BG — the
- * logo image and wordmark are on top, so branding is never lost.
- */
-function crystalHeaderBg(): string {
-  const svg = [
-    `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="300" viewBox="0 0 600 300">`,
-    `<defs>`,
-    `<linearGradient id="g" x1="0" y1="0" x2="0" y2="1">`,
-    `<stop offset="0" stop-color="#221832"/>`,
-    `<stop offset="1" stop-color="#120C1A"/>`,
-    `</linearGradient>`,
-    `<radialGradient id="a" cx="96%" cy="0%" r="80%">`,
-    `<stop offset="0" stop-color="${AMBER}" stop-opacity="0.20"/>`,
-    `<stop offset="100%" stop-color="${AMBER}" stop-opacity="0"/>`,
-    `</radialGradient>`,
-    `<radialGradient id="b" cx="4%" cy="100%" r="85%">`,
-    `<stop offset="0" stop-color="${VIOLET}" stop-opacity="0.38"/>`,
-    `<stop offset="100%" stop-color="${VIOLET}" stop-opacity="0"/>`,
-    `</radialGradient>`,
-    `<radialGradient id="c" cx="50%" cy="35%" r="60%">`,
-    `<stop offset="0" stop-color="${PINK}" stop-opacity="0.16"/>`,
-    `<stop offset="100%" stop-color="${PINK}" stop-opacity="0"/>`,
-    `</radialGradient>`,
-    `</defs>`,
-    `<rect width="600" height="300" fill="url(#g)"/>`,
-    `<rect width="600" height="300" fill="url(#a)"/>`,
-    `<rect width="600" height="300" fill="url(#b)"/>`,
-    `<rect width="600" height="300" fill="url(#c)"/>`,
-    `</svg>`,
-  ].join("");
-  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
-}
-
-/**
  * The MeetSweet logo as a Resend inline attachment. The HTML references it with
  * <img src="cid:meetsweet-logo">; matching inlineContentId marks it as an
  * inline (not downloadable) image. Content is an embedded base64 PNG so the
- * email is fully self-contained — no hosted or signed storage URLs.
+ * email is fully self-contained — no hosted or signed storage URLs. The PNG's
+ * corners are baked to the header background, so it renders as a clean rounded
+ * squircle in every client.
  */
 export function logoAttachment(): { filename: string; content: string; contentType: string; inlineContentId: string } {
   return {
@@ -146,17 +112,28 @@ async function deliver(
 // ─── Shared components ───────────────────────────────────────────────────────
 
 /**
- * MeetSweet-branded header band: deep violet-charcoal with platform-gradient
- * glows, holding the logo (inline CID image) plus the MeetSweet wordmark
- * ("Meet" white / "Sweet" hot pink) and a short event tagline. The wordmark is
- * text, so branding never depends on the image loading.
+ * MeetSweet-branded header band. Minimal and email-safe: a thin platform-
+ * gradient accent strip (four solid brand-stop cells — no SVG, no gradients
+ * that Gmail strips) across the top, then a clean deep-violet band holding the
+ * logo (inline CID image, corners baked to the same violet) plus the
+ * MeetSweet wordmark ("Meet" white / "Sweet" hot pink) and a short tagline.
+ * The wordmark is text, so branding never depends on the image loading.
  */
 export function crystalHeader(tagline: string): string {
+  const accent = [AMBER, PINK, ORCHID, VIOLET]
+    .map(
+      (c) =>
+        `<td height="4" bgcolor="${c}" style="background-color:${c};font-size:0;line-height:0;">&nbsp;</td>`,
+    )
+    .join("");
   return `
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+      <tr>${accent}</tr>
+    </table>
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
       <tr>
         <td bgcolor="${HEADER_BG}" align="center"
-          style="background-color:${HEADER_BG};background-image:url('${crystalHeaderBg()}');background-repeat:no-repeat;background-position:center top;background-size:cover;border-radius:20px 20px 0 0;padding:40px 24px 34px 24px;">
+          style="background-color:${HEADER_BG};padding:38px 24px 10px 24px;">
           <img src="cid:${LOGO_CID}" alt="${PRODUCT}" width="72" height="72"
             style="display:block;margin:0 auto 16px auto;width:72px;height:72px;border:0;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic;" />
           <p style="margin:0;font-size:28px;font-weight:700;letter-spacing:-0.8px;line-height:1.1;color:#FFFFFF;font-family:${FONT};text-align:center;">
@@ -190,23 +167,17 @@ function divider(): string {
 }
 
 /**
- * The verification code as clear, simple typography on a subtle light box —
- * large letter-spaced digits, not a heavy treatment.
+ * The verification code as clear, simple typography — large letter-spaced
+ * digits on the clean body, no box or card.
  */
 function codeBlock(code: string): string {
   return `
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px 0;">
-      <tr>
-        <td align="center" style="background-color:#F5F5F8;border:1px solid ${CARD_BORDER};border-radius:14px;padding:20px 16px;">
-          <p style="margin:0 0 14px 0;font-size:11px;font-weight:700;letter-spacing:2.5px;
-            color:${INK_3};text-align:center;text-transform:uppercase;font-family:${FONT};">
-            Your verification code
-          </p>
-          <p style="margin:0;font-size:40px;font-weight:700;letter-spacing:12px;line-height:1.1;
-            color:${INK};font-family:${FONT};text-align:center;">${code}</p>
-        </td>
-      </tr>
-    </table>`;
+    <p style="margin:0 0 4px 0;font-size:11px;font-weight:700;letter-spacing:2.5px;
+      color:${INK_3};text-align:center;text-transform:uppercase;font-family:${FONT};">
+      Your verification code
+    </p>
+    <p style="margin:0 0 8px 0;font-size:44px;font-weight:700;letter-spacing:10px;line-height:1.2;
+      color:${INK};font-family:${FONT};text-align:center;">${code}</p>`;
 }
 
 function codeFootnote(lines: string[]): string {
@@ -288,13 +259,13 @@ function footer(): string {
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
       <tr>
         <td align="center">
-          <p style="margin:0 0 8px 0;font-size:13px;color:${INK_3};font-family:${FONT};">
+          <p style="margin:0 0 6px 0;font-size:12px;color:${INK_3};font-family:${FONT};">
             You're receiving this email because you have a ${PRODUCT} account.
           </p>
-          <p style="margin:0 0 4px 0;font-size:12px;color:${INK_3};font-family:${FONT};">
+          <p style="margin:0 0 2px 0;font-size:12px;color:${INK_3};font-family:${FONT};">
             ${COMPANY} · help@meetsweet.space
           </p>
-          <p style="margin:0;font-size:12px;color:#A9A9B5;font-family:${FONT};">
+          <p style="margin:0;font-size:12px;color:${INK_3};font-family:${FONT};">
             © ${new Date().getFullYear()} ${COMPANY}. All rights reserved.
           </p>
         </td>
@@ -302,7 +273,11 @@ function footer(): string {
     </table>`;
 }
 
-/** Full email document shell: crystal header + white content card + footer. */
+/**
+ * Full email document shell: gradient accent + header band + a clean white
+ * content area (no cards, no side borders) + a simple centered footer. Table
+ * based, inline styles only — renders reliably in Gmail and Outlook.
+ */
 function shell(opts: { preheader: string; tagline: string; content: string }): string {
   return `<!DOCTYPE html>
 <html lang="en">
@@ -332,17 +307,14 @@ function shell(opts: { preheader: string; tagline: string; content: string }): s
 
           <tr>
             <td bgcolor="${CARD_BG}"
-              style="background-color:${CARD_BG};padding:32px 32px 28px 32px;border-left:1px solid ${CARD_BORDER};border-right:1px solid ${CARD_BORDER};">
+              style="background-color:${CARD_BG};padding:32px 36px 30px 36px;">
               ${opts.content}
             </td>
           </tr>
 
-          <tr>
-            <td bgcolor="#E9E9EF"
-              style="background-color:#E9E9EF;border:1px solid ${CARD_BORDER};border-top:0;border-radius:0 0 20px 20px;padding:24px 24px 26px 24px;">
-              ${footer()}
-            </td>
-          </tr>
+          <tr><td style="height:24px;font-size:0;line-height:0;">&nbsp;</td></tr>
+
+          <tr><td>${footer()}</td></tr>
 
         </table>
       </td>

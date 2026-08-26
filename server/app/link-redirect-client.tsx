@@ -18,7 +18,22 @@ const PERKS = [
   { icon: "💬", text: "Direct messages with creators" },
 ];
 
-export function ShareRedirectClient({
+/**
+ * Deep-link launcher shared by every MeetSweet link landing page (share links
+ * and direct content links).
+ *
+ * Behavior:
+ *  - Android: fires an `intent://` with `browser_fallback_url` so Chrome
+ *    opens the app when installed and returns to this page (with ?noapp=1)
+ *    when not — the flag suppresses re-launching the intent in a loop.
+ *  - iOS: universal links intercept the HTTPS URL before this page renders.
+ *    Reaching here means the app is absent or UL was suppressed (WebView), so
+ *    we show the install card immediately — auto-navigating to a custom scheme
+ *    that isn't handled would show an ugly "Cannot Open Page" alert.
+ *  - Desktop / other browsers: fire the custom scheme; if the OS handles it
+ *    the page is hidden, otherwise the install card appears after a timeout.
+ */
+export function ContentRedirectClient({
   deepLink,
   meta,
   preview,
@@ -70,7 +85,7 @@ export function ShareRedirectClient({
 
     // ── iOS: Universal Links handle the direct-open case before this page ──
     // When the AASA is configured correctly and the app is installed, iOS
-    // intercepts the HTTPS share URL at the OS level and the user never reaches
+    // intercepts the HTTPS URL at the OS level and the user never reaches
     // this page. Reaching here means the app is absent OR the link was opened
     // inside a WebView/context where UL is suppressed.
     // Auto-navigating to meetsweet:// in that situation shows an ugly "Cannot

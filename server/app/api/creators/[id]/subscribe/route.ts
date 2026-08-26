@@ -39,8 +39,15 @@ export async function POST(
 
   const tier: "subscriber" | "subscriber_plus" = parsed.data.plan ?? "subscriber";
 
-  const [creator] = await db.select({ id: users.id }).from(users).where(eq(users.id, creator_id)).limit(1);
+  const [creator] = await db
+    .select({ id: users.id, is_creator: users.is_creator })
+    .from(users)
+    .where(eq(users.id, creator_id))
+    .limit(1);
+  // Subscription functionality is creator-only. A non-creator account can
+  // never be a subscription target — enforced server-side.
   if (!creator) return err("Creator not found", 404);
+  if (!creator.is_creator) return err("This account cannot be subscribed to", 400);
 
   const [settings] = await db
     .select({

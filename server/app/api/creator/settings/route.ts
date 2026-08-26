@@ -16,7 +16,8 @@ const patchSchema = z.object({
   subscription_plus_price: z.number().finite().min(0).nullable().optional(),
   // ── Private Inbox ──────────────────────────────────────────────────────
   private_inbox_enabled: z.boolean().optional(),
-  private_message_price: z.number().finite().min(1).max(1_000_000).optional(),
+  // 0 = FREE messaging (default); a positive value opts the inbox into PAID.
+  private_message_price: z.number().finite().min(0).max(1_000_000).optional(),
   allow_dms: z.boolean().optional(),
   allow_comments: z.boolean().optional(),
   // Accept both field names from mobile
@@ -134,7 +135,7 @@ export async function PATCH(req: NextRequest) {
       resourceId: auth.user.userId,
       payload: {
         private_inbox_enabled: settings?.private_inbox_enabled ?? true,
-        private_message_price: settings?.private_message_price ?? 100,
+        private_message_price: settings?.private_message_price ?? 0,
       },
     });
   }

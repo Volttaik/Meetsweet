@@ -7,7 +7,7 @@
 
 import { eq, and } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { devices, users, subscriptions, notifications, user_settings } from "@/lib/db/schema";
+import { devices, users, profiles, subscriptions, notifications, user_settings } from "@/lib/db/schema";
 import { generateId } from "@/lib/auth/codes";
 import { emitEvent } from "@/lib/realtime/emit";
 import { userChannel } from "@/lib/realtime/types";
@@ -100,6 +100,125 @@ export async function categoryEnabled(
 }
 
 /**
+ * The notification payload shape handed to clients. Mirrors the `data` block
+ * of GET /api/notifications so a client can render the row and navigate to
+ * the right screen from the event alone — no follow-up request required.
+ */
+export function notificationDataBlock(input: {
+  entity_type?: string | null;
+  entity_id?: string | null;
+  actor_id?: string | null;
+  actor_name?: string | null;
+  actor_username?: string | null;
+  actor_avatar?: string | null;
+}): Record<string, unknown> {
+  const { entity_type, entity_id, actor_id, actor_name, actor_username, actor_avatar } = input;
+  return {
+    // content_type lets the mobile app route to the correct screen
+    content_type: ["post", "video", "short", "album"].includes(entity_type ?? "")
+      ? entity_type
+      : entity_type === "comment" ? "post" : null,
+    entity_type: entity_type ?? null,
+    entity_id: entity_id ?? null,
+    // Private Inbox: the mobile app routes these to the message thread.
+    private_message_id: entity_type === "private_message" ? entity_id : null,
+    // Convenience aliases for each content type
+    post_id: entity_type === "post" ? entity_id : null,
+    video_id: entity_type === "video" ? entity_id : null,
+    short_id: entity_type === "short" ? entity_id : null,
+    album_id: entity_type === "album" ? entity_id : null,
+    comment_id: entity_type === "comment" ? entity_id : null,
+    actor_id: actor_id ?? null,
+    actor_name: actor_name ?? null,
+    actor_username: actor_username ?? null,
+    actor_avatar: actor_avatar ?? null,
+  };
+}
+
+/**
+ * A notification row as inserted into the `notifications` table. `user_id`
+ * (the recipient) and `created_at` are always present; the emit helper below
+ * appends display data + the navigation block before fanning out.
+ */
+export type NotificationRow = {
+  id: string;
+  user_id: string;
+  created_at: string;
+  actor_id?: string | null;
+  type: string;
+  entity_type?: string | null;
+  entity_id?: string | null;
+  body?: string | null;
+};
+
+/**
+ * Emit `notification.created` for an already-persisted notification row.
+ *
+ * The row is the source of truth (the caller inserted it); this only delivers
+ * the realtime event. Actor display data is loaded best-effort so the
+ * recipient's client can render the row immediately. Fire-and-forget — never
+ * throws and never blocks the API response.
+ */
+export function emitNotificationCreated(row: NotificationRow): void {
+  void (async () => {
+    try {
+      let actor_name: string | null = null;
+      let actor_username: string | null = null;
+      let actor_avatar: string | null = null;
+      if (row.actor_id) {
+        const [actor] = await db
+          .select({
+            full_name: users.full_name,
+            username: users.username,
+            avatar_url: profiles.avatar_url,
+          })
+          .from(users)
+          .leftJoin(profiles, eq(profiles.user_id, users.id))
+          .where(eq(users.id, row.actor_id))
+          .limit(1);
+        if (actor) {
+          actor_name = actor.full_name ?? null;
+          actor_username = actor.username ?? null;
+          actor_avatar = actor.avatar_url ?? null;
+        }
+      }
+
+      emitEvent({
+        type: "notification.created",
+        channel: userChannel(row.user_id),
+        userId: row.user_id,
+        resourceId: row.id,
+        payload: {
+          notification: {
+            id: row.id,
+            type: row.type,
+            entity_type: row.entity_type ?? null,
+            entity_id: row.entity_id ?? null,
+            body: row.body ?? null,
+            actor_id: row.actor_id ?? null,
+            created_at: row.created_at,
+            is_read: false,
+            actor_name,
+            actor_username,
+            actor_avatar,
+            data: notificationDataBlock({
+              entity_type: row.entity_type,
+              entity_id: row.entity_id,
+              actor_id: row.actor_id,
+              actor_name,
+              actor_username,
+              actor_avatar,
+            }),
+          },
+        },
+      });
+    } catch {
+      // Delivery is best-effort — the DB row is already authoritative.
+    }
+  })();
+}
+
+/**
  * Create an in-app notification row for a user, gated by their notification
  * preference for that category. When the category is OFF, nothing is written
  * and the event never appears in their notification feed — enforced here so
@@ -121,7 +240,7 @@ export async function createNotification(
     if (category && !(await categoryEnabled(userId, category))) return;
     const notificationId = generateId();
     const createdAt = new Date().toISOString();
-    const row = {
+    const row: NotificationRow = {
       id: notificationId,
       user_id: userId,
       created_at: createdAt,
@@ -130,14 +249,8 @@ export async function createNotification(
     await db.insert(notifications).values(row);
 
     // Realtime: the recipient's notification feed/badge updates instantly
-    // while the app is connected. Durable record above remains authoritative.
-    emitEvent({
-      type: "notification.created",
-      channel: userChannel(userId),
-      userId,
-      resourceId: notificationId,
-      payload: { notification: { ...row, is_read: false } },
-    });
+    // while the app is connected. The durable row above remains authoritative.
+    emitNotificationCreated(row);
   } catch {
     // Notification writes are best-effort — never break the API response.
   }

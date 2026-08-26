@@ -1,17 +1,8 @@
 import type { Metadata } from "next";
 import { and, asc, eq, gt, isNull, or } from "drizzle-orm";
-import {
-  BG,
-  BRAND,
-  GRADIENT_BUTTON,
-  GLOW_AMBER,
-  GLOW_TOP,
-  SURFACE,
-  TEXT_2,
-} from "@/lib/frontend/brand";
 import { db } from "@/lib/db";
 import { albums, media, posts, profiles, shares, users } from "@/lib/db/schema";
-import { ShareRedirectClient } from "./redirect-client";
+import { ContentLinkShell, ContentLinkNotFound } from "@/app/link-shell";
 
 type ContentType = "post" | "video" | "short" | "album" | "creator";
 
@@ -196,7 +187,7 @@ export default async function SharePage({
   const { token } = await params;
   const share = await resolveShare(token);
 
-  if (!share) return <NotFound />;
+  if (!share) return <ContentLinkNotFound />;
 
   const meta = CONTENT_META[share.content_type] ?? CONTENT_META.post;
   const preview = await loadPreview(share);
@@ -206,155 +197,5 @@ export default async function SharePage({
   // visible if the app is not installed (or on desktop).
   const deepLink = `meetsweet://s/${token}`;
 
-  return (
-    <main style={pageStyle}>
-      {/* Ambient background */}
-      <div style={gradientStyle} aria-hidden="true" />
-
-      {/* Nav */}
-      <nav style={navStyle}>
-        <a href="/" style={brandStyle}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/meetsweet-logo-white.png" alt="MeetSweet" width={26} height={26} style={logoImageStyle} />
-          <span>MeetSweet</span>
-        </a>
-      </nav>
-
-      {/* Spinner keyframe — injected once, server-side safe */}
-      <style>{`@keyframes ms-spin { to { transform: rotate(360deg); } }`}</style>
-
-      {/* Client component handles auto-redirect and fallback UI */}
-      <ShareRedirectClient deepLink={deepLink} meta={meta} preview={preview} />
-    </main>
-  );
+  return <ContentLinkShell deepLink={deepLink} meta={meta} preview={preview} />;
 }
-
-function NotFound() {
-  return (
-    <main style={pageStyle}>
-      <div style={gradientStyle} aria-hidden="true" />
-      <nav style={navStyle}>
-        <a href="/" style={brandStyle}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/meetsweet-logo-white.png" alt="MeetSweet" width={26} height={26} style={logoImageStyle} />
-          <span>MeetSweet</span>
-        </a>
-      </nav>
-      <section style={centerStyle}>
-        <div style={cardStyle}>
-          <div style={iconWrapStyle}><span style={{ fontSize: 32 }}>🔗</span></div>
-          <h1 style={cardTitleStyle}>Link not found</h1>
-          <p style={cardSubStyle}>
-            This MeetSweet link has expired or no longer exists. Ask the creator to share it again.
-          </p>
-          <a href="/" style={btnPrimaryStyle}>Go to MeetSweet</a>
-        </div>
-      </section>
-    </main>
-  );
-}
-
-
-
-const pageStyle: React.CSSProperties = {
-  minHeight: "100vh",
-  background: BG,
-  color: "#fff",
-  fontFamily: "'Poppins', ui-sans-serif, system-ui, sans-serif",
-  position: "relative",
-  overflow: "hidden",
-};
-const gradientStyle: React.CSSProperties = {
-  position: "fixed",
-  inset: 0,
-  background: `${GLOW_TOP}, ${GLOW_AMBER}`,
-  pointerEvents: "none",
-  zIndex: 0,
-};
-const navStyle: React.CSSProperties = {
-  position: "relative",
-  zIndex: 10,
-  padding: "20px 24px",
-  borderBottom: "1px solid rgba(255,255,255,0.05)",
-  backdropFilter: "blur(12px)",
-  backgroundColor: "rgba(12,12,15,0.6)",
-};
-const brandStyle: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 10,
-  fontSize: 20,
-  fontWeight: 700,
-  color: "#fff",
-  textDecoration: "none",
-  letterSpacing: "-0.5px",
-};
-const logoImageStyle: React.CSSProperties = {
-  width: 26,
-  height: 26,
-  display: "block",
-  flexShrink: 0,
-};
-const centerStyle: React.CSSProperties = {
-  position: "relative",
-  zIndex: 1,
-  minHeight: "calc(100vh - 65px)",
-  display: "flex",
-  flexDirection: "column",
-  alignItems: "center",
-  justifyContent: "center",
-  padding: "48px 24px",
-  gap: 24,
-};
-const cardStyle: React.CSSProperties = {
-  background: SURFACE,
-  border: "1px solid rgba(255,255,255,0.07)",
-  borderRadius: 28,
-  padding: "40px 32px",
-  maxWidth: 420,
-  width: "100%",
-  display: "flex",
-  flexDirection: "column",
-  alignItems: "center",
-  textAlign: "center",
-  gap: 16,
-  boxShadow: "0 24px 64px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,20,147,0.08)",
-};
-const iconWrapStyle: React.CSSProperties = {
-  width: 72,
-  height: 72,
-  borderRadius: 22,
-  background:
-    "linear-gradient(135deg, rgba(255,20,147,0.24) 0%, rgba(128,0,128,0.1) 100%)",
-  border: "1px solid rgba(255,20,147,0.2)",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  marginBottom: 4,
-};
-const cardTitleStyle: React.CSSProperties = {
-  margin: 0,
-  fontSize: 22,
-  fontWeight: 700,
-  lineHeight: 1.3,
-  letterSpacing: "-0.3px",
-};
-const cardSubStyle: React.CSSProperties = {
-  margin: 0,
-  fontSize: 15,
-  lineHeight: 1.65,
-  color: TEXT_2,
-};
-const btnPrimaryStyle: React.CSSProperties = {
-  display: "block",
-  width: "100%",
-  ...GRADIENT_BUTTON,
-  border: "none",
-  borderRadius: 50,
-  padding: "16px 0",
-  fontSize: 15,
-  fontWeight: 600,
-  textDecoration: "none",
-  textAlign: "center",
-  marginTop: 4,
-};

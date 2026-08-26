@@ -732,11 +732,12 @@ export const creator_settings = sqliteTable("creator_settings", {
   allow_dms: integer("allow_dms", { mode: "boolean" }).notNull().default(true),
   allow_comments: integer("allow_comments", { mode: "boolean" }).notNull().default(true),
   // ── Private Inbox (creator monetization) ─────────────────────────────────
-  // When enabled, other users can pay private_message_price to send this
-  // creator one private message. Server-authoritative — the client never sets
-  // the price it pays.
+  // When enabled, subscribers can send this creator private messages. Sending
+  // is FREE by default (private_message_price = 0); the creator explicitly
+  // makes it PAID by setting a positive per-message price in the Creator
+  // Dashboard. Server-authoritative — the client never sets the price it pays.
   private_inbox_enabled: integer("private_inbox_enabled", { mode: "boolean" }).notNull().default(true),
-  private_message_price: real("private_message_price").notNull().default(100),
+  private_message_price: real("private_message_price").notNull().default(0),
   // who_can_message: 'everyone' | 'subscribers' | 'none'
   // - 'everyone': Legacy alias — treated as subscriber-only (the product rule
   //   requires an active subscription to send, enforced in the service).
