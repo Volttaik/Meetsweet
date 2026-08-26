@@ -5,10 +5,6 @@ const PUBLIC_BYPASS = new Set([
   "/api/health",
   "/api/healthz",
   "/api/diagnostic",
-  // Vercel Cron — the renewal endpoint validates its own CRON_SECRET header
-  // before doing any work, but it must not be rejected here for lacking the
-  // mobile client app-id header.
-  "/api/cron/renew-subscriptions",
 ]);
 
 export function middleware(req: NextRequest) {

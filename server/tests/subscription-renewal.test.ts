@@ -93,8 +93,8 @@ test("decision: exact boundary — expires exactly now counts as due (renews)", 
   assert.equal(d.action, "renew");
 });
 
-test("service entry points reflect the off/on read-path and cron surface", () => {
-  assert.equal(typeof processDueSubscriptions, "function"); // cron + batch
+test("service entry points reflect the lazy re-sync and batch surfaces", () => {
+  assert.equal(typeof processDueSubscriptions, "function"); // batch sweep
   assert.equal(typeof renewForUser, "function");            // lazy re-sync on read
   assert.equal(typeof renewExpiredSubscription, "function"); // single, idempotent renewal
 });

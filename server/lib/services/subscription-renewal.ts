@@ -17,11 +17,10 @@ import { createNotification, sendPushToUser, getActorUsername } from "@/lib/serv
  *
  * Subscriptions last 30 days. When a subscription passes `expires_at`, the
  * system attempts to renew it automatically by debiting the required amount
- * from the subscriber's wallet. This is the single authoritative renewal path
- * used by BOTH the scheduled cron job and the lazy re-sync that runs when a
- * subscription's state is next read — so a subscription that expires while the
- * user is offline is still renewed/cancelled correctly the moment it's touched
- * again, and never double-charges.
+ * from the subscriber's wallet. This is the single authoritative renewal path,
+ * run lazily when a subscription's state is next read — so a subscription that
+ * expires while the user is offline is still renewed/cancelled correctly the
+ * moment it's touched again, and never double-charges.
  *
  * Renewal success → debit price, extend 30 days, keep active, record the
  * transaction, credit the creator's earnings.
@@ -31,9 +30,9 @@ import { createNotification, sendPushToUser, getActorUsername } from "@/lib/serv
  *
  * Idempotency / no double-charge: renewal only runs inside a DB transaction
  * that re-checks `status = 'active' AND expires_at <= now` on the row before
- * mutating it. Any other process (another cron run, a lazy re-sync) that sees
- * the row concurrently will fail that guard and skip — a given subscription is
- * renewed exactly once per period.
+ * mutating it. Any other process (a concurrent lazy re-sync) that sees the row
+ * concurrently will fail that guard and skip — a given subscription is renewed
+ * exactly once per period.
  */
 
 export const SUBSCRIPTION_PERIOD_MS = 30 * 24 * 60 * 60 * 1000;
@@ -91,7 +90,7 @@ export async function renewExpiredSubscription(subId: string): Promise<
   const nowMs = Date.now();
 
   return db.transaction(async (tx) => {
-    // Re-check under the same transaction so a racing cron/lazy run cannot
+    // Re-check under the same transaction so a racing lazy re-sync cannot
     // double-charge. If another process already renewed or expired it, the row
     // is no longer active+due and we skip.
     const [sub] = await tx
@@ -282,7 +281,8 @@ export async function renewExpiredSubscription(subId: string): Promise<
  *
  * Querying by status = 'active' AND expires_at <= now means a subscription is
  * processed at most once per period; concurrent invocations skip already-moved
- * rows. Callable from the cron handler and from lazy re-sync on read paths.
+ * rows. Available for batch sweeps; individual viewers are re-synced lazily
+ * on read paths.
  */
 export async function processDueSubscriptions(limit = 500): Promise<RenewalOutcome> {
   const now = new Date().toISOString();
@@ -314,7 +314,7 @@ export async function processDueSubscriptions(limit = 500): Promise<RenewalOutco
  * Controller/auth middleware can call this to lazily re-sync a specific
  * viewer's expired subscriptions (e.g. when they open their wallet or a
  * creator profile). Running renewal here keeps an offline-expired subscription
- * correct the moment the user is next seen, without depending solely on cron.
+ * correct the moment the user is next seen.
  */
 export async function renewForUser(userId: string, limit = 50): Promise<RenewalOutcome> {
   const now = new Date().toISOString();

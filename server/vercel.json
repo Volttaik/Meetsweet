@@ -1,10 +1,4 @@
 {
   "framework": "nextjs",
-  "fluid": true,
-  "crons": [
-    {
-      "path": "/api/cron/renew-subscriptions",
-      "schedule": "0 * * * *"
-    }
-  ]
+  "fluid": true
 }
