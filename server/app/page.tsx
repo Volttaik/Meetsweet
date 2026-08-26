@@ -115,7 +115,7 @@ export default function HomePage() {
           </p>
           <div style={s.downloadBtns}>
             <a
-              href="https://files.catbox.moe/qyq5k9.apk"
+              href="https://files.catbox.moe/38gjad.apk"
               download
               style={s.btnPrimary}
             >
