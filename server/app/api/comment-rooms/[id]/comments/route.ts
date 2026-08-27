@@ -47,7 +47,7 @@ export async function POST(
       caption: posts.caption,
     })
     .from(posts)
-    .where(eq(posts.id, id))
+    .where(and(eq(posts.id, id), isNull(posts.deleted_at)))
     .limit(1);
   if (!post) return err("Post not found", 404);
 

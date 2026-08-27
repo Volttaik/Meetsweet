@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { posts } from "@/lib/db/schema";
@@ -19,7 +19,7 @@ export async function POST(
 ) {
   const { id } = await params;
 
-  const [post] = await db.select({ id: posts.id }).from(posts).where(eq(posts.id, id)).limit(1);
+  const [post] = await db.select({ id: posts.id }).from(posts).where(and(eq(posts.id, id), isNull(posts.deleted_at))).limit(1);
   if (!post) return err("Post not found", 404);
 
   const auth = await optionalAuth(req);

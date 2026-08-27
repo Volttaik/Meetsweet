@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { eq, and, desc, avg, count } from "drizzle-orm";
+import { eq, and, desc, avg, count, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { users, profiles, creator_reviews, subscriptions } from "@/lib/db/schema";
@@ -23,7 +23,7 @@ export async function GET(
 
   const condition = id.includes("-") && id.length > 20 ? eq(users.id, id) : eq(users.username, id);
   const [creator] = await db.select({ id: users.id }).from(users)
-    .where(and(condition, eq(users.is_creator, true))).limit(1);
+    .where(and(condition, eq(users.is_creator, true), eq(users.is_active, true), isNull(users.deleted_at))).limit(1);
   if (!creator) return err("Creator not found", 404);
 
   const [reviews, stats] = await Promise.all([
@@ -77,7 +77,7 @@ export async function POST(
 
   const condition = id.includes("-") && id.length > 20 ? eq(users.id, id) : eq(users.username, id);
   const [creator] = await db.select({ id: users.id }).from(users)
-    .where(and(condition, eq(users.is_creator, true))).limit(1);
+    .where(and(condition, eq(users.is_creator, true), eq(users.is_active, true), isNull(users.deleted_at))).limit(1);
   if (!creator) return err("Creator not found", 404);
   if (creator.id === auth.user.userId) return err("You cannot review yourself", 400);
 

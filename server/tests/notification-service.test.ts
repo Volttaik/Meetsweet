@@ -17,6 +17,7 @@ test("notificationTitle maps known event types to display titles", () => {
   assert.equal(notificationTitle("referral_reward"), "Referral Reward");
   assert.equal(notificationTitle("subscription_renewed"), "Subscription Renewed");
   assert.equal(notificationTitle("subscription_renewal_failed"), "Subscription Expired");
+  assert.equal(notificationTitle("report"), "Report Received");
 });
 
 test("notificationTitle falls back to a generic title for unknown types", () => {

@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { eq, and } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { blocked_users, creator_settings, subscriptions, users } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
@@ -26,7 +26,7 @@ export async function GET(
   const [creator] = await db
     .select({ id: users.id, is_creator: users.is_creator, role: users.role })
     .from(users)
-    .where(eq(users.id, id))
+    .where(and(eq(users.id, id), eq(users.is_active, true), isNull(users.deleted_at)))
     .limit(1);
   if (!creator) return ok({ enabled: false, can_message: false, price: 0 });
 

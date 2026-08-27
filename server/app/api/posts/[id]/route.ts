@@ -7,6 +7,7 @@ import { requireAuth, optionalAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { ok, err } from "@/lib/api/response";
 import { canViewContent, buildQualities } from "@/lib/services/content";
+import { hardDeletePost } from "@/lib/services/deletion";
 
 const patchSchema = z.object({
   caption: z.string().max(2200).nullable().optional(),
@@ -239,10 +240,11 @@ export async function DELETE(
   if (!post) return err("Post not found", 404);
   if (post.creator_id !== auth.user.userId && auth.user.role !== "admin") return err("Forbidden", 403);
 
-  await db
-    .update(posts)
-    .set({ deleted_at: new Date().toISOString() })
-    .where(eq(posts.id, id));
+  // Authoritative deletion: the post row, all related records, the media rows
+  // and the R2/Stream storage objects are removed — nothing about the post can
+  // surface in any feed, search, profile, Shorts, Explore or recommendation
+  // response afterwards, and its media URLs stop resolving.
+  await hardDeletePost(id);
 
   return ok({ deleted: true });
 }

@@ -7,6 +7,7 @@ import { optionalAuth, requireAuth } from "@/middleware/auth";
 import { parseBody } from "@/lib/api/validate";
 import { err, ok } from "@/lib/api/response";
 import { loadAlbum } from "@/lib/services/albums";
+import { hardDeleteAlbum } from "@/lib/services/deletion";
 
 const patchSchema = z.object({
   title: z.string().trim().min(1).max(160).optional(),
@@ -80,6 +81,9 @@ export async function DELETE(
   if (album.creator_id !== auth.user.userId && auth.user.role !== "admin") {
     return err("Forbidden", 403);
   }
-  await db.update(albums).set({ deleted_at: new Date().toISOString() }).where(eq(albums.id, id));
+  // Authoritative deletion: the album row, its items/unlocks, album-only media
+  // rows and the R2/Stream storage objects are removed — the album can never
+  // surface in Explore, search, profiles or purchase lists again.
+  await hardDeleteAlbum(id);
   return ok({ deleted: true });
 }

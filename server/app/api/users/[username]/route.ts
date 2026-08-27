@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users, profiles, follows, subscriptions, creator_settings, user_settings } from "@/lib/db/schema";
 import { optionalAuth } from "@/middleware/auth";
@@ -34,7 +34,10 @@ export async function GET(
     .from(users)
     .leftJoin(profiles, eq(profiles.user_id, users.id))
     .leftJoin(creator_settings, eq(creator_settings.user_id, users.id))
-    .where(eq(users.username, username))
+    // Deleted / deactivated accounts are not resolvable by username — a
+    // hard-deleted account's row is gone, and soft-deleted legacy rows return
+    // 404 so a deleted profile can never be viewed through a direct link.
+    .where(and(eq(users.username, username), eq(users.is_active, true), isNull(users.deleted_at)))
     .limit(1);
 
   if (!row) return err("User not found", 404);

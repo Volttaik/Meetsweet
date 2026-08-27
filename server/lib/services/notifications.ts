@@ -327,9 +327,60 @@ export function notificationTitle(type: string): string {
     referral_reward: "Referral Reward",
     subscription_renewed: "Subscription Renewed",
     subscription_renewal_failed: "Subscription Expired",
+    report: "Report Received",
     system: "MeetSweet",
   };
   return map[type] ?? "Notification";
+}
+
+/**
+ * Someone reported the recipient (or their content). The reporter's identity
+ * is NEVER exposed — no actor_id, no username, no push payload reference — so
+ * the notification cannot be used to retaliate or reveal who reported.
+ *
+ * Delivered without a preference gate (category: null, like account-critical
+ * notices) so a report always reaches the affected account.
+ *
+ * @param reporterId  used ONLY to build the dedupe key (one notification per
+ *                    reporter per target) — never stored on the row.
+ */
+export async function notifyReported(input: {
+  recipientId: string;
+  reporterId: string;
+  entityType: string;
+  entityId: string;
+  entityTitle?: string | null;
+}): Promise<{ created: boolean }> {
+  const isUser = input.entityType === "user";
+  const contentLabel = isUser
+    ? "Your account"
+    : (input.entityTitle ?? "").trim()
+      ? `Your ${input.entityType} “${(input.entityTitle ?? "").trim().slice(0, 60)}”`
+      : `Your ${input.entityType}`;
+  const body = `${contentLabel} was reported for a policy concern. Our team will review it and take appropriate action if needed.`;
+
+  return notify({
+    recipientId: input.recipientId,
+    category: null,
+    type: "report",
+    entity_type: input.entityType,
+    entity_id: input.entityId,
+    body,
+    // No actorId — the reporter's identity is never attached to the row, the
+    // realtime event, or the push.
+    actorId: null,
+    dedupeKey: `report:${input.entityType}:${input.entityId}:${input.reporterId}`,
+    push: {
+      title: isUser ? "Account reported" : "Content reported",
+      body,
+      data: {
+        type: "report",
+        entity_type: input.entityType,
+        entity_id: input.entityId,
+        // Deliberately no actor_id / actor_username / reporter fields.
+      },
+    },
+  });
 }
 
 // ─── Named event methods ─────────────────────────────────────────────────────

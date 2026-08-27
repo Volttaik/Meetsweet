@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { eq, and, gte, sql, count } from "drizzle-orm";
+import { eq, and, gte, isNull, sql, count } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import {
@@ -42,10 +42,10 @@ export async function POST(
   const [creator] = await db
     .select({ id: users.id, is_creator: users.is_creator })
     .from(users)
-    .where(eq(users.id, creator_id))
+    .where(and(eq(users.id, creator_id), eq(users.is_active, true), isNull(users.deleted_at)))
     .limit(1);
-  // Subscription functionality is creator-only. A non-creator account can
-  // never be a subscription target — enforced server-side.
+  // Subscription functionality is creator-only. A non-creator (or deleted)
+  // account can never be a subscription target — enforced server-side.
   if (!creator) return err("Creator not found", 404);
   if (!creator.is_creator) return err("This account cannot be subscribed to", 400);
 

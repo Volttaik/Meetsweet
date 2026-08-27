@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { posts, post_likes } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
@@ -26,7 +26,7 @@ export async function POST(
       caption: posts.caption,
     })
     .from(posts)
-    .where(eq(posts.id, id))
+    .where(and(eq(posts.id, id), isNull(posts.deleted_at)))
     .limit(1);
   if (!post) return err("Post not found", 404);
 
@@ -70,7 +70,7 @@ export async function DELETE(
 
   const { id } = await params;
 
-  const [post] = await db.select({ id: posts.id }).from(posts).where(eq(posts.id, id)).limit(1);
+  const [post] = await db.select({ id: posts.id }).from(posts).where(and(eq(posts.id, id), isNull(posts.deleted_at))).limit(1);
   if (!post) return err("Post not found", 404);
 
   const [existing] = await db

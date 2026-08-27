@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { eq, and } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { posts, hidden_posts } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
@@ -15,7 +15,7 @@ export async function POST(
 
   const { id } = await params;
 
-  const [post] = await db.select({ id: posts.id }).from(posts).where(eq(posts.id, id)).limit(1);
+  const [post] = await db.select({ id: posts.id }).from(posts).where(and(eq(posts.id, id), isNull(posts.deleted_at))).limit(1);
   if (!post) return err("Post not found", 404);
 
   const [existing] = await db

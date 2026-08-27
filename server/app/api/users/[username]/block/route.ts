@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { eq, and, or } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users, blocked_users } from "@/lib/db/schema";
 import { requireAuth } from "@/middleware/auth";
@@ -20,10 +20,12 @@ export async function POST(
 
   const { username } = await params;
 
+  // Deleted / deactivated accounts cannot be blocked — they are not resolvable
+  // by username and their content is already gone from every feed.
   const [target] = await db
     .select({ id: users.id })
     .from(users)
-    .where(eq(users.username, username))
+    .where(and(eq(users.username, username), eq(users.is_active, true), isNull(users.deleted_at)))
     .limit(1);
 
   if (!target) return err("User not found", 404);
@@ -59,7 +61,7 @@ export async function DELETE(
   const [target] = await db
     .select({ id: users.id })
     .from(users)
-    .where(eq(users.username, username))
+    .where(and(eq(users.username, username), eq(users.is_active, true), isNull(users.deleted_at)))
     .limit(1);
 
   if (!target) return err("User not found", 404);

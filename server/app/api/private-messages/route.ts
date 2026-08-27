@@ -18,7 +18,7 @@ import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { requireAuth } from "@/middleware/auth";
 import { parseBody, parseQuery } from "@/lib/api/validate";
 import { err, ok } from "@/lib/api/response";
@@ -83,7 +83,7 @@ export async function POST(req: NextRequest) {
   const [recipient] = await db
     .select({ id: users.id })
     .from(users)
-    .where(eq(users.id, recipient_id))
+    .where(and(eq(users.id, recipient_id), eq(users.is_active, true), isNull(users.deleted_at)))
     .limit(1);
   if (!recipient) return err("Creator not found", 404);
 
