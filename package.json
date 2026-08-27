@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "cd server && pnpm install && pnpm dev",
-    "install:server": "cd server && pnpm install"
+    "build": "cd server && pnpm install && pnpm build",
+    "start": "cd server && pnpm start"
   }
 }
