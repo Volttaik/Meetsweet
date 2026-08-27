@@ -33,6 +33,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { media, upload_sessions } from "@/lib/db/schema";
 import { config } from "@/lib/config";
+import { resolveUrl } from "@/lib/services/r2";
 import { generateId } from "@/lib/auth/codes";
 import { pullVideoFromUrl } from "@/lib/services/stream";
 
@@ -186,6 +187,32 @@ function getBucket(): string {
 function publicUrlForKey(key: string): string {
   const publicBase = config.r2.publicBaseUrl();
   return publicBase ? `${publicBase.replace(/\/$/, "")}/${key}` : key;
+}
+
+/**
+ * Build a client-playable URL for an uploaded object. Prefers the configured
+ * public base URL (`https://cdn…/<key>`). When `R2_PUBLIC_BASE_URL` is NOT set
+ * — the production misconfiguration that leaked bare object keys like
+ * `posts/<user>/<uuid>.mp4` to clients, whose players/fetchers then failed
+ * with host-resolution ("Unidentified Host"-style) errors because the URL had
+ * no scheme or host — fall back to a short-lived presigned GET URL so the
+ * media is ALWAYS a fully-resolvable https URL. A bare key is never returned.
+ */
+async function clientMediaUrl(key: string): Promise<string> {
+  const publicBase = config.r2.publicBaseUrl();
+  if (publicBase) return `${publicBase.replace(/\/$/, "")}/${key}`;
+  // Production misconfiguration safety net: sign a 7-day GET URL instead of
+  // handing the client a relative/bare key. Log so operators notice.
+  console.warn(
+    "[uploads] R2_PUBLIC_BASE_URL is not set — serving media via a 7-day presigned GET URL. Set R2_PUBLIC_BASE_URL in production to avoid URL expiry.",
+  );
+  const signed = await resolveUrl(key, 604800);
+  if (signed) return signed;
+  throw new UploadError(
+    500,
+    "Media URL could not be generated — set R2_PUBLIC_BASE_URL or check the R2 credentials",
+    "MEDIA_URL_UNAVAILABLE",
+  );
 }
 
 // ─── Session types ──────────────────────────────────────────────────────────
@@ -516,7 +543,7 @@ function validateParts(parts: UploadPart[], expectedCount: number | null): Uploa
 
 async function createMediaRecord(session: UploadSessionRow, postId?: string | null) {
   const mediaId = generateId();
-  const url = publicUrlForKey(session.key);
+  const url = await clientMediaUrl(session.key);
 
   const [row] = await db
     .insert(media)

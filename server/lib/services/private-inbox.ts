@@ -149,9 +149,13 @@ function buildAttachmentViews(
     const m = mediaById.get(a.media_id);
     const needsPurchase = a.price > 0;
     const purchasedByMe = a.purchased_by === viewerId;
+    // The uploader of the media always sees their own attachment unlocked —
+    // a creator viewing their own priced reply must see the actual media, not
+    // a lock card (they never "purchase" their own content).
+    const isMine = m?.uploader_id === viewerId;
     // Locked paid attachments never leak their URL — the client renders the
     // lock card from metadata alone.
-    const isLocked = needsPurchase && !purchasedByMe;
+    const isLocked = needsPurchase && !purchasedByMe && !isMine;
     return {
       id: a.id,
       media_id: a.media_id,
@@ -757,6 +761,15 @@ export async function sendPrivateMessage(input: SendMessageInput): Promise<{
     resourceId: messageId,
     payload: { reason: "private_message_sent", amount: -price },
   });
+  // The sender's own outbox list gets the confirmed message immediately too —
+  // a media message just sent must show up without a refresh/reopen.
+  emitEvent({
+    type: "private_message.created",
+    channel: userChannel(senderId),
+    userId: senderId,
+    resourceId: messageId,
+    payload: { box: "outbox", message: view },
+  });
 
   // In-app notification + push (backgrounded recipients), preference-gated and
   // deduped by the service. Restricted senders land in the Waiting queue, so
@@ -937,7 +950,11 @@ export async function replyToMessage(input: ReplyInput): Promise<{ message: Priv
   const replyView = (await buildViews([replyRow!], userId))[0];
   const rootView = (await buildViews([rootRow!], otherId))[0];
 
-  // Realtime — the other participant's side updates without polling.
+  // Realtime — BOTH participants' sides update without polling. The reply
+  // event carries the view built from the replier's own perspective, so the
+  // replier's open thread (still mounted under the media composer) appends the
+  // message in place instead of waiting for a close/reopen. The `updated`
+  // root-view event is only for the other side (built from their perspective).
   emitEvent({
     type: "private_message.reply_created",
     channel: userChannel(otherId),
@@ -951,6 +968,15 @@ export async function replyToMessage(input: ReplyInput): Promise<{ message: Priv
     userId: otherId,
     resourceId: root.id,
     payload: { box: otherId === root.recipient_id ? "inbox" : "outbox", status: "replied", replied_at: now, message: rootView },
+  });
+  // The replier's own devices learn about the reply too — same payload, same
+  // user-scoped durable outbox entry — so their open thread renders it now.
+  emitEvent({
+    type: "private_message.reply_created",
+    channel: userChannel(userId),
+    userId,
+    resourceId: replyId,
+    payload: { original_id: root.id, parent_id: messageId, reply: replyView },
   });
 
   void notifyPrivateMessageReply({
