@@ -5,6 +5,10 @@ const PUBLIC_BYPASS = new Set([
   "/api/health",
   "/api/healthz",
   "/api/diagnostic",
+  // The WebSocket upgrade is authenticated inside the route via the ?token=
+  // query param (browsers cannot set WebSocket headers, so the client never
+  // sends X-Client-App-Id or Authorization on the upgrade request).
+  "/api/realtime",
 ]);
 
 export function middleware(req: NextRequest) {
